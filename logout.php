@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /** Destroy the session and bounce back to the player (via the realign step). */
 session_start();
 session_unset();

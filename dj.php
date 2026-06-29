@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /**
  * DJ management screen: a limited view of one section of the cart list
  * (config DJ_FROM..DJ_TO) with rename / replace / color / trim / chain / delete

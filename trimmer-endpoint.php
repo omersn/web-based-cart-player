@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /** Set a cart's END point on a WaveSurfer waveform (full-page version). */
 require_once __DIR__ . '/includes/helpers.php';
 

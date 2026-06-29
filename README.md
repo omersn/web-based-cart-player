@@ -1,5 +1,7 @@
 # Web-based Cart Player
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+
 A browser-based **cart wall** (a.k.a. jingle / sound-effect playout panel) for live radio,
 built with plain PHP and vanilla JavaScript — no framework, no database server. It runs the
 on-air jingles, station IDs, sweepers and promos for a live station from a grid of clickable
@@ -125,7 +127,18 @@ uploads/                audio (sample demo tones)
 
 ## License
 
-MIT © 2024-2026 Omer Senesh. See [LICENSE](LICENSE).
+This program is free software: you can redistribute it and/or modify it under the terms of the
+**GNU Affero General Public License v3.0 or later** (`AGPL-3.0-or-later`) as published by the Free
+Software Foundation. It is distributed in the hope that it will be useful, but **WITHOUT ANY
+WARRANTY**. See [LICENSE](LICENSE) for the full text.
+
+Copyright © 2024-2026 Omer Senesh.
+
+> **Why AGPL, and what it means for you:** this is network server software. If you run a modified
+> version on a server that other people interact with, the AGPL requires you to offer those users
+> the *Corresponding Source* of your modified version. The app surfaces a **“Source” link in its
+> UI** for exactly this — set `SOURCE_URL` in [`config.php`](config.php) to point at your own fork
+> if you deploy a modified version. Internal/personal use has no such obligation.
 
 Originally built as a JS + PHP patchwork for a live community radio station and refactored into
-this presentable, self-hostable demo.
+this presentable, self-hostable project.

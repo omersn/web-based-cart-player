@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /** Change a cart's button colour (embedded version, shown inside a popup iframe). */
 require_once __DIR__ . '/includes/helpers.php';
 

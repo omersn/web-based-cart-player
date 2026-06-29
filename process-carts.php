@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /**
  * Recalculate each cart's end point from the real audio duration and rewrite
  * the cart list. Runs client-side (it needs the browser to decode durations),

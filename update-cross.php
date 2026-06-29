@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /**
  * End-point + chain editor with a WaveSurfer waveform. Reads the cart list and
  * data/cross.txt; saves the chosen end point (as the chain "delay") over fetch().

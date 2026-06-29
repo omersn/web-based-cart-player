@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /** Save a new start point (in seconds) for the cart whose file matches. */
 require_once __DIR__ . '/includes/helpers.php';
 

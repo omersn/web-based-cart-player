@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /**
  * Web-based Cart Player — central configuration.
  *
@@ -12,6 +13,14 @@
 // ---------------------------------------------------------------------------
 const STATION_NAME = 'Demo Radio Station';
 const APP_NAME     = 'Web-based Cart Player';
+
+// Licensing — this program is free software under the GNU AGPL-3.0-or-later.
+// SOURCE_URL is shown in the UI so network users can obtain the Corresponding
+// Source, as required by section 13 of the AGPL. Point it at your own fork if
+// you deploy a modified version.
+const LICENSE_NAME = 'AGPL-3.0-or-later';
+const COPYRIGHT    = 'Copyright (C) 2024-2026 Omer Senesh';
+const SOURCE_URL   = 'https://github.com/omersn/web-based-cart-player';
 
 // ---------------------------------------------------------------------------
 // Demo credentials

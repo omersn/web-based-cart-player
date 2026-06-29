@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /**
  * Login page. Validates against the demo credentials in config.php and sets
  * the matching session token (admin -> 'login', dj -> 'login2').
@@ -99,6 +100,12 @@ if (isset($_POST['submit'])) {
             <code><?= htmlspecialchars(ADMIN_PASS) ?></code><br>
             DJ: <code><?= htmlspecialchars(DJ_USER) ?></code> /
             <code><?= htmlspecialchars(DJ_PASS) ?></code>
+        </p>
+
+        <p style="margin-top: 14px; font-size: 11px; color: #667;">
+            <?= htmlspecialchars(COPYRIGHT) ?> &middot;
+            <a href="<?= htmlspecialchars(SOURCE_URL) ?>" style="color:#8aa;">Source code</a>
+            (<?= htmlspecialchars(LICENSE_NAME) ?>). Free software with ABSOLUTELY NO WARRANTY.
         </p>
     </div>
 </body>

@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /**
  * Player shell. A full-screen background cart wall (grid.php in an iframe) plus
  * a draggable "Station ID" window, a draggable clock, the keep-alive heartbeat,
@@ -108,6 +109,12 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
     <div style="z-index: 1002110; position: absolute; top: 9px; left: 9px;" id="responsiveDiv">
         <img src="assets/img/logo.svg" height="30" alt="<?= htmlspecialchars(STATION_NAME) ?>">
     </div>
+
+    <!-- AGPL: offer the Corresponding Source to network users (section 13). -->
+    <a href="<?= htmlspecialchars(SOURCE_URL) ?>" target="_blank" rel="noopener"
+       style="position: fixed; top: 44px; left: 9px; z-index: 1002110; font-size: 10px; color: #5a6b75; text-decoration: none;">
+        Source (<?= htmlspecialchars(LICENSE_NAME) ?>)
+    </a>
 
     <!-- Loading overlay -->
     <div class="overlay" id="loadingOverlay">

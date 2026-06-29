@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /** Soft-delete a cart from the DJ view: replace it with the empty placeholder. */
 require_once __DIR__ . '/includes/helpers.php';
 

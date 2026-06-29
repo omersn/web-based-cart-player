@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /** Replace the audio file for a cart (uploads/<id>.mp3) and return to admin. */
 require_once __DIR__ . '/config.php';
 

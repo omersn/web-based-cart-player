@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /** Admin maintenance hub: log viewers, cleanup, recalc, backup, chain reset, info. */
 require_once __DIR__ . '/auth.php';
 require_admin();
@@ -171,7 +172,11 @@ $unreferenced     = getUnreferencedFiles();
         echo 'CPU load: ' . (function_exists('sys_getloadavg') ? implode(', ', sys_getloadavg()) : 'N/A') . '<br>';
         echo 'Memory usage: ' . memory_get_usage() . ' bytes<br>';
         echo 'PHP version: ' . phpversion() . '<br><br>';
-        echo htmlspecialchars(APP_NAME) . ' &mdash; ' . htmlspecialchars(STATION_NAME) . ' &middot; MIT licensed.';
+        echo htmlspecialchars(APP_NAME) . ' &mdash; ' . htmlspecialchars(STATION_NAME) . '<br>'
+            . htmlspecialchars(COPYRIGHT) . ' &middot; '
+            . '<a href="' . htmlspecialchars(SOURCE_URL) . '">Source code</a> '
+            . '&middot; ' . htmlspecialchars(LICENSE_NAME) . '. This program comes with '
+            . 'ABSOLUTELY NO WARRANTY; it is free software you may redistribute under the AGPL.';
         ?>
     </div>
 

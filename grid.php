@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /**
  * The cart wall grid. Embedded as an iframe by index.php (and linked directly
  * from the mobile page). The heavy lifting — loading carts, the audio preload

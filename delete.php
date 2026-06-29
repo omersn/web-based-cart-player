@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /** Remove a cart entry entirely (1-based id) and return to the admin list. */
 require_once __DIR__ . '/includes/helpers.php';
 

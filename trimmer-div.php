@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /** Set a cart's START point (embedded version, shown inside a popup iframe). */
 require_once __DIR__ . '/includes/helpers.php';
 

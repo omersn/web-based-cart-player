@@ -1,4 +1,5 @@
 <?php
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /** Public "download a jingle" page: lists every populated cart as a download link. */
 require_once __DIR__ . '/includes/helpers.php';
 
