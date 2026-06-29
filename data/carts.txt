@@ -1,0 +1,59 @@
+[ID] Station Opener 1|demo01.mp3|0.005|2|3.000
+[ID] Station Opener 2|demo02.mp3|0.005|2|2.000
+[ID] Station Opener 3|demo03.mp3|0.005|2|4.000
+Hourly Transition|demo04.mp3|0.005|5|3.000
+Jingle Sting|demo05.mp3|0.005|1|2.000
+Listen Live Promo|demo06.mp3|0.005|3|5.000
+News Bumper|demo09.mp3|0.005|4|2.000
+Sponsor Tag|demo12.mp3|0.005|1|2.000
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+Morning Show Open|demo07.mp3|0.005|1|3.000
+Morning Show Bed|demo08.mp3|0.005|2|4.000
+Drivetime Sweeper|demo10.mp3|0.005|3|6.000
+Weekend Jingle|demo11.mp3|0.005|4|3.000
+Top of Hour Stinger|demo12.mp3|0.005|5|2.000
+Weather Bumper|demo02.mp3|0.005|1|2.000
+Traffic Bed|demo08.mp3|0.005|2|4.000
+Interview Intro|demo01.mp3|0.005|3|3.000
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+Promo Pack A|demo06.mp3|0.005|3|5.000
+Promo Pack B|demo03.mp3|0.005|4|4.000
+Promo Pack C|demo10.mp3|0.005|5|6.000
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1
+- | 0.mp3|0|1

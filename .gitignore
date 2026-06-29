@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# Runtime logs (created by the app on the server)
+*.log
+
+# Backup artifacts
+backups/
+*.cartdb
+/audio.zip
+/db.zip
+
+# Temporary merged-opener downloads
+uploads/merged_opener_*.mp3
+
+# Ignore uploaded audio, but keep the demo clips that ship with the repo
+uploads/*.mp3
+!uploads/demo*.mp3
+!uploads/00.mp3
+!uploads/0.mp3

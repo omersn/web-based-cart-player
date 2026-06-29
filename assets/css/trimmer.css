@@ -1,0 +1,92 @@
+/* Web-based Cart Player — WaveSurfer trimmer pages. */
+
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background-color: black;
+}
+
+.container {
+    background: #fff;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+    padding: 20px;
+    border-radius: 10px;
+    width: 600px;
+    height: 490px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+/* Keyboard-shortcut hint box */
+.container2 {
+    position: absolute;
+    left: -175%;
+    background: black;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+    padding: 20px;
+    border-radius: 10px;
+    width: 90px;
+    height: 40px;
+    font-size: 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+#waveform { width: 100%; height: 200px; margin: 10px 0; }
+
+.time-box {
+    background: #1abc9c;
+    color: #fff;
+    font-size: 14px;
+    padding: 5px;
+    border-radius: 5px;
+    text-align: center;
+    width: 280px;
+    margin: 10px auto;
+}
+
+.controls { display: flex; justify-content: space-between; align-items: center; }
+
+button {
+    background-color: #007bff;
+    color: #fff;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+}
+button:hover { background-color: #0056b3; }
+
+/* Start/End toggle switch */
+.toggle-container { display: flex; justify-content: center; align-items: center; }
+.toggle-button {
+    position: relative;
+    width: 60px;
+    height: 30px;
+    background: #ccc; /* OFF = start */
+    border-radius: 15px;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: background-color 0.3s ease;
+    margin: 0 8px;
+}
+.toggle-button.on { background: #4caf50; } /* ON = end */
+.toggle-knob {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 24px;
+    height: 24px;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    transition: left 0.3s ease;
+}
+.toggle-button.on .toggle-knob { left: 33px; }

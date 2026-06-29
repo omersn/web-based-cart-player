@@ -1,0 +1,167 @@
+<?php
+/** Set a cart's START point on a WaveSurfer waveform (full-page version). */
+require_once __DIR__ . '/includes/helpers.php';
+
+if (!isset($_GET['file'])) {
+    die('No file specified.');
+}
+
+$filename    = $_GET['file'];
+$startPoint  = 0;
+$displayName = '';
+$fileExists  = false;
+
+foreach (load_carts() as $entry) {
+    list($name, $cartFilename, $start) = array_pad(explode('|', $entry), 3, null);
+    if ($cartFilename === $filename) {
+        $fileExists  = true;
+        $displayName = $name;
+        if ($start !== null) {
+            $startPoint = (float) $start;
+        }
+        break;
+    }
+}
+
+if (!$fileExists) {
+    die('File not found in carts.');
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trimmer</title>
+    <link rel="stylesheet" href="assets/css/admin.css">
+    <link rel="stylesheet" href="assets/css/trimmer.css">
+    <script src="https://unpkg.com/wavesurfer.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h2>Trim silence</h2>
+        <div class="toggle-container">
+            Start -<div class="toggle-button" id="toggle-button"><div class="toggle-knob"></div></div>- End
+        </div>
+
+        <script>
+            // The toggle flips between START (this page) and END (trimmer-endpoint).
+            document.getElementById('toggle-button').addEventListener('click', () => {
+                window.location.href = window.location.href.replace('trimmer.php', 'trimmer-endpoint.php');
+            });
+        </script>
+
+        <center><h3><?= htmlspecialchars($displayName) ?></h3></center>
+        <div class="time-box" id="time-box">Loading</div>
+        <div id="waveform"></div>
+        <div>
+            <input type="range" id="zoom-slider" min="1" max="200" value="1">
+            <label for="zoom-slider">🔎</label>
+        </div>
+        <button onclick="wavesurfer.playPause()">▶/⏸</button>
+        <div class="controls" style="text-align: left;">
+            <button id="save-button" class="button-common change-audio-button" style="display:block;">Save</button>
+        </div>
+    </div>
+
+    <script>
+        const file = "<?= htmlspecialchars($filename) ?>";
+        const startPoint = <?= $startPoint ?>;
+
+        const wavesurfer = WaveSurfer.create({
+            container: '#waveform',
+            waveColor: 'blue',
+            progressColor: 'lightgray',
+            cursorColor: 'lightblue',
+            height: 180,
+            cursorWidth: 6,
+            dragToSeek: true,
+        });
+
+        wavesurfer.load(`uploads/${file}`);
+
+        wavesurfer.on('ready', () => {
+            if (wavesurfer.getDuration() > 0) {
+                wavesurfer.seekTo(startPoint / wavesurfer.getDuration());
+            }
+            updateTimes();
+        });
+        wavesurfer.on('audioprocess', updateTimes);
+        wavesurfer.on('seek', updateTimes);
+        document.querySelector('#waveform').addEventListener('click', () => setTimeout(updateTimes, 100));
+
+        // Keyboard: space = play/pause, arrows = nudge + preview, enter = save.
+        document.addEventListener('keydown', (event) => {
+            if (event.target.matches('input, textarea, select') || event.target.id === 'zoom-slider') return;
+
+            if (event.code === 'Space') {
+                event.preventDefault();
+                wavesurfer.playPause();
+            }
+
+            if (!wavesurfer.isPlaying() && (event.code === 'ArrowLeft' || event.code === 'ArrowRight')) {
+                event.preventDefault();
+                const offset = event.code === 'ArrowLeft' ? -0.2 : 0.2;
+                const newTime = Math.max(0, Math.min(wavesurfer.getCurrentTime() + offset, wavesurfer.getDuration()));
+                wavesurfer.seekTo(newTime / wavesurfer.getDuration());
+                wavesurfer.play();
+                setTimeout(() => {
+                    wavesurfer.pause();
+                    wavesurfer.seekTo(newTime / wavesurfer.getDuration());
+                }, 60);
+            }
+
+            if (event.code === 'Enter') {
+                event.preventDefault();
+                document.getElementById('save-button').click();
+            }
+        });
+
+        function updateTimes() {
+            const currentTime = formatTime(wavesurfer.getCurrentTime());
+            const duration = formatTime(wavesurfer.getDuration());
+            const trimmedDuration = formatTime(wavesurfer.getDuration() - wavesurfer.getCurrentTime());
+            document.getElementById('time-box').textContent =
+                `Trimmed ${currentTime} of ${duration} (actual length ${trimmedDuration})`;
+        }
+
+        function formatTime(seconds) {
+            if (isNaN(seconds)) return '00:00';
+            const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const secs = Math.floor(seconds % 60).toString().padStart(2, '0');
+            return `${mins}:${secs}`;
+        }
+
+        document.getElementById('save-button').addEventListener('click', () => {
+            const startTime = wavesurfer.getCurrentTime();
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', 'save_trim.php', true);
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+            xhr.send(`file=${file}&start=${startTime}`);
+            xhr.onload = () => {
+                if (xhr.status === 200) {
+                    window.location.href = 'admin.php';
+                } else {
+                    alert('Failed to save trim.');
+                }
+            };
+        });
+
+        const zoomSlider = document.getElementById('zoom-slider');
+        zoomSlider.addEventListener('input', (event) => wavesurfer.zoom(Number(event.target.value)));
+        zoomSlider.addEventListener('focus', (event) => { event.preventDefault(); zoomSlider.blur(); });
+    </script>
+
+    <div style="position: absolute; top: 12px; right: 9px; color: #fff; padding: 35px;">
+        <div class="container2">
+            <b>Keyboard shortcuts</b><br>
+            Move: ⇄ arrows<br>
+            Save: Enter ⏎
+        </div>
+    </div>
+
+    <div style="position: absolute; top: 12px; left: 9px;">
+        <img src="assets/img/logo.svg" height="19" alt="Demo Radio Station">
+    </div>
+</body>
+</html>

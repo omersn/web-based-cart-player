@@ -1,0 +1,119 @@
+/* Web-based Cart Player — admin / DJ / editor styles. */
+
+a, a:visited { color: #007bff; text-decoration: none; }
+a:hover, a:active { text-decoration: none; }
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: black;
+    margin: 0;
+    padding: 0;
+    text-align: left;
+    min-height: 100vh;
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+
+/* Page container */
+.container {
+    width: 80%;
+    max-width: 800px;
+    margin: 20px auto;
+    padding: 20px;
+    background-color: #fff;
+    border-radius: 10px;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+}
+
+h2 { text-align: center; font-size: 24px; color: #333; }
+
+/* Buttons */
+.button-common {
+    display: inline-block;
+    padding: 5px;
+    font-size: 17px;
+    text-align: center;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    margin: 5px;
+    min-width: 40px;
+    text-decoration: none;
+}
+.change-audio-button { background-color: #d7dcfc; color: #fff; font-weight: bold; }
+
+button { padding: 10px 15px; font-size: 14px; cursor: pointer; border-radius: 5px; border: none; }
+button:hover { opacity: 0.8; }
+button:focus { outline: none; }
+
+/* Lists (admin/DJ rows) */
+ul { list-style-type: none; padding: 0; margin: 0; }
+li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    background-color: #f2f2f0;
+    border-radius: 10px;
+}
+
+input[type="text"] {
+    padding: 8px;
+    font-size: 14px;
+    width: 100%;
+    margin: 10px 0;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+}
+
+/* "User: …" badge */
+.notification-bottom,
+.notification-bottom2 {
+    position: absolute;
+    right: 10px;
+    width: 80px;
+    height: 56px;
+    background: #1abc9c;
+    text-align: center;
+    color: #fff;
+    font-size: 12px;
+    box-shadow: 2px 2px 0 1px rgba(163, 163, 163, 0.64);
+}
+.notification-bottom { top: 210px; }
+.notification-bottom2 { top: 69px; }
+
+/* Right-hand side navigation (admin/DJ) */
+.side-nav {
+    position: absolute;
+    top: 5px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    width: 130px;
+}
+.side-nav a {
+    display: block;
+    background-color: #9fbdd1;
+    color: #000;
+    text-align: center;
+    height: 23px;
+    line-height: 23px;
+    box-shadow: 2px 2px 0 1px rgba(163, 163, 163, 0.64);
+}
+
+/* Confirmation overlay */
+.overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.8);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    flex-direction: column;
+    color: #fff;
+}
+.overlay .message { font-size: 24px; margin-bottom: 20px; }
+.overlay button { padding: 10px 20px; margin: 5px; background-color: #007bff; color: #fff; border: none; border-radius: 5px; cursor: pointer; }
+.overlay button:hover { background-color: #0056b3; }

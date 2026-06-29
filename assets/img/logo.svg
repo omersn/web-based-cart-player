@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 48" role="img" aria-label="Demo Radio Station">
+  <style>
+    .wm { font-family: Arial, Helvetica, sans-serif; font-weight: 700; }
+  </style>
+  <!-- broadcast mark -->
+  <g fill="none" stroke="#27ae60" stroke-width="3" stroke-linecap="round">
+    <circle cx="24" cy="24" r="5" fill="#27ae60" stroke="none"/>
+    <path d="M14 14 A14 14 0 0 0 14 34"/>
+    <path d="M34 14 A14 14 0 0 1 34 34"/>
+    <path d="M8 9 A21 21 0 0 0 8 39" opacity="0.55"/>
+    <path d="M40 9 A21 21 0 0 1 40 39" opacity="0.55"/>
+  </g>
+  <text class="wm" x="56" y="22" font-size="17" fill="#ffffff">DEMO RADIO</text>
+  <text class="wm" x="56" y="40" font-size="13" fill="#9fbdd1" letter-spacing="3">STATION</text>
+</svg>
