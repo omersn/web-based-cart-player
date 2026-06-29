@@ -56,7 +56,8 @@ $currentTrack = $tracks[$number - 1];
 $crossData = [];
 if (file_exists($crossFile)) {
     foreach (file($crossFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $index => $line) {
-        list($chained, $delay) = explode('|', $line);
+        // Lines may be "flag|delay" or just "flag"; pad so $delay is always set.
+        [$chained, $delay] = array_pad(explode('|', $line), 2, 0);
         $crossData[$index + 1] = ['chained' => (int) $chained, 'delay' => (float) $delay];
     }
 }

@@ -4,7 +4,8 @@
  * a draggable "Station ID" window, a draggable clock, the keep-alive heartbeat,
  * a top toolbar, a status ticker, and QR / credits popups.
  */
-require_once __DIR__ . '/includes/helpers.php';
+require_once __DIR__ . '/auth.php';            // session + is_admin()/is_dj()
+require_once __DIR__ . '/includes/helpers.php'; // load_section_labels(), data_path()
 
 header('Cache-Control: no-cache, no-store, must-revalidate');
 header('Pragma: no-cache');
