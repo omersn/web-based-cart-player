@@ -63,6 +63,16 @@ and immediately paused, at a small **staggered delay** so the browser isn't aske
 file in the same instant. If a clip reports that it never really started, it is retried a few times
 with a growing delay. After this pass the first real click is instant and clean.
 
+> **⚠️ Autoplay policy — required for the preload to work.** The preload calls `audio.play()`
+> programmatically, and modern browsers **block audio playback until the user has interacted with
+> the page** (a click, etc.). On a normal browser the carts therefore won't prime until your first
+> click. A dedicated playout machine should run the browser with that gate disabled — for Chrome/Chromium:
+> ```
+> chrome --autoplay-policy=no-user-gesture-required
+> ```
+> (typically combined with `--kiosk`). With that flag the wall primes every cart the moment it loads,
+> exactly like the production setup. The future kiosk app will set this automatically.
+
 ### The keep-alive heartbeat
 
 See [`assets/js/keep-alive.js`](assets/js/keep-alive.js). A playout machine often sits idle for long
@@ -95,6 +105,14 @@ php -S localhost:8000
 
 Then open <http://localhost:8000/index.php>. Sign in at `/login.php` with the demo credentials
 above. The `data/` and `uploads/` folders must be writable by the web server.
+
+For the cart **preload** to prime without a first click, launch the browser with autoplay allowed
+(see the autoplay note above), e.g.:
+
+```bash
+# macOS example
+open -a "Google Chrome" --args --autoplay-policy=no-user-gesture-required http://localhost:8000/index.php
+```
 
 > Tip: regenerate the QR code (`assets/img/qr.png`) to point at your own deployment's
 > `mobile.php` URL so phones on your network can scan it.

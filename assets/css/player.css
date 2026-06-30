@@ -7,11 +7,11 @@ html, body { width: 100%; height: 100%; background-color: black; font-family: Ar
 /* ---- Floating "Station ID window" (draggable) ---------------------------- */
 .floating-container-0001 {
     display: block;
-    position: absolute;
+    position: fixed; /* fixed so it can't enlarge / scroll the page */
     width: 800px;
     height: 165px;
-    top: 100px;
-    left: 100px;
+    top: 90px;
+    left: 30px;
     border: 7px solid lightgray;
     border-bottom: 5mm ridge lightgray;
     border-radius: 4px;
@@ -39,11 +39,11 @@ html, body { width: 100%; height: 100%; background-color: black; font-family: Ar
 /* ---- Floating clock window (draggable) ----------------------------------- */
 .floating-container-0002 {
     display: block;
-    position: absolute;
+    position: fixed; /* fixed so it can't enlarge / scroll the page */
     width: 310px;
     height: 310px;
-    top: 400px;
-    left: 100px;
+    top: 290px;
+    left: 30px;
     border: 7px solid lightgray;
     border-bottom: 5mm ridge lightgray;
     border-radius: 4px;

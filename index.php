@@ -256,8 +256,10 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
         }
         makeDraggable('.floating-container-0001', '.title-bar-0001');
         makeDraggable('.floating-container-0002', '.title-bar-0002');
-        document.getElementById('floatingDiv').style.top = '580px';
-        document.getElementById('floatingDiv').style.left = '220px';
+        // The page is non-scrollable; keep it pinned to the top so the toolbar
+        // stays reachable. (CSS already positions the floating windows on-screen.)
+        window.scrollTo(0, 0);
+        window.addEventListener('resize', () => window.scrollTo(0, 0));
 
         // --- QR + credits popups.
         function showPopup(buildInner) {
