@@ -1,21 +1,21 @@
-[ID] Station Opener 1|demo01.mp3|0.005|2|2.995
-[ID] Station Opener 2|demo02.mp3|0.005|2|1.995
-[ID] Station Opener 3|demo03.mp3|0.005|2|3.995
-Hourly Transition|demo04.mp3|0.005|5|2.995
-Jingle Sting|demo05.mp3|0.005|1|1.995
+[ID] Station Opener 1|demo01.mp3|0.005|2|4.995
+[ID] Station Opener 2|demo02.mp3|0.005|2|4.995
+[ID] Station Opener 3|demo03.mp3|0.005|2|4.995
+Hourly Transition|demo04.mp3|0.005|5|4.995
+Jingle Sting|demo05.mp3|0.005|1|4.995
 Listen Live Promo|demo06.mp3|0.005|3|4.995
-News Bumper|demo09.mp3|0.005|4|1.995
-Sponsor Tag|demo12.mp3|0.005|1|1.995
+News Bumper|demo09.mp3|0.005|4|4.995
+Sponsor Tag|demo12.mp3|0.005|1|4.995
 - | 0.mp3|0|1
 - | 0.mp3|0|1
-Morning Show Open|demo07.mp3|0.005|1|2.995
-Morning Show Bed|demo08.mp3|0.005|2|3.995
-Drivetime Sweeper|demo10.mp3|0.005|3|5.995
-Weekend Jingle|demo11.mp3|0.005|4|2.995
-Top of Hour Stinger|demo12.mp3|0.005|5|1.995
-Weather Bumper|demo02.mp3|0.005|1|1.995
-Traffic Bed|demo08.mp3|0.005|2|3.995
-Interview Intro|demo01.mp3|0.005|3|2.995
+Morning Show Open|demo07.mp3|0.005|1|4.995
+Morning Show Bed|demo08.mp3|0.005|2|4.995
+Drivetime Sweeper|demo10.mp3|0.005|3|4.995
+Weekend Jingle|demo11.mp3|0.005|4|4.995
+Top of Hour Stinger|demo12.mp3|0.005|5|4.995
+Weather Bumper|demo02.mp3|0.005|1|4.995
+Traffic Bed|demo08.mp3|0.005|2|4.995
+Interview Intro|demo01.mp3|0.005|3|4.995
 - | 0.mp3|0|1
 - | 0.mp3|0|1
 - | 0.mp3|0|1
@@ -34,8 +34,8 @@ Interview Intro|demo01.mp3|0.005|3|2.995
 - | 0.mp3|0|1
 - | 0.mp3|0|1
 Promo Pack A|demo06.mp3|0.005|3|4.995
-Promo Pack B|demo03.mp3|0.005|4|3.995
-Promo Pack C|demo10.mp3|0.005|5|5.995
+Promo Pack B|demo03.mp3|0.005|4|4.995
+Promo Pack C|demo10.mp3|0.005|5|4.995
 - | 0.mp3|0|1
 - | 0.mp3|0|1
 - | 0.mp3|0|1
@@ -108,12 +108,12 @@ Promo Pack C|demo10.mp3|0.005|5|5.995
 - | 0.mp3|0|1
 - | 0.mp3|0|1
 - | 0.mp3|0|1
-Sweeper Whoosh|demo04.mp3|0.005|2|2.995
-Riser FX|demo05.mp3|0.005|3|1.995
-Impact Hit|demo09.mp3|0.005|4|1.995
-Transition Swoosh|demo11.mp3|0.005|5|2.995
-Reverse Cymbal|demo08.mp3|0.005|1|3.995
-Logo Sting|demo12.mp3|0.005|2|1.995
+Sweeper Whoosh|demo04.mp3|0.005|2|4.995
+Riser FX|demo05.mp3|0.005|3|4.995
+Impact Hit|demo09.mp3|0.005|4|4.995
+Transition Swoosh|demo11.mp3|0.005|5|4.995
+Reverse Cymbal|demo08.mp3|0.005|1|4.995
+Logo Sting|demo12.mp3|0.005|2|4.995
 - | 0.mp3|0|1
 - | 0.mp3|0|1
 - | 0.mp3|0|1

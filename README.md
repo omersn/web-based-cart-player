@@ -140,7 +140,7 @@ trimmer*.php            waveform editors     *-cross / volume / color / rename â
 maintenance*.php        logs, cleanup, backup, usage chart
 assets/css|js|img       extracted styles, the cart-wall engine, logo & QR
 data/                   the pseudo-database (sample content)
-uploads/                audio (sample demo tones)
+uploads/                audio (short CC0 demo clips)
 ```
 
 ## License
