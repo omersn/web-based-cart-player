@@ -76,7 +76,7 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
             style="position: fixed; bottom: 7px; right: 10px; width: 10px; height: 10px; z-index: 9900; clip-path: circle(40%);"></iframe>
 
     <!-- Main cart wall -->
-    <iframe style="padding-top: 45px;" width="100%" height="100%" id="cartgrid" name="cartgrid"
+    <iframe style="padding-top: 37px;" width="100%" height="100%" id="cartgrid" name="cartgrid"
             src="grid.php?from=10&to=75&pagination=0&timestamp=<?= time() ?>"
             frameborder="0" scrolling="no" allowfullscreen></iframe>
 
@@ -121,7 +121,7 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
 
     <!-- AGPL: offer the Corresponding Source to network users (section 13). -->
     <a href="<?= htmlspecialchars(SOURCE_URL) ?>" target="_blank" rel="noopener"
-       style="position: fixed; top: 40px; left: 9px; z-index: 1002110; font-size: 10px; color: #5a6b75; text-decoration: none;">
+       style="position: fixed; top: 38px; left: 9px; z-index: 1002110; font-size: 10px; color: #5a6b75; text-decoration: none;">
         Source (<?= htmlspecialchars(LICENSE_NAME) ?>)
     </a>
 
