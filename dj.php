@@ -114,10 +114,16 @@ if (isset($_GET['move_up']) || isset($_GET['move_down'])) {
         function openPopup(url) {
             const container = document.getElementById('iframe-container');
             document.getElementById('floating-iframe').src = url;
-            const evt = window.event;
-            container.style.top = `${evt ? evt.pageY : 100}px`;
-            container.style.left = `${evt ? evt.pageX : 100}px`;
             container.style.display = 'block';
+            const evt = window.event;
+            const margin = 8;
+            const w = container.offsetWidth, h = container.offsetHeight;
+            let left = evt ? evt.pageX : 100;
+            let top = evt ? evt.pageY : 100;
+            left = Math.max(window.scrollX + margin, Math.min(left, window.scrollX + document.documentElement.clientWidth - w - margin));
+            top = Math.max(window.scrollY + margin, Math.min(top, window.scrollY + document.documentElement.clientHeight - h - margin));
+            container.style.left = `${left}px`;
+            container.style.top = `${top}px`;
         }
         document.querySelectorAll('.confirm-delete').forEach(link => {
             link.addEventListener('click', (e) => {

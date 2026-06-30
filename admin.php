@@ -182,10 +182,18 @@ $sectionHeaders = [
         function openContainer(containerId, frameId, url) {
             const container = document.getElementById(containerId);
             document.getElementById(frameId).src = url;
-            const evt = window.event;
-            container.style.top = `${evt ? evt.pageY : 100}px`;
-            container.style.left = `${evt ? evt.pageX : 100}px`;
             container.style.display = 'block';
+            // Clamp to the viewport so wide popups (e.g. the 650px trimmer) never
+            // run off-screen — important now that the controls sit on the right.
+            const evt = window.event;
+            const margin = 8;
+            const w = container.offsetWidth, h = container.offsetHeight;
+            let left = evt ? evt.pageX : 100;
+            let top = evt ? evt.pageY : 100;
+            left = Math.max(window.scrollX + margin, Math.min(left, window.scrollX + document.documentElement.clientWidth - w - margin));
+            top = Math.max(window.scrollY + margin, Math.min(top, window.scrollY + document.documentElement.clientHeight - h - margin));
+            container.style.left = `${left}px`;
+            container.style.top = `${top}px`;
         }
         function closePopup(id) { document.getElementById(id).style.display = 'none'; location.reload(); }
         // Called by saved trimmer/color iframes to close + refresh.

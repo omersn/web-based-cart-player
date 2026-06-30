@@ -136,19 +136,35 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
     </div>
 
     <script>
-        // --- Loading overlay: fill the bar, then reveal the player.
+        // --- Loading overlay + first-load preload kick.
+        // The audio preload hack doesn't reliably prime the carts on the very
+        // first grid load. Flipping each grid to another section and back —
+        // behind the loading overlay — forces a reload that primes every cart.
+        // (Restores the original production trick of "switch page and come back".)
         (() => {
             const overlay = document.getElementById('loadingOverlay');
             const progressBar = document.getElementById('progressBar');
+            const grid = document.getElementById('cartgrid');
+            const floater = document.getElementById('floater');
+            const gridSrc = grid.src;
+            const floaterSrc = floater.src;
+
             let progress = 0;
             const interval = setInterval(() => {
-                progress += 34;
-                progressBar.style.width = `${progress}%`;
-                if (progress >= 100) {
-                    clearInterval(interval);
-                    setTimeout(() => { overlay.style.display = 'none'; }, 600);
-                }
-            }, 500);
+                progress += 12;
+                progressBar.style.width = `${Math.min(progress, 100)}%`;
+                if (progress >= 100) clearInterval(interval);
+            }, 280);
+
+            // Switch the grids away…
+            setTimeout(() => {
+                grid.src = 'grid.php?from=35&to=60&pagination=0&timestamp=' + Date.now();
+                floater.src = 'grid.php?from=110&to=120&pagination=0&smalltext=23&smallbacktimer=1&btnh=90&timestamp=' + Date.now();
+            }, 800);
+            // …and back to the original views, which primes their carts.
+            setTimeout(() => { grid.src = gridSrc; floater.src = floaterSrc; }, 1900);
+            // Reveal once the kick has completed.
+            setTimeout(() => { overlay.style.display = 'none'; }, 2900);
         })();
 
         // --- iframe section selectors.
