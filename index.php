@@ -78,7 +78,7 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
     <!-- Main cart wall -->
     <iframe style="padding-top: 45px;" width="100%" height="100%" id="cartgrid" name="cartgrid"
             src="grid.php?from=10&to=75&pagination=0&timestamp=<?= time() ?>"
-            frameborder="0" allowfullscreen></iframe>
+            frameborder="0" scrolling="no" allowfullscreen></iframe>
 
     <!-- Toolbar. Optional chips carry ids and are hidden in priority order on
          narrow screens (see the media queries in player.css). -->
