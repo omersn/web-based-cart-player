@@ -83,19 +83,78 @@ html, body { width: 100%; height: 100%; background-color: black; font-family: Ar
 .progress-bar { width: 80%; max-width: 400px; background-color: #333; border-radius: 5px; overflow: hidden; height: 20px; }
 .progress-bar .progress { height: 100%; width: 0; background-color: blue; transition: width 0.5s linear; }
 
-/* ---- Toolbar chips ------------------------------------------------------- */
-.toolbar-chip {
-    position: absolute;
-    top: 8px;
-    background-color: #9fbdd1;
-    height: 23px;
-    box-shadow: 2px 2px 0 1px rgba(163, 163, 163, 0.64);
+/* ---- Top menu bar ---------------------------------------------------------
+ * A single modern flex toolbar, replacing the old set of separately
+ * right-anchored "chips". Logo + section picker + search on the left, the
+ * action buttons grouped on the right; everything centers itself vertically
+ * for free instead of being hand-positioned in pixels.
+ */
+.topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
     z-index: 1002;
-    text-align: center;
-    font-size: 14px;
-    line-height: 23px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 44px;
+    padding: 0 12px;
+    background: #14181c;
+    border-bottom: 1px solid #2a2f35;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
-.toolbar-chip a { text-decoration: none; color: #000; }
+.topbar-brand { display: flex; align-items: center; flex-shrink: 0; }
+.topbar-spacer { flex: 1 1 auto; }
+.topbar-select {
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid #3a4047;
+    background: #1f242a;
+    color: #e8edf2;
+    padding: 0 8px;
+    font-size: 13px;
+}
+.topbar-search {
+    display: flex;
+    align-items: center;
+    background: #1f242a;
+    border: 1px solid #3a4047;
+    border-radius: 6px;
+    padding: 0 4px 0 10px;
+    height: 28px;
+}
+.topbar-search input {
+    width: 130px;
+    border: none;
+    background: transparent;
+    color: #e8edf2;
+    font-size: 13px;
+    outline: none;
+}
+.topbar-search button { background: transparent; border: none; cursor: pointer; font-size: 14px; }
+.topbar-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.topbar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 6px;
+    border: 1px solid #3a4047;
+    background: #1f242a;
+    color: #e8edf2;
+    font-size: 13px;
+    text-decoration: none;
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: Arial, sans-serif;
+    transition: background-color 0.15s ease;
+}
+.topbar-btn:hover { background: #2a3038; }
+.topbar-btn-accent { background: #2a73d6; border-color: #2a73d6; font-weight: bold; }
+.topbar-btn-accent:hover { background: #3580e6; }
+.topbar-btn .dot { width: 8px; height: 8px; border-radius: 50%; background: orange; display: inline-block; }
 
 /* ---- Bottom status ticker ------------------------------------------------ */
 .statuses-bar {

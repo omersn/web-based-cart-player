@@ -80,26 +80,15 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
             src="grid.php?from=10&to=75&pagination=0&timestamp=<?= time() ?>"
             frameborder="0" scrolling="no" allowfullscreen></iframe>
 
-    <!-- Toolbar. Optional chips carry ids and are hidden in priority order on
-         narrow screens (see the media queries in player.css). -->
-    <div class="toolbar-chip" style="right: 6px; width: 60px;"><a href="admin.php">Admin</a></div>
-    <div class="toolbar-chip" id="chip-credits" style="right: 75px; width: 90px;"><a href="#" onclick="showCredits(); return false;">Credits</a></div>
-    <div class="toolbar-chip" id="qr-chip" style="right: 170px; width: 110px;"><a href="#" onclick="showQR(); return false;">Mobile access</a></div>
-    <div class="toolbar-chip" id="chip-clock" style="right: 285px; width: 140px;"><a href="#" onclick="toggleClockWindow(); return false;">Clock window</a></div>
-    <div class="toolbar-chip" style="right: 430px; width: 150px;"><a href="#" onclick="toggleIdsWindow(); return false;">Station ID window <span style="color:orange;">█</span></a></div>
-    <div class="toolbar-chip" style="right: 585px; width: 90px;"><a href="#" onclick="stopAll(); return false;">Stop all 🛑</a></div>
-    <div class="toolbar-chip" id="chip-download" style="right: 680px; width: 130px;"><a href="download.php">Download clip 💾</a></div>
+    <!-- Top menu bar: a single modern flex toolbar (replaces the old separately
+         positioned chips). Optional groups carry ids and hide in priority order
+         on narrow screens (see the media queries in player.css). -->
+    <nav class="topbar">
+        <div class="topbar-brand" id="responsiveDiv">
+            <img src="assets/img/logo.svg" height="26" alt="<?= htmlspecialchars(STATION_NAME) ?>">
+        </div>
 
-    <!-- Search -->
-    <form id="searchForm" class="toolbar-chip" style="right: 945px; width: 165px; padding: 0 4px; display: flex; align-items: center; gap: 2px;">
-        <input type="text" id="searchInput" placeholder="Search jingle…" autocomplete="off"
-               style="width: 130px; border: none; background: transparent; font-size: 13px; outline: none;">
-        <button type="submit" style="background: transparent; border: none; cursor: pointer;">🔍</button>
-    </form>
-
-    <!-- Section selector for the main grid -->
-    <div style="position: absolute; top: 8px; right: 815px; z-index: 2000;">
-        <select id="section-select" style="width: 120px; height: 23px; border-radius: 5px; border: 1px solid lightgray; text-align: center;">
+        <select id="section-select" class="topbar-select">
             <option value="grid.php?from=10&to=35&pagination=0"><?= htmlspecialchars($labels[0]) ?></option>
             <option value="grid.php?from=35&to=60&pagination=0"><?= htmlspecialchars($labels[1]) ?></option>
             <option value="grid.php?from=60&to=85&pagination=0"><?= htmlspecialchars($labels[2]) ?></option>
@@ -111,12 +100,24 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
             <option value="grid.php?from=220&to=245&pagination=0"><?= htmlspecialchars($labels[8]) ?></option>
             <option value="grid.php?from=245&to=270&pagination=0"><?= htmlspecialchars($labels[9]) ?></option>
         </select>
-    </div>
 
-    <!-- Logo -->
-    <div style="z-index: 1002110; position: absolute; top: 9px; left: 9px;" id="responsiveDiv">
-        <img src="assets/img/logo.svg" height="30" alt="<?= htmlspecialchars(STATION_NAME) ?>">
-    </div>
+        <form id="searchForm" class="topbar-search">
+            <input type="text" id="searchInput" placeholder="Search jingle…" autocomplete="off">
+            <button type="submit" title="Search">🔍</button>
+        </form>
+
+        <div class="topbar-spacer"></div>
+
+        <div class="topbar-group">
+            <button type="button" class="topbar-btn" onclick="toggleIdsWindow();">Station IDs <span class="dot"></span></button>
+            <button type="button" class="topbar-btn" onclick="stopAll();">Stop all 🛑</button>
+            <a class="topbar-btn" id="chip-download" href="download.php">Download 💾</a>
+            <button type="button" class="topbar-btn" id="qr-chip" onclick="showQR();">Mobile access</button>
+            <button type="button" class="topbar-btn" id="chip-clock" onclick="toggleClockWindow();">Clock</button>
+            <button type="button" class="topbar-btn" id="chip-credits" onclick="showCredits();">Credits</button>
+            <a class="topbar-btn topbar-btn-accent" href="admin.php">Admin</a>
+        </div>
+    </nav>
 
     <!-- AGPL: offer the Corresponding Source to network users (section 13). -->
     <a href="<?= htmlspecialchars(SOURCE_URL) ?>" target="_blank" rel="noopener"
