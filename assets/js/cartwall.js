@@ -32,20 +32,6 @@
     const DATA_URL = CONFIG.dataUrl;
     const itemsPerPage = CONFIG.itemsPerPage;
 
-    // Single shared WebAudio context. Browsers cap the number of AudioContexts
-    // (~6 in Chrome), so creating one per button would silently fail once there
-    // are more than a few carts — which broke both the level meter and the
-    // preload hack. One shared context, many MediaElementSource nodes, is fine.
-    let _audioCtx = null;
-    function getAudioContext() {
-        if (!_audioCtx) {
-            _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        return _audioCtx;
-    }
-    // Resume the context on the first user gesture (autoplay policy).
-    document.addEventListener('click', () => getAudioContext().resume(), { once: true });
-
     const colorMapping = {
         '1': '#007bff',
         '2': '#4dbf49',
@@ -286,7 +272,7 @@
         levelMeterCanvas.width = 50;
         levelMeterCanvas.height = 10;
 
-        const audioContext = getAudioContext();
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const analyser = audioContext.createAnalyser();
         const source = audioContext.createMediaElementSource(audio);
         source.connect(analyser);

@@ -80,14 +80,15 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
             src="grid.php?from=10&to=75&pagination=0&timestamp=<?= time() ?>"
             frameborder="0" allowfullscreen></iframe>
 
-    <!-- Toolbar -->
+    <!-- Toolbar. Optional chips carry ids and are hidden in priority order on
+         narrow screens (see the media queries in player.css). -->
     <div class="toolbar-chip" style="right: 6px; width: 60px;"><a href="admin.php">Admin</a></div>
-    <div class="toolbar-chip" style="right: 75px; width: 90px;"><a href="#" onclick="showCredits(); return false;">Credits</a></div>
+    <div class="toolbar-chip" id="chip-credits" style="right: 75px; width: 90px;"><a href="#" onclick="showCredits(); return false;">Credits</a></div>
     <div class="toolbar-chip" id="qr-chip" style="right: 170px; width: 110px;"><a href="#" onclick="showQR(); return false;">Mobile access</a></div>
-    <div class="toolbar-chip" style="right: 285px; width: 140px;"><a href="#" onclick="toggleClockWindow(); return false;">Clock window</a></div>
+    <div class="toolbar-chip" id="chip-clock" style="right: 285px; width: 140px;"><a href="#" onclick="toggleClockWindow(); return false;">Clock window</a></div>
     <div class="toolbar-chip" style="right: 430px; width: 150px;"><a href="#" onclick="toggleIdsWindow(); return false;">Station ID window <span style="color:orange;">█</span></a></div>
     <div class="toolbar-chip" style="right: 585px; width: 90px;"><a href="#" onclick="stopAll(); return false;">Stop all 🛑</a></div>
-    <div class="toolbar-chip" style="right: 680px; width: 130px;"><a href="download.php">Download clip 💾</a></div>
+    <div class="toolbar-chip" id="chip-download" style="right: 680px; width: 130px;"><a href="download.php">Download clip 💾</a></div>
 
     <!-- Search -->
     <form id="searchForm" class="toolbar-chip" style="right: 945px; width: 165px; padding: 0 4px; display: flex; align-items: center; gap: 2px;">
@@ -226,6 +227,9 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
                 document.removeEventListener('mouseup', stop);
             };
             title.addEventListener('mousedown', (e) => {
+                // Don't start a drag when interacting with the title-bar controls
+                // (the section/clock dropdown and the close/resize buttons).
+                if (e.target.closest('select, option, button')) return;
                 e.preventDefault();
                 offsetX = e.clientX - container.offsetLeft;
                 offsetY = e.clientY - container.offsetTop;

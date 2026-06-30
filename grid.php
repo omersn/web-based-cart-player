@@ -59,7 +59,7 @@ $backtimerStyles   = ($smallbacktimer === '1')
         }
         .button:active { background-color: #0056b3; }
         .button.disabled { cursor: not-allowed; opacity: 0.5; }
-        .button .progress { position: absolute; top: 0; right: 0; height: 100%; width: 0; background-color: rgba(255, 255, 255, 0.3); z-index: 1; transition: width 0.1s linear; display: none; }
+        .button .progress { position: absolute; top: 0; left: 0; height: 100%; width: 0; background-color: rgba(255, 255, 255, 0.3); z-index: 1; transition: width 0.1s linear; display: none; }
         .button span { position: relative; z-index: 2; }
         .duration { font-size: <?= htmlspecialchars($smalltext) ?>px; color: #ffffffcc; margin-top: 5px; }
         .duration.active { color: #fff; }

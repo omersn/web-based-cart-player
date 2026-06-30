@@ -58,6 +58,10 @@ li {
     border-radius: 10px;
 }
 
+/* Admin list reads right-to-left order per the layout request:
+   [move arrows] [name/colour bar] [edit controls]. */
+.admin-rows li { flex-direction: row-reverse; }
+
 input[type="text"] {
     padding: 8px;
     font-size: 14px;

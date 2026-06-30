@@ -147,6 +147,15 @@ html, body { width: 100%; height: 100%; background-color: black; font-family: Ar
 }
 .drag-overlay.active { display: block; }
 
-/* Hide some chips on narrow screens. */
-@media (max-width: 850px) { #responsiveDiv { display: none; } }
-@media (max-width: 1000px) { #qr-chip { display: none; } }
+/*
+ * Responsive toolbar: as the window narrows, drop the optional chips in
+ * priority order (least important first) so the essential controls — Admin,
+ * Stop all, the Station ID window toggle and the section selector — stay put.
+ *   search → download → credits → mobile/QR → clock window → logo
+ */
+@media (max-width: 1250px) { #searchForm    { display: none; } }
+@media (max-width: 1150px) { #chip-download { display: none; } }
+@media (max-width: 1050px) { #chip-credits  { display: none; } }
+@media (max-width: 1000px) { #qr-chip       { display: none; } }
+@media (max-width: 900px)  { #chip-clock    { display: none; } }
+@media (max-width: 850px)  { #responsiveDiv { display: none; } }

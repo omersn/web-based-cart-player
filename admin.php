@@ -100,7 +100,7 @@ $sectionHeaders = [
             <button onclick="toggleLegend()" style="padding:5px 10px; background-color:#007bff; color:#fff; border:none; border-radius:5px; cursor:pointer;">Close</button>
         </div>
 
-        <ul>
+        <ul class="admin-rows">
             <?php foreach ($carts as $id => $entry): ?>
                 <?php if (isset($sectionHeaders[$id])): ?>
                     <h3 style="text-align:center; color:#000; background-color:#f0f0f0; padding:10px; border-radius:5px;"><?= htmlspecialchars($sectionHeaders[$id]) ?></h3>
