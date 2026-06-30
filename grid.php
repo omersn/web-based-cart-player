@@ -65,6 +65,10 @@ $backtimerStyles   = ($smallbacktimer === '1')
         .duration.active { color: #fff; }
         .button.playing { background-color: red; }
 
+        /* Chained carts overflow into the next cell so a run reads as one long
+           "master button", matching the production behaviour. */
+        .buttonext { width: 120%; z-index: 2; }
+
         .pagination { display: <?= $paginationDisplay ?>; margin: 46px; margin-bottom: 14px; text-align: center; }
         .pagination button { margin: 5px; padding: 10px; padding-top: 22px; background-color: #007bff; color: #fff; border: none; border-radius: 4px; cursor: pointer; min-width: 70px; }
         .pagination button.active { background-color: #0056b3; }
@@ -75,6 +79,7 @@ $backtimerStyles   = ($smallbacktimer === '1')
 <body style="background-color: black;">
     <div id="context-menu" class="context-menu">
         <button id="play-at-button">Play automatically at the top of the hour</button>
+        <button id="cancel-timers-button">No active timers</button>
     </div>
 
     <!-- Large remaining-time overlay; revealed a few seconds after load. -->

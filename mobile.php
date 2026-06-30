@@ -42,7 +42,7 @@ $ranges = [
         <?php endforeach; ?>
 
         <a class="link-button" style="background-color: green;" href="grid.php?from=0&to=10&btnh=200&line=3&pagination=0">Station IDs</a>
-        <a class="link-button" style="background-color: green;" href="grid.php?from=110&to=120&btnh=200&line=3&pagination=0">Campus IDs</a>
+        <a class="link-button" style="background-color: green;" href="grid.php?from=110&to=120&btnh=200&line=3&pagination=0">Sweepers &amp; Effects</a>
     </div>
 
     <div style="position: absolute; top: 9px; left: 9px;">

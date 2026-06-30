@@ -58,7 +58,7 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
             <span>
                 <select id="ids-select" style="width: 120px; border-radius: 5px; border: 1px solid lightgray; text-align: center;">
                     <option value="grid.php?from=0&to=10&pagination=0&smalltext=23&smallbacktimer=1&btnh=90">Station IDs</option>
-                    <option value="grid.php?from=110&to=120&pagination=0&smalltext=23&smallbacktimer=1&btnh=90">Campus IDs</option>
+                    <option value="grid.php?from=110&to=120&pagination=0&smalltext=23&smallbacktimer=1&btnh=90">Sweepers &amp; Effects</option>
                 </select>
             </span>
             <span>
@@ -89,9 +89,16 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
     <div class="toolbar-chip" style="right: 585px; width: 90px;"><a href="#" onclick="stopAll(); return false;">Stop all 🛑</a></div>
     <div class="toolbar-chip" style="right: 680px; width: 130px;"><a href="download.php">Download clip 💾</a></div>
 
+    <!-- Search -->
+    <form id="searchForm" class="toolbar-chip" style="right: 945px; width: 165px; padding: 0 4px; display: flex; align-items: center; gap: 2px;">
+        <input type="text" id="searchInput" placeholder="Search jingle…" autocomplete="off"
+               style="width: 130px; border: none; background: transparent; font-size: 13px; outline: none;">
+        <button type="submit" style="background: transparent; border: none; cursor: pointer;">🔍</button>
+    </form>
+
     <!-- Section selector for the main grid -->
-    <div style="position: absolute; top: 6px; right: 815px; z-index: 2000;">
-        <select id="section-select" style="width: 120px; border-radius: 5px; border: 1px solid lightgray; text-align: center;">
+    <div style="position: absolute; top: 8px; right: 815px; z-index: 2000;">
+        <select id="section-select" style="width: 120px; height: 23px; border-radius: 5px; border: 1px solid lightgray; text-align: center;">
             <option value="grid.php?from=10&to=35&pagination=0"><?= htmlspecialchars($labels[0]) ?></option>
             <option value="grid.php?from=35&to=60&pagination=0"><?= htmlspecialchars($labels[1]) ?></option>
             <option value="grid.php?from=60&to=85&pagination=0"><?= htmlspecialchars($labels[2]) ?></option>
@@ -112,7 +119,7 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
 
     <!-- AGPL: offer the Corresponding Source to network users (section 13). -->
     <a href="<?= htmlspecialchars(SOURCE_URL) ?>" target="_blank" rel="noopener"
-       style="position: fixed; top: 44px; left: 9px; z-index: 1002110; font-size: 10px; color: #5a6b75; text-decoration: none;">
+       style="position: fixed; top: 40px; left: 9px; z-index: 1002110; font-size: 10px; color: #5a6b75; text-decoration: none;">
         Source (<?= htmlspecialchars(LICENSE_NAME) ?>)
     </a>
 
@@ -159,6 +166,21 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
             floatingContainer.style.height = `${h}px`;
         });
 
+        // --- Search: open matching carts in the shared popup overlay.
+        document.getElementById('searchForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const term = document.getElementById('searchInput').value.trim();
+            if (!term) return;
+            showPopup((c) => {
+                const frame = document.createElement('iframe');
+                frame.src = `search.php?search=${encodeURIComponent(term)}`;
+                frame.width = 640;
+                frame.height = 460;
+                frame.style.cssText = 'border:2px solid gray; border-radius:6px; background:#000;';
+                c.appendChild(frame);
+            });
+        });
+
         // --- Toolbar actions.
         function stopAll() {
             ['cartgrid', 'floater'].forEach(id => {
@@ -181,22 +203,36 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
         }
 
         // --- Make the two floating windows draggable by their title bars.
+        // A transparent full-screen overlay is shown only while dragging; it sits
+        // above the iframes so fast mouse moves keep firing on the parent document
+        // instead of being swallowed by an iframe. The title bar's look is unchanged.
+        const dragOverlay = document.createElement('div');
+        dragOverlay.className = 'drag-overlay';
+        document.body.appendChild(dragOverlay);
+
         function makeDraggable(containerSelector, titleSelector) {
             const container = document.querySelector(containerSelector);
             const title = document.querySelector(titleSelector);
             if (!container || !title) return;
-            let offsetX = 0, offsetY = 0, dragging = false;
-            title.addEventListener('mousedown', (e) => {
-                dragging = true;
-                offsetX = e.clientX - container.offsetLeft;
-                offsetY = e.clientY - container.offsetTop;
-            });
-            document.addEventListener('mousemove', (e) => {
-                if (!dragging) return;
+            let offsetX = 0, offsetY = 0;
+
+            const onMove = (e) => {
                 container.style.left = `${e.clientX - offsetX}px`;
                 container.style.top = `${e.clientY - offsetY}px`;
+            };
+            const stop = () => {
+                dragOverlay.classList.remove('active');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', stop);
+            };
+            title.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                offsetX = e.clientX - container.offsetLeft;
+                offsetY = e.clientY - container.offsetTop;
+                dragOverlay.classList.add('active');
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', stop);
             });
-            document.addEventListener('mouseup', () => { dragging = false; });
         }
         makeDraggable('.floating-container-0001', '.title-bar-0001');
         makeDraggable('.floating-container-0002', '.title-bar-0002');

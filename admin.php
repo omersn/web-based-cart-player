@@ -46,7 +46,7 @@ if (isset($_GET['move_up']) || isset($_GET['move_down'])) {
 $sectionHeaders = [
     0   => 'Station IDs',
     10  => $labels[0], 35 => $labels[1], 60 => $labels[2], 85 => $labels[3],
-    110 => 'Campus IDs',
+    110 => 'Sweepers & Effects',
     120 => $labels[4], 145 => $labels[5], 170 => $labels[6],
     195 => $labels[7], 220 => $labels[8], 245 => $labels[9],
 ];
@@ -115,7 +115,7 @@ $sectionHeaders = [
                 $isStationId = ($id >= 0 && $id <= 9) || ($id >= 110 && $id <= 119);
                 ?>
                 <li>
-                    <span>
+                    <span style="display:inline-block; width:280px; white-space:nowrap; overflow:hidden;">
                         <?php if (!$isEmpty): ?>
                             <a href="rename.php?id=<?= $id ?>" title="Rename">✏️</a>
                             <a href="change.php?id=<?= $id ?>" title="Replace audio">⚙️</a>

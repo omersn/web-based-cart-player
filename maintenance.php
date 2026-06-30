@@ -36,7 +36,7 @@ function formatSize(int $bytes): string
 /** Files in uploads/ that are not referenced by any cart (soft-deleted leftovers). */
 function getUnreferencedFiles(): array
 {
-    $referenced = ['0.mp3'];
+    $referenced = ['0.mp3', '00.mp3']; // never offer the placeholder/keepalive clips for deletion
     foreach (load_carts() as $line) {
         $parts = explode('|', $line);
         if (isset($parts[1])) {
@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['delete'])) {
         $file = basename($_POST['delete']);
         $path = upload_path($file);
-        if ($file !== '0.mp3' && file_exists($path)) {
+        if ($file !== '0.mp3' && $file !== '00.mp3' && file_exists($path)) {
             unlink($path);
             header('Refresh:0');
         }

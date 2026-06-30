@@ -14,7 +14,7 @@ html, body { width: 100%; height: 100%; background-color: black; font-family: Ar
     left: 100px;
     border: 7px solid lightgray;
     border-bottom: 5mm ridge lightgray;
-    border-radius: 25px;
+    border-radius: 4px;
     background: #fff;
     z-index: 9999;
     box-shadow: 5px 5px 15px 5px #000;
@@ -46,7 +46,7 @@ html, body { width: 100%; height: 100%; background-color: black; font-family: Ar
     left: 100px;
     border: 7px solid lightgray;
     border-bottom: 5mm ridge lightgray;
-    border-radius: 25px;
+    border-radius: 4px;
     background: #fff;
     z-index: 9999;
     box-shadow: 5px 5px 15px 5px #000;
@@ -118,15 +118,34 @@ html, body { width: 100%; height: 100%; background-color: black; font-family: Ar
     position: fixed;
     left: 0;
     bottom: 8px;
-    width: 170px;
+    width: auto;
+    padding: 0 12px;
     background-color: #9fbdd1;
     color: #000;
     text-align: center;
+    white-space: nowrap;
     z-index: 99100;
     height: 23px;
     line-height: 23px;
     box-shadow: 2px 2px 0 1px rgba(163, 163, 163, 0.64);
 }
+.statusbar a { color: #034; text-decoration: underline; }
+
+/*
+ * Transparent overlay shown ONLY while a floating window is being dragged.
+ * It sits above the iframes so fast mouse moves keep firing on the parent
+ * document instead of being swallowed by an iframe (the title bar's own look
+ * is left untouched).
+ */
+.drag-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: none;
+    cursor: move;
+    background: transparent;
+}
+.drag-overlay.active { display: block; }
 
 /* Hide some chips on narrow screens. */
 @media (max-width: 850px) { #responsiveDiv { display: none; } }

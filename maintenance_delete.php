@@ -6,7 +6,7 @@ require_once __DIR__ . '/includes/helpers.php';
 /** Files in uploads/ not referenced by any cart. */
 function getUnreferencedFiles(): array
 {
-    $referenced = ['0.mp3'];
+    $referenced = ['0.mp3', '00.mp3']; // never delete the placeholder/keepalive clips
     foreach (load_carts() as $line) {
         $parts = explode('|', $line);
         if (isset($parts[1])) {
@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_delete'])) {
     $unreferenced = getUnreferencedFiles();
     foreach ($unreferenced as $file) {
         $path = upload_path($file);
-        if ($file !== '0.mp3' && file_exists($path)) {
+        if ($file !== '0.mp3' && $file !== '00.mp3' && file_exists($path)) {
             unlink($path);
         }
     }

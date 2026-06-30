@@ -32,6 +32,20 @@
     const DATA_URL = CONFIG.dataUrl;
     const itemsPerPage = CONFIG.itemsPerPage;
 
+    // Single shared WebAudio context. Browsers cap the number of AudioContexts
+    // (~6 in Chrome), so creating one per button would silently fail once there
+    // are more than a few carts — which broke both the level meter and the
+    // preload hack. One shared context, many MediaElementSource nodes, is fine.
+    let _audioCtx = null;
+    function getAudioContext() {
+        if (!_audioCtx) {
+            _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        return _audioCtx;
+    }
+    // Resume the context on the first user gesture (autoplay policy).
+    document.addEventListener('click', () => getAudioContext().resume(), { once: true });
+
     const colorMapping = {
         '1': '#007bff',
         '2': '#4dbf49',
@@ -272,7 +286,7 @@
         levelMeterCanvas.width = 50;
         levelMeterCanvas.height = 10;
 
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const audioContext = getAudioContext();
         const analyser = audioContext.createAnalyser();
         const source = audioContext.createMediaElementSource(audio);
         source.connect(analyser);
@@ -441,6 +455,7 @@
     function initContextMenu() {
         const contextMenu = document.getElementById('context-menu');
         const playAtButton = document.getElementById('play-at-button');
+        const cancelTimersButton = document.getElementById('cancel-timers-button');
         if (!contextMenu || !playAtButton) return;
 
         let selectedButton = null;
@@ -452,6 +467,22 @@
             const total = Math.floor(ms / 1000);
             return `${Math.floor(total / 60).toString().padStart(2, '0')}:${(total % 60).toString().padStart(2, '0')}`;
         };
+
+        // Cancel every scheduled "play at top of hour" timer at once.
+        const cancelAllTimers = () => {
+            activeTimers.forEach((t) => clearTimeout(t));
+            countdownIntervals.forEach((i) => clearInterval(i));
+            activeTimers.clear();
+            countdownIntervals.clear();
+            timerActiveButton = null;
+            document.querySelectorAll('.clock-icon').forEach((el) => el.remove());
+        };
+        if (cancelTimersButton) {
+            cancelTimersButton.addEventListener('click', () => {
+                cancelAllTimers();
+                contextMenu.style.display = 'none';
+            });
+        }
 
         document.addEventListener('contextmenu', (event) => {
             const button = event.target.closest('.button, .buttonext');
@@ -481,6 +512,15 @@
                 playAtButton.disabled = true;
                 playAtButton.style.opacity = 0.5;
                 playAtButton.textContent = 'Timer active';
+            }
+
+            // "Cancel all timers" is offered on every right-click; only enabled
+            // when at least one timer is scheduled.
+            if (cancelTimersButton) {
+                const has = activeTimers.size > 0;
+                cancelTimersButton.disabled = !has;
+                cancelTimersButton.style.opacity = has ? 1 : 0.5;
+                cancelTimersButton.textContent = has ? `Cancel all timers (${activeTimers.size})` : 'No active timers';
             }
 
             document.addEventListener('click', () => { contextMenu.style.display = 'none'; }, { once: true });
