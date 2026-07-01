@@ -521,15 +521,18 @@
     }
 
     // ---- drag & drop reorder (block-aware, container-delegated) -----------
-    // Delegating dragover/drop to the LIST CONTAINER (rather than each row) is
-    // what lets a drop register in the empty space below the last item — and
-    // using the exact same "insertion index" for both the ghost preview and the
-    // actual move keeps the two perfectly in sync.
-    let dragBlock = null, dropGhost = null, dropBlocks = [];
-    function removeDropGhost() { if (dropGhost && dropGhost.parentNode) dropGhost.parentNode.removeChild(dropGhost); dropGhost = null; }
-    // Insertion index (a position BETWEEN blocks, 0..dropBlocks.length) for a
-    // given pointer Y, based on the midpoint of each rendered block's node
-    // (the ghost preview itself is excluded — it carries no data-from).
+    // Deliberately DOESN'T touch the DOM during the drag — no cloned "ghost"
+    // row, no hiding the source. Both of those fight native HTML5 drag: hiding
+    // the drag source (or restructuring the list under the cursor on every
+    // dragover) makes browsers cancel the drag, so most drags never registered.
+    // Instead: dim the source in place, draw a drop-line with a CSS class only
+    // (no reflow, no node moves), and do the actual reorder + re-render once on
+    // drop (mouse release). Delegating dragover/drop to the LIST CONTAINER lets
+    // a drop still register in the empty space below the last row.
+    let dragBlock = null, dropBlocks = [], dropIdx = -1;
+    // Insertion index (a position BETWEEN blocks, 0..N) for a given pointer Y,
+    // from the midpoint of each rendered block. The dragged source stays in
+    // place (just dimmed), so it's included — consistent with dropBlocks.
     function insertionIndexAt(list, clientY) {
         const nodes = [...list.children].filter((n) => n.dataset.from !== undefined);
         for (let i = 0; i < nodes.length; i++) {
@@ -537,6 +540,19 @@
             if (clientY < rect.top + rect.height / 2) return i;
         }
         return nodes.length; // past the last row -> end of the list
+    }
+    function clearDropMarks() {
+        el('autoList').querySelectorAll('.drop-before, .drop-after').forEach((n) => n.classList.remove('drop-before', 'drop-after'));
+    }
+    // Paint the drop-line at insertion index `idx` (before that block, or after
+    // the last one when idx is past the end) using inset box-shadow — no layout
+    // change, so it can't disturb the in-flight drag.
+    function paintDropLine(list, idx) {
+        clearDropMarks();
+        const nodes = [...list.children].filter((n) => n.dataset.from !== undefined);
+        if (!nodes.length) return;
+        if (idx >= nodes.length) nodes[nodes.length - 1].classList.add('drop-after');
+        else nodes[idx].classList.add('drop-before');
     }
     function reorderBlock(src, insertBlockIndex) {
         const srcCount = src.to - src.from + 1;
@@ -553,67 +569,37 @@
     function attachDrag(node, block) {
         node.dataset.from = block.from;
         node.draggable = !(state.locked || state.running);
-        let hideRaf = 0; // pending "hide the original" frame for THIS row
         node.addEventListener('dragstart', (e) => {
             // Native drag should only ever start from the primary (left)
             // button — guards against a right-click (which shouldn't drag at
             // all) being misread as a drag start on some browser/OS combos.
             if (e.button !== 0) { e.preventDefault(); return; }
-            dragBlock = block; dropBlocks = blocks();
+            dragBlock = block; dropBlocks = blocks(); dropIdx = -1;
             e.dataTransfer.effectAllowed = 'move';
             try { e.dataTransfer.setData('text/plain', ''); } catch (x) {}
-            // A translucent clone of what's being dragged, previewed at the
-            // insertion point — reads more like a real reorder than a bare line.
-            dropGhost = node.cloneNode(true);
-            dropGhost.classList.remove('dragging');
-            dropGhost.classList.add('auto-ghost');
-            dropGhost.removeAttribute('draggable');
-            delete dropGhost.dataset.from;
-            // Insert the ghost synchronously (safe — it's a new sibling, not
-            // the drag source itself), but defer hiding the original to the
-            // next animation frame rather than doing it synchronously here.
-            // .dragging is display:none, and browsers (Chromium in particular)
-            // capture the native drag-image snapshot from the source element
-            // right after this handler returns; hiding it synchronously makes
-            // the source vanish before that snapshot, which cancels the whole
-            // drag outright. rAF fires after the snapshot but still within a
-            // single frame (~16ms) — imperceptible, unlike setTimeout(0) which
-            // can lag further behind on a busy event loop (the actual "extra
-            // item visible" flash that prompted this change in the first place).
-            node.after(dropGhost);
-            hideRaf = requestAnimationFrame(() => {
-                hideRaf = 0;
-                // Guard against a tiny/instant drag whose dragend already fired
-                // in THIS same frame (before the rAF ran): hiding now would
-                // strand the row display:none with no cleanup left, so it would
-                // vanish until the next render(). Only hide if the drag is still
-                // live.
-                if (dragBlock) node.classList.add('dragging');
-            });
+            node.classList.add('dragging'); // dim only — stays in place & in the DOM
         });
         node.addEventListener('dragend', () => {
-            // Cancel a still-pending hide so it can't fire AFTER we've cleaned
-            // up (the race that made a barely-dragged row disappear).
-            if (hideRaf) { cancelAnimationFrame(hideRaf); hideRaf = 0; }
             node.classList.remove('dragging');
-            removeDropGhost();
-            dragBlock = null;
+            clearDropMarks();
+            dragBlock = null; dropIdx = -1;
         });
     }
     function initListDragDrop() {
         const list = el('autoList');
         list.addEventListener('dragover', (e) => {
-            if (!dragBlock || !dropGhost) return;
+            if (!dragBlock) return;
             e.preventDefault();
             const idx = insertionIndexAt(list, e.clientY);
-            const nodes = [...list.children].filter((n) => n.dataset.from !== undefined);
-            if (idx >= nodes.length) list.appendChild(dropGhost); else nodes[idx].before(dropGhost);
+            if (idx === dropIdx) return; // only repaint when the target actually moves
+            dropIdx = idx;
+            paintDropLine(list, idx);
         });
         list.addEventListener('drop', (e) => {
             if (!dragBlock) return;
             e.preventDefault();
             const idx = insertionIndexAt(list, e.clientY);
-            removeDropGhost();
+            clearDropMarks();
             reorderBlock(dragBlock, idx);
         });
     }

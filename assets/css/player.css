@@ -308,9 +308,11 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .auto-pop-colon { font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 800; color: var(--text-tertiary); }
 .auto-pop-ok { width: 100%; height: 52px; margin-top: 2px; border: none; border-radius: 10px; cursor: pointer; background: var(--cyan-tint); color: var(--cyan-text); border: 1px solid var(--cyan-border); font-weight: 800; font-size: 18px; letter-spacing: 0.1em; }
 .auto-pop-ok:hover { background: rgba(52, 195, 212, 0.24); }
-/* Ghost drag preview: a translucent clone of the dragged item shown at the
-   insertion point — reads as a real reorder rather than a bare guide line. */
-.auto-ghost { opacity: 0.45; pointer-events: none; outline: 2px dashed rgba(255, 255, 255, 0.5); outline-offset: -2px; }
+/* Drop-line: a cyan edge on the block the drop would land before/after, shown
+   during a reorder drag. Inset box-shadow => no layout shift, so painting it on
+   every dragover can't disturb the in-flight native drag. */
+.auto-item.drop-before, .auto-group.drop-before { box-shadow: inset 0 3px 0 0 var(--cyan); }
+.auto-item.drop-after, .auto-group.drop-after { box-shadow: inset 0 -3px 0 0 var(--cyan); }
 
 /* Queue list — dark-themed scrollbar */
 .auto-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.16) transparent; }
@@ -326,9 +328,10 @@ body.layout-locked .title-bar-0002 { cursor: default; }
     background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0) 45%), var(--item-color, #333);
     color: #fff; cursor: grab; user-select: none;
 }
-/* Hidden entirely while dragging — only the ghost preview (below) shows,
-   so it reads as the real item being picked up and moved, not duplicated. */
-.auto-item.dragging { display: none; }
+/* While dragging: the source stays in place, just dimmed. NEVER display:none —
+   hiding the drag source mid-drag makes browsers cancel the drag (which is why
+   most drags stopped registering). */
+.auto-item.dragging { opacity: 0.4; }
 .auto-item.playing { box-shadow: inset 0 0 0 2px rgba(255,255,255,0.85); }
 .auto-item.played { filter: grayscale(1) brightness(0.55); }
 .auto-item .auto-progress { position: absolute; top: 0; left: 0; height: 100%; width: 0; background: rgba(255,255,255,0.28); pointer-events: none; z-index: 0; }
@@ -340,7 +343,7 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 
 /* Chained items: one bordered group, dragged & deleted together, one bin */
 .auto-group { position: relative; border-radius: 12px; border: 2px solid var(--chain, rgba(52,195,212,0.85)); padding: 4px; padding-right: 34px; display: flex; flex-direction: column; gap: 3px; background: rgba(52,195,212,0.06); cursor: grab; }
-.auto-group.dragging { display: none; }
+.auto-group.dragging { opacity: 0.4; }
 .auto-group .auto-item { cursor: inherit; border-radius: 7px; }
 .auto-group-trash {
     position: absolute; top: 0; right: 0; width: 30px; bottom: 0; border: none; background: none;
