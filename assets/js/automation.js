@@ -570,15 +570,19 @@
             dropGhost.classList.add('auto-ghost');
             dropGhost.removeAttribute('draggable');
             delete dropGhost.dataset.from;
-            // Insert the ghost AND hide the original in the same synchronous
-            // pass — doing these in two separate ticks (as a previous version
-            // did, deferring the hide via setTimeout) left a brief window where
-            // BOTH were visible (an extra-item flash) or NEITHER was (a gap),
-            // depending on the order. The browser's native drag-image snapshot
-            // is taken before this handler even runs, so hiding here doesn't
-            // risk it.
+            // Insert the ghost synchronously (safe — it's a new sibling, not
+            // the drag source itself), but defer hiding the original to the
+            // next animation frame rather than doing it synchronously here.
+            // .dragging is display:none, and browsers (Chromium in particular)
+            // capture the native drag-image snapshot from the source element
+            // right after this handler returns; hiding it synchronously makes
+            // the source vanish before that snapshot, which cancels the whole
+            // drag outright. rAF fires after the snapshot but still within a
+            // single frame (~16ms) — imperceptible, unlike setTimeout(0) which
+            // can lag further behind on a busy event loop (the actual "extra
+            // item visible" flash that prompted this change in the first place).
             node.after(dropGhost);
-            node.classList.add('dragging');
+            requestAnimationFrame(() => node.classList.add('dragging'));
         });
         node.addEventListener('dragend', () => { node.classList.remove('dragging'); removeDropGhost(); dragBlock = null; });
     }
@@ -719,11 +723,21 @@
     }, 250);
 
     // ---- toast ------------------------------------------------------------
-    // Floats just ABOVE the panel's header entirely — right by the time
-    // selector, but never overlapping the header button or the popover's own
-    // content below it (the OK button in particular), no matter how tall the
-    // popover gets. Anchored to the panel (absolute), not a fixed viewport
-    // offset, so it can't be swallowed by a hidden panel either.
+    // Overlays the header row itself (inset within .auto-header-wrap's own
+    // box) — right where the time selector is, replacing it for the ~1.8s
+    // the warning shows. Two other positions were tried and both lost:
+    // - A negative top (floating above the panel, into the topbar's space)
+    //   silently painted BEHIND the topbar: the topbar is a flex item with
+    //   z-index:1002 to stay above the board, a different stacking context
+    //   than the panel, and nothing here can out-rank that once outside the
+    //   panel's own bounds.
+    // - Sitting just below the header (top:100%, the same spot the popover
+    //   itself uses safely) put it over .auto-list's scrolling rows instead,
+    //   and lost to them despite a much higher z-index — scrollable overflow
+    //   containers get their own compositing layer in practice, and that
+    //   painted over a sibling's absolutely-positioned z-index in this case.
+    // Staying fully inside the header's own box sidesteps both: no overlap
+    // with the topbar above or the list below, so there's nothing to lose to.
     // pointer-events:none is essential: a merely-invisible (opacity:0) element
     // is still hit-tested and would silently eat clicks meant for whatever
     // sits underneath/behind it once faded (this is what made the header's
@@ -733,8 +747,8 @@
         let t = el('autoToast');
         if (!t) {
             t = document.createElement('div'); t.id = 'autoToast';
-            t.style.cssText = 'position:absolute; top:-46px; left:8px; right:8px; z-index:50; background:rgba(240,69,63,0.96); color:#fff; padding:10px 16px; border-radius:8px; font-size:13px; font-weight:700; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,0.4); transition:opacity .2s; pointer-events:none;';
-            el('automationPanel').appendChild(t);
+            t.style.cssText = 'position:absolute; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; background:rgba(240,69,63,0.96); color:#fff; padding:10px 16px; font-size:13px; font-weight:700; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,0.4); transition:opacity .2s; pointer-events:none;';
+            el('autoHeader').parentElement.appendChild(t);
         }
         t.textContent = msg; t.style.opacity = '1';
         clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.style.opacity = '0'; }, 1800);
