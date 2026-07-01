@@ -35,6 +35,20 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     <title>Cart Player &mdash; <?= htmlspecialchars(STATION_NAME) ?></title>
     <link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg">
     <link rel="stylesheet" href="assets/css/player.css">
+    <script>
+        // Stable per-machine ID, generated once and kept in localStorage. Shared
+        // with the keep-alive iframe (same origin), so every frontend stamps its
+        // own ID on the server heartbeat log and one machine can tell itself
+        // apart from the others. Seeded here in <head> so it exists before the
+        // keep-alive iframe's first heartbeat.
+        window.MACHINE_ID = (() => {
+            try {
+                let id = localStorage.getItem('cartPlayerMachineId');
+                if (!id) { id = 'PL-' + Math.random().toString(36).slice(2, 6).toUpperCase(); localStorage.setItem('cartPlayerMachineId', id); }
+                return id;
+            } catch (e) { return 'PL-????'; }
+        })();
+    </script>
 </head>
 <body>
 
@@ -290,23 +304,32 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     <!-- Ticker -->
     <div class="statuses-bar">
         <?php if (is_admin() || is_dj()): ?>
-            <span class="ticker-chip">
+            <span class="ticker-chip is-auth">
                 <a class="chip-main" href="<?= is_admin() ? 'admin.php' : 'dj.php' ?>" title="Open management">
                     <span class="avatar"><i class="ph-fill ph-user"></i></span>
-                    <?= is_admin() ? 'Admin' : 'DJ' ?>
-                    <i class="ph ph-gear"></i>
+                    <span class="chip-reveal"><?= is_admin() ? 'Admin' : 'DJ' ?> <i class="ph ph-gear"></i></span>
                 </a>
-                <a class="logout-link" href="logout.php">Log out</a>
+                <a class="logout-link chip-reveal" href="logout.php">Log out</a>
             </span>
         <?php else: ?>
-            <a class="ticker-chip" href="login.php">
+            <a class="ticker-chip is-guest" href="login.php">
                 <span class="avatar"><i class="ph-fill ph-user"></i></span>
-                Sign in
+                <span class="chip-reveal">Sign in</span>
             </a>
         <?php endif; ?>
-        <span class="status-pill" id="connectionPill" title="Server reachability (heartbeat ping)"><span class="pulse-dot"></span><span id="connectionLabel">CONNECTED</span></span>
-        <span class="status-pill audio" id="audioPill" title="Silent keep-alive clip keeping the audio device warm"><span class="pulse-dot"></span><span id="audioLabel">AUDIO STBY</span></span>
+        <span class="status-pill" id="connectionPill" role="button" tabindex="0"><span class="pulse-dot"></span><span class="status-label" id="connectionLabel">CONNECTED</span></span>
+        <span class="status-pill audio" id="audioPill" role="button" tabindex="0"><span class="pulse-dot"></span><span class="status-label" id="audioLabel">AUDIO ENGINE KEEP-ALIVE ON</span></span>
         <span class="ticker-msg"><?= $statusText !== '' ? htmlspecialchars($statusText, ENT_QUOTES, 'UTF-8') : 'Welcome to the Web-based Cart Player demo &mdash; right-click a cart to schedule it for the top of the hour.' ?></span>
+    </div>
+
+    <!-- Small log popups opened by clicking the footer status dots. -->
+    <div class="log-popup" id="pingLog" hidden>
+        <div class="log-popup-head"><span class="log-popup-title">Server ping</span><button type="button" class="log-popup-x" aria-label="Close"><i class="ph ph-x"></i></button></div>
+        <div class="log-popup-body" id="pingLogBody"></div>
+    </div>
+    <div class="log-popup" id="heartbeatLog" hidden>
+        <div class="log-popup-head"><span class="log-popup-title">Audio keep-alive &middot; heartbeat log</span><button type="button" class="log-popup-x" aria-label="Close"><i class="ph ph-x"></i></button></div>
+        <div class="log-popup-body" id="heartbeatLogBody"></div>
     </div>
 
     <script>
@@ -387,9 +410,85 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 const pill = document.getElementById('audioPill');
                 const active = data.audio === 'active';
                 pill.classList.toggle('standby', !active);
-                document.getElementById('audioLabel').textContent = active ? 'AUDIO STBY' : 'AUDIO OFF';
+                document.getElementById('audioLabel').textContent = active ? 'AUDIO ENGINE KEEP-ALIVE ON' : 'AUDIO ENGINE KEEP-ALIVE OFF';
             }
         });
+
+        // --- Status log popups. Clicking a footer dot drops up a small log:
+        //   CONNECTED    -> the client-side server-ping results (with latency).
+        //   AUDIO K-ALIVE -> the server "heartbeat" log (log-keep-alive.php GET).
+        (() => {
+            const MAX = 60;
+            const pings = [];          // rolling client-side ping buffer
+            let hbTimer = null;        // heartbeat-log refresh while its popup is open
+            const p2 = (n) => String(n).padStart(2, '0');
+            const clock = (ms) => { const d = new Date(ms); return `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`; };
+            const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+            const isHidden = (id) => document.getElementById(id).hidden;
+
+            function renderPing() {
+                const body = document.getElementById('pingLogBody');
+                if (!pings.length) { body.innerHTML = '<div class="log-popup-empty">Waiting for the first ping&hellip;</div>'; return; }
+                body.innerHTML = pings.slice().reverse().map((e) =>
+                    `<div class="log-popup-row ${e.online ? 'ok' : 'fail'}"><span class="t">${clock(e.ts)}</span>` +
+                    `<span class="s">${e.online ? (e.latency != null ? e.latency + ' ms' : 'online') : 'unreachable'}</span></div>`
+                ).join('');
+            }
+            async function loadHeartbeat() {
+                const body = document.getElementById('heartbeatLogBody');
+                try {
+                    const r = await fetch('log-keep-alive.php?tail=60', { cache: 'no-store' });
+                    const entries = (await r.json()).entries || [];
+                    if (!entries.length) { body.innerHTML = '<div class="log-popup-empty">No heartbeats logged yet&hellip;</div>'; return; }
+                    body.innerHTML = entries.slice().reverse().map((e) => {
+                        const fail = /fail/i.test(e.message);
+                        const d = new Date(e.timestamp);
+                        const t = isNaN(d.getTime()) ? esc(e.timestamp) : clock(d.getTime());
+                        const mine = e.machineId && e.machineId === window.MACHINE_ID;
+                        const id = esc(e.machineId || '—') + (mine ? ' (me)' : '');
+                        return `<div class="log-popup-row ${fail ? 'fail' : 'ok'}${mine ? ' mine' : ''}">` +
+                            `<span class="t">${t}</span><span class="mid">${id}</span><span class="s">${esc(e.message)}</span></div>`;
+                    }).join('');
+                } catch (err) {
+                    body.innerHTML = '<div class="log-popup-empty">Could not load the heartbeat log.</div>';
+                }
+            }
+            function closeAll() {
+                document.getElementById('pingLog').hidden = true;
+                document.getElementById('heartbeatLog').hidden = true;
+                if (hbTimer) { clearInterval(hbTimer); hbTimer = null; }
+            }
+            function toggle(id) {
+                const wasOpen = !isHidden(id);
+                closeAll();
+                if (wasOpen) return;                       // clicking the same dot closes it
+                document.getElementById(id).hidden = false;
+                if (id === 'pingLog') renderPing();
+                if (id === 'heartbeatLog') { loadHeartbeat(); hbTimer = setInterval(loadHeartbeat, 5000); }
+            }
+
+            const connPill = document.getElementById('connectionPill');
+            const audioPill = document.getElementById('audioPill');
+            connPill.addEventListener('click', () => toggle('pingLog'));
+            audioPill.addEventListener('click', () => toggle('heartbeatLog'));
+            [connPill, audioPill].forEach((el) => el.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
+            }));
+            document.querySelectorAll('.log-popup-x').forEach((b) => b.addEventListener('click', closeAll));
+            document.addEventListener('click', (e) => {
+                if (e.target.closest('.log-popup') || e.target.closest('#connectionPill') || e.target.closest('#audioPill')) return;
+                closeAll();
+            });
+
+            // Buffer each ping (the parent already receives these every 10s).
+            window.addEventListener('message', (event) => {
+                const d = event.data;
+                if (!d || d.source !== 'keep-alive' || !d.connection) return;
+                pings.push({ ts: Date.now(), online: d.connection === 'online', latency: d.latencyMs });
+                if (pings.length > MAX) pings.shift();
+                if (!isHidden('pingLog')) renderPing();
+            });
+        })();
 
         // --- iframe section selectors.
         // Keep the main board in fit mode (responsive + empty-row compaction +

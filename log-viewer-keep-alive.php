@@ -10,11 +10,12 @@ $logsByDate = [];
 if (file_exists($logFile)) {
     $logEntries = file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     foreach ($logEntries as $entry) {
-        // Match the new log format with IP
-        preg_match('/\[(.*?)\] IP: (.*?) - (.*)/', $entry, $matches);
+        // Match the log format, with an optional machine ID (older lines omit it).
+        preg_match('/\[(.*?)\](?: ID: (\S+))? IP: (.*?) - (.*)/', $entry, $matches);
         $timestamp = $matches[1] ?? 'Unknown'; // Extract timestamp
-        $ip = $matches[2] ?? 'Unknown'; // Extract IP address
-        $action = $matches[3] ?? 'Unknown'; // Extract action
+        $machineId = ($matches[2] ?? '') !== '' ? $matches[2] : '—'; // Machine ID
+        $ip = $matches[3] ?? 'Unknown'; // Extract IP address
+        $action = $matches[4] ?? 'Unknown'; // Extract action
 
         // Extract the date part from the timestamp
         $date = explode('T', $timestamp)[0] ?? 'Unknown';
@@ -22,6 +23,7 @@ if (file_exists($logFile)) {
         // Group by date
         $logsByDate[$date][] = [
             'timestamp' => $timestamp,
+            'machineId' => $machineId,
             'ip' => $ip,
             'action' => $action,
         ];
@@ -116,7 +118,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_log'])) {
         <table>
     <thead>
         <tr>
-            <th>ID</th>
+            <th>Machine</th>
+            <th>IP</th>
             <th>Action</th>
             <th>Date</th>
         </tr>
@@ -124,6 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_log'])) {
     <tbody>
         <?php foreach ($entries as $entry): ?>
             <tr>
+                <td><?= htmlspecialchars($entry['machineId']) ?></td>
                 <td><?= htmlspecialchars($entry['ip']) ?></td>
                 <td><?= htmlspecialchars($entry['action']) ?></td>
                 <td>

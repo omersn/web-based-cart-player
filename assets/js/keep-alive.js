@@ -61,16 +61,25 @@ document.addEventListener('DOMContentLoaded', () => {
             notifyParent({ connection: 'offline' });
             return;
         }
+        const t0 = performance.now();
         fetch(`keep-alive.php?ping=${Date.now()}`, { method: 'HEAD', cache: 'no-store' })
             .then(() => {
                 setIndicatorGreen();
-                notifyParent({ connection: 'online' });
+                // latencyMs lets the parent's ping-log popup show real round-trip times.
+                notifyParent({ connection: 'online', latencyMs: Math.round(performance.now() - t0) });
             })
             .catch(() => {
                 setIndicatorOffline();
                 notifyParent({ connection: 'offline' });
             });
     };
+
+    // This frontend's stable machine ID, seeded by the parent page and shared
+    // via same-origin localStorage — stamped on each heartbeat so the server log
+    // distinguishes multiple frontends on one backend.
+    const machineId = (() => {
+        try { return localStorage.getItem('cartPlayerMachineId') || 'unknown'; } catch (e) { return 'unknown'; }
+    })();
 
     // Report an audio heartbeat (or failure) to the server log.
     const logEvent = (message, isError = false) => {
@@ -82,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 event: 'keep-alive',
+                machineId,
                 message,
                 isError,
                 timestamp: new Date().toISOString(),

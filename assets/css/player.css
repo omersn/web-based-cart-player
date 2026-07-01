@@ -573,24 +573,82 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .icon-btn.is-active .status-dot.red { background: #f0453f; opacity: 1; box-shadow: 0 0 6px rgba(240, 69, 63, 0.75); }
 
 .transport-cluster { display: flex; align-items: center; gap: 10px; }
+/* Status indicators: just a coloured dot centred in a small square. Hovering
+   expands the square and slides its label open. Colour = state (green online,
+   amber keep-alive, grey when off); the square itself stays neutral. */
 .status-pill {
-    display: inline-flex; align-items: center; gap: 8px;
-    height: 32px; padding: 0 12px; border-radius: 8px;
+    display: inline-flex; align-items: center; box-sizing: border-box;
+    height: 32px; padding: 0 11px; border-radius: 8px;         /* 1px border + 11 + 8px dot + 11 + 1px = 32 -> square */
+    overflow: hidden; white-space: nowrap;
     font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
-    background: var(--green-tint); border: 1px solid var(--green-border); color: var(--green-text);
+    background: var(--raised); border: 1px solid var(--hairline); color: var(--green-text);
+    cursor: pointer; transition: border-color 0.2s ease;   /* click -> log popup */
 }
 .status-pill .pulse-dot {
+    flex: 0 0 auto;
     width: 8px; height: 8px; border-radius: 50%; background: var(--green-dot);
     animation: livePulse 1.6s infinite;
 }
-.status-pill.standby { background: rgba(255, 255, 255, 0.05); border-color: var(--hairline); color: var(--text-secondary); }
+/* Label collapsed to nothing by default (only the dot shows); slides + fades
+   open on hover. Animating max-width lets the square grow smoothly with it. */
+.status-pill .status-label {
+    display: inline-block; max-width: 0; opacity: 0; margin-left: 0;
+    overflow: hidden; white-space: nowrap;
+    transition: max-width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+                opacity 0.22s ease, margin-left 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.status-pill:hover { border-color: var(--green-border); }
+.status-pill:hover .status-label { max-width: 260px; opacity: 1; margin-left: 8px; }
+
+/* Offline / idle: grey, non-pulsing dot. */
+.status-pill.standby { color: var(--text-secondary); }
 .status-pill.standby .pulse-dot { background: var(--text-tertiary); animation: none; }
-/* Audio keep-alive pill: amber "standby" look while the silent clip runs, to
-   read as distinct from the green connection pill. */
-.status-pill.audio { background: rgba(224, 165, 43, 0.14); border-color: rgba(224, 165, 43, 0.35); color: #e8b556; }
+.status-pill.standby:hover { border-color: var(--hairline); }
+/* Audio keep-alive: amber, to read as distinct from the green connection dot. */
+.status-pill.audio { color: #e8b556; }
 .status-pill.audio .pulse-dot { background: var(--amber); }
-.status-pill.audio.standby { background: rgba(255, 255, 255, 0.05); border-color: var(--hairline); color: var(--text-secondary); }
+.status-pill.audio:hover { border-color: rgba(224, 165, 43, 0.45); }
+.status-pill.audio.standby { color: var(--text-secondary); }
 .status-pill.audio.standby .pulse-dot { background: var(--text-tertiary); animation: none; }
+.status-pill.audio.standby:hover { border-color: var(--hairline); }
+
+/* Small log window that drops up from a footer status dot. */
+.log-popup {
+    position: fixed; left: 16px; bottom: 52px; z-index: 6000;
+    width: 360px; max-width: calc(100vw - 32px); max-height: 300px;
+    display: flex; flex-direction: column; overflow: hidden;
+    background: #12161c; border: 1px solid var(--hairline); border-radius: 10px;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6);
+}
+.log-popup[hidden] { display: none; }
+.log-popup-head {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 8px 8px 12px; background: var(--window-header); border-bottom: 1px solid var(--hairline);
+}
+.log-popup-title {
+    font-family: 'Assistant', Arial, sans-serif; font-weight: 700; font-size: 11px;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);
+}
+.log-popup-x {
+    width: 22px; height: 22px; border: none; border-radius: 5px; cursor: pointer;
+    background: none; color: var(--text-tertiary);
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+}
+.log-popup-x:hover { background: var(--raised); color: #fff; }
+.log-popup-body {
+    flex: 1 1 auto; overflow-y: auto; padding: 8px 12px;
+    display: flex; flex-direction: column; gap: 3px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5;
+    scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.16) transparent;
+}
+.log-popup-row { display: flex; gap: 10px; white-space: nowrap; }
+.log-popup-row .t { flex: 0 0 auto; color: var(--text-tertiary); }
+.log-popup-row .mid { flex: 0 0 auto; color: var(--text-secondary); }         /* machine ID */
+.log-popup-row.mine .mid { color: var(--cyan-text); font-weight: 700; }        /* this machine */
+.log-popup-row .s { overflow: hidden; text-overflow: ellipsis; }
+.log-popup-row.ok .s { color: var(--green-text); }
+.log-popup-row.fail .s { color: #f0857f; }
+.log-popup-empty { color: var(--text-tertiary); padding: 4px 0; }
 
 .btn-stop {
     display: inline-flex; align-items: center; gap: 8px;
@@ -628,24 +686,39 @@ body.layout-locked .title-bar-0002 { cursor: default; }
     unicode-bidi: plaintext;
     flex: 0 0 auto;
 }
+/* Collapses to just the user icon in a square; hovering slides the rest open
+   (role + gear + log out, or "Sign in") — same reveal as the status dots. */
 .ticker-chip {
-    display: inline-flex; align-items: center; gap: 8px;
-    height: 32px; padding: 0 12px 0 6px; border-radius: 10px;
+    display: inline-flex; align-items: center;
+    height: 32px; padding: 0 3px; border-radius: 10px;      /* 1 + 3 + 24px avatar + 3 + 1 = 32 -> square */
     background: var(--raised); border: 1px solid var(--hairline);
     color: var(--text-primary); font-weight: 700; font-size: 13px;
     text-decoration: none; flex-shrink: 0; font-family: 'Assistant', Arial, sans-serif;
+    overflow: hidden; white-space: nowrap; transition: border-color 0.2s ease;
 }
+.ticker-chip:hover { border-color: var(--cyan-border); }
 .ticker-chip .avatar {
+    flex: 0 0 auto;
     width: 24px; height: 24px; border-radius: 50%;
-    background: var(--cyan-tint); color: var(--cyan-text);
     display: flex; align-items: center; justify-content: center; font-size: 13px;
 }
-/* The chip's "manage" area (avatar + role) links to admin.php / dj.php — the
-   old top-bar Admin button now lives here (G). */
-.ticker-chip .chip-main { display: inline-flex; align-items: center; gap: 8px; color: inherit; text-decoration: none; }
+/* User icon: grey when logged out, blue when admin / DJ. */
+.ticker-chip.is-guest .avatar { background: rgba(255, 255, 255, 0.06); color: var(--text-tertiary); }
+.ticker-chip.is-auth  .avatar { background: rgba(74, 144, 226, 0.18); color: #7fb4f5; }
+/* Everything past the avatar collapses to nothing and slides open on hover. */
+.ticker-chip .chip-reveal {
+    display: inline-flex; align-items: center; gap: 6px;
+    max-width: 0; opacity: 0; margin-left: 0;
+    overflow: hidden; white-space: nowrap;
+    transition: max-width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+                opacity 0.22s ease, margin-left 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ticker-chip:hover .chip-reveal { max-width: 200px; opacity: 1; margin-left: 8px; }
+/* The chip's "manage" area (avatar + role) links to admin.php / dj.php. */
+.ticker-chip .chip-main { display: inline-flex; align-items: center; color: inherit; text-decoration: none; }
 .ticker-chip .chip-main:hover { color: var(--cyan-text); }
 .ticker-chip .chip-main i { font-size: 15px; opacity: 0.8; }
-.ticker-chip .logout-link { color: var(--text-tertiary); font-weight: 400; font-size: 11px; text-decoration: underline; margin-left: 4px; }
+.ticker-chip .logout-link { color: var(--text-tertiary); font-weight: 400; font-size: 11px; text-decoration: underline; }
 
 /* The Connected/Standby pill now sits in the ticker next to the user chip (H). */
 .statuses-bar .status-pill { flex-shrink: 0; }
