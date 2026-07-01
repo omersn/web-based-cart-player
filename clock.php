@@ -8,9 +8,10 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
     <style>
         /*
-         * Broadcast clock: a conic-gradient ring that fills as the current
-         * hour elapses, with the live HH:MM in the middle and live :SS ticking
-         * underneath — a broadcast clock is only useful with real seconds.
+         * Broadcast clock: a conic-gradient ring that fills as the current hour
+         * elapses, live HH:MM in the middle, and a ring of 60 dots around it
+         * that light up green second by second (after Bodet-style broadcast/
+         * railway clocks) — a broadcast clock is only useful with real seconds.
          * Original implementation — built for this "studio" redesign, not
          * derived from the old dot-circle clock this file used to hold.
          */
@@ -37,6 +38,7 @@
             position: absolute;
             inset: 0;
             border-radius: 50%;
+            z-index: 0;
             background: conic-gradient(#f0453f var(--deg, 0deg), rgba(255, 255, 255, 0.07) var(--deg, 0deg) 360deg);
         }
         .ring::after {
@@ -45,43 +47,82 @@
             width: 170px;
             height: 170px;
             border-radius: 50%;
+            z-index: 1;
             background: #0a0c10;
         }
+        /* 60 dots evenly spaced on a ring of radius --sec-radius: each tick sits
+           at the top-centre of the container, then rotates around the
+           container's own centre (transform-origin) to fan out into a circle. */
+        .sec-ring {
+            --sec-radius: 72px;
+            position: absolute;
+            z-index: 2;
+            width: calc(var(--sec-radius) * 2);
+            height: calc(var(--sec-radius) * 2);
+            top: 50%; left: 50%;
+            margin-top: calc(var(--sec-radius) * -1);
+            margin-left: calc(var(--sec-radius) * -1);
+        }
+        .sec-ring .tick {
+            position: absolute;
+            top: 0; left: 50%;
+            width: 6px; height: 6px;
+            margin-left: -3px;
+            border-radius: 50%;
+            background: rgba(53, 196, 111, 0.18);
+            transform-origin: 50% var(--sec-radius);
+            transform: rotate(calc(var(--i) * 6deg));
+            transition: background-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .sec-ring .tick.lit { background: #35c46f; box-shadow: 0 0 5px rgba(53, 196, 111, 0.85); }
         .readout {
             position: relative;
-            z-index: 1;
+            z-index: 3;
             text-align: center;
             direction: ltr;
         }
         .readout .hm { font-size: 44px; font-weight: 700; color: #f2f5f8; line-height: 1; }
-        .readout .sec { font-size: 16px; font-weight: 600; color: #ff5b54; margin-top: 6px; }
 
         /* Compact sizing when docked (?dock=1) so the ring fits the short dock. */
         body.dock .ring { width: 150px; height: 150px; }
         body.dock .ring::after { width: 116px; height: 116px; }
+        body.dock .sec-ring { --sec-radius: 46px; }
+        body.dock .sec-ring .tick { width: 4px; height: 4px; margin-left: -2px; }
         body.dock .readout .hm { font-size: 30px; }
-        body.dock .readout .sec { font-size: 12px; margin-top: 4px; }
     </style>
 </head>
 <body class="<?= isset($_GET['dock']) ? 'dock' : '' ?>">
     <div class="ring" id="ring">
+        <div class="sec-ring" id="secRing"></div>
         <div class="readout">
             <div class="hm" id="hm">00:00</div>
-            <div class="sec" id="sec">:00</div>
         </div>
     </div>
 
     <script>
         const ring = document.getElementById('ring');
         const hm = document.getElementById('hm');
-        const sec = document.getElementById('sec');
+        const secRing = document.getElementById('secRing');
+
+        const ticks = [];
+        for (let i = 0; i < 60; i++) {
+            const tick = document.createElement('span');
+            tick.className = 'tick';
+            tick.style.setProperty('--i', i);
+            secRing.appendChild(tick);
+            ticks.push(tick);
+        }
 
         function update() {
             const now = new Date();
             const secondsIntoHour = now.getMinutes() * 60 + now.getSeconds();
+            const seconds = now.getSeconds();
 
             hm.textContent = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-            sec.textContent = `:${String(now.getSeconds()).padStart(2, '0')}`;
+
+            // Dots accumulate through the minute (0..current second lit), then
+            // reset together at the top of the next minute.
+            ticks.forEach((tick, i) => tick.classList.toggle('lit', i <= seconds));
 
             const deg = (secondsIntoHour / 3600) * 360;
             ring.style.setProperty('--deg', `${deg}deg`);

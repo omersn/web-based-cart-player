@@ -89,6 +89,10 @@
     // ---- time helpers -----------------------------------------------------
     function nextFullHour() { const d = new Date(); d.setHours(d.getHours() + 1, 0, 0, 0); return d; }
     function fmtClock(d) { return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
+    // Radio timing runs on seconds — the header and "Ends at" show them too.
+    // (fmtClock, above, stays minute-only for the typed field, which only ever
+    // lets you edit down to the minute.)
+    function fmtClockSec(d) { return `${fmtClock(d)}:${String(d.getSeconds()).padStart(2, '0')}`; }
     function fmtDur(sec) { sec = Math.max(0, Math.round(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; }
     // Countdown that grows an hours field when the start is more than an hour away.
     function fmtCountdown(sec) {
@@ -380,7 +384,7 @@
             e.stopPropagation();
             minList.hidden = true;
             hourList.hidden = !hourList.hidden;
-            if (!hourList.hidden) refreshPickerLive();
+            if (!hourList.hidden) { refreshPickerLive(); centerSelectedCombo(hourList); }
         });
 
         minList.innerHTML = '';
@@ -398,10 +402,16 @@
             e.stopPropagation();
             hourList.hidden = true;
             minList.hidden = !minList.hidden;
-            if (!minList.hidden) refreshPickerLive();
+            if (!minList.hidden) { refreshPickerLive(); centerSelectedCombo(minList); }
         });
 
         document.addEventListener('click', () => { hourList.hidden = true; minList.hidden = true; });
+    }
+    // Opening a combo scrolls its list so the currently selected value is
+    // centred, rather than always starting scrolled to the top.
+    function centerSelectedCombo(list) {
+        const sel = list.querySelector('button.sel');
+        if (sel) sel.scrollIntoView({ block: 'center' });
     }
     // Marks the next top-of-the-hour option (always — so it's the visible
     // default reference point even once something else is picked) and grays
@@ -508,7 +518,7 @@
         node.draggable = !(state.locked || state.running);
         node.addEventListener('dragstart', (e) => {
             dragBlock = block; dropBlocks = blocks();
-            node.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.effectAllowed = 'move';
             try { e.dataTransfer.setData('text/plain', ''); } catch (x) {}
             // A translucent clone of what's being dragged, previewed at the
             // insertion point — reads more like a real reorder than a bare line.
@@ -517,6 +527,10 @@
             dropGhost.classList.add('auto-ghost');
             dropGhost.removeAttribute('draggable');
             delete dropGhost.dataset.from;
+            // Hide the original a tick later — hiding it synchronously here
+            // risks the browser cancelling the drag before it captures its
+            // native drag-image snapshot.
+            setTimeout(() => node.classList.add('dragging'), 0);
         });
         node.addEventListener('dragend', () => { node.classList.remove('dragging'); removeDropGhost(); dragBlock = null; });
     }
@@ -588,7 +602,7 @@
         el('autoHeaderIcon').innerHTML = state.anchorMode === 'end' ? ICON.end : ICON.start;
         el('autoHeader').classList.toggle('end-mode', state.anchorMode === 'end');
         el('autoTimeLabel').textContent = state.anchorMode === 'end' ? 'To' : 'From';
-        el('autoTime').textContent = fmtClock(state.anchorTime);
+        el('autoTime').textContent = fmtClockSec(state.anchorTime);
         el('autoPopStart').classList.toggle('active', state.anchorMode === 'start');
         el('autoPopEnd').classList.toggle('active', state.anchorMode === 'end');
         syncPicker();
@@ -611,7 +625,7 @@
 
     function updateTimes() {
         const startsBlock = el('autoStartsBlock');
-        el('autoEndAt').textContent = fmtClock(actualEnd());
+        el('autoEndAt').textContent = fmtClockSec(actualEnd());
         if (state.running) {
             startsBlock.classList.remove('imminent');
             startsBlock.classList.add('live');

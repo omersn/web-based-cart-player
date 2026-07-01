@@ -238,8 +238,10 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .auto-header-icon { color: var(--text-secondary); display: flex; }
 .auto-header.end-mode .auto-header-icon { color: var(--amber); }
 /* Label and time share one font size (both read as part of the same statement). */
-.auto-header-label { font-size: 34px; font-weight: 700; color: var(--text-tertiary); text-align: right; white-space: nowrap; }
-.auto-header-time { font-size: 34px; font-weight: 800; line-height: 1; white-space: nowrap; }
+/* Sized to comfortably fit HH:MM:SS (seconds matter for radio) even on the
+   panel's narrowest width. */
+.auto-header-label { font-size: 27px; font-weight: 700; color: var(--text-tertiary); text-align: right; white-space: nowrap; }
+.auto-header-time { font-size: 27px; font-weight: 800; line-height: 1; white-space: nowrap; }
 .auto-header-caret { color: var(--text-tertiary); font-size: 18px; }
 /* Big, bold, industrial time picker — custom combo dropdowns (not the native OS
    picker) for hour / 15-min blocks, plus a typed field for a precise minute. */
@@ -247,8 +249,10 @@ body.layout-locked .title-bar-0002 { cursor: default; }
     position: absolute; top: calc(100% - 1px); left: 8px; right: 8px; z-index: 30;
     background: #171b21; border: 1px solid var(--hairline); border-radius: 12px;
     box-shadow: 0 18px 44px rgba(0,0,0,0.6); padding: 12px; display: flex; flex-direction: column; gap: 10px;
-    font-family: 'Assistant', Arial, sans-serif; max-height: calc(100vh - 190px); overflow-y: auto;
-    scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.16) transparent;
+    font-family: 'Assistant', Arial, sans-serif;
+    /* No overflow/max-height here: with the combos collapsed by default the
+       popover's own content is short, and clipping would cut off the open
+       combo list's dropdown (which has its own independent scroll below). */
 }
 .auto-pop[hidden] { display: none; }
 .auto-pop-modes { display: flex; gap: 8px; }
@@ -305,7 +309,9 @@ body.layout-locked .title-bar-0002 { cursor: default; }
     background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0) 45%), var(--item-color, #333);
     color: #fff; cursor: grab; user-select: none;
 }
-.auto-item.dragging { opacity: 0.4; }
+/* Hidden entirely while dragging — only the ghost preview (below) shows,
+   so it reads as the real item being picked up and moved, not duplicated. */
+.auto-item.dragging { display: none; }
 .auto-item.playing { box-shadow: inset 0 0 0 2px rgba(255,255,255,0.85); }
 .auto-item.played { filter: grayscale(1) brightness(0.55); }
 .auto-item .auto-progress { position: absolute; top: 0; left: 0; height: 100%; width: 0; background: rgba(255,255,255,0.28); pointer-events: none; z-index: 0; }
@@ -317,7 +323,7 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 
 /* Chained items: one bordered group, dragged & deleted together, one bin */
 .auto-group { position: relative; border-radius: 12px; border: 2px solid var(--chain, rgba(52,195,212,0.85)); padding: 4px; padding-right: 34px; display: flex; flex-direction: column; gap: 3px; background: rgba(52,195,212,0.06); cursor: grab; }
-.auto-group.dragging { opacity: 0.4; }
+.auto-group.dragging { display: none; }
 .auto-group .auto-item { cursor: inherit; border-radius: 7px; }
 .auto-group-trash {
     position: absolute; top: 0; right: 0; width: 30px; bottom: 0; border: none; background: none;
