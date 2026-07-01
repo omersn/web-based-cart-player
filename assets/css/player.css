@@ -256,6 +256,12 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .floating-container-0002.minimized:hover .window-restore { opacity: 1; }
 .window-restore:hover { background: rgba(0, 0, 0, 0.75); color: #fff; }
 
+/* Whole-area drag handle for the minimized (small) clock. Sits above the iframe
+   (which would swallow mousedown) but below the restore button. */
+.clock-mini-drag { display: none; position: absolute; inset: 0; z-index: 4; cursor: grab; }
+.floating-container-0002.minimized .clock-mini-drag { display: block; }
+.floating-container-0002.minimized .clock-mini-drag:active { cursor: grabbing; }
+
 /* ---- Loading overlay ----------------------------------------------------- */
 .overlay {
     position: fixed;

@@ -33,7 +33,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>Cart Player &mdash; <?= htmlspecialchars(STATION_NAME) ?></title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%2334c3d4'/%3E%3Ccircle cx='16' cy='16' r='12' fill='none' stroke='%2334c3d4' stroke-width='2' opacity='.5'/%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg">
     <link rel="stylesheet" href="assets/css/player.css">
 </head>
 <body>
@@ -109,6 +109,9 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     <!-- Draggable clock window -->
     <div class="floating-container-0002" id="floatingDiv2">
         <button class="window-restore" onclick="toggleMinimize('floatingDiv2')" title="Expand clock"><i class="ph ph-arrows-out-simple"></i></button>
+        <!-- When minimized (small clock), the whole area is a drag handle — the
+             iframe would otherwise swallow mousedown. -->
+        <div class="clock-mini-drag" id="clockMiniDrag"></div>
         <div class="title-bar-0002" id="titleBar2">
             <div class="window-select-wrap">
                 <select id="clock-select" class="window-select">
@@ -538,6 +541,8 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         }
         makeDraggable('.floating-container-0001', '.title-bar-0001', 'ids');
         makeDraggable('.floating-container-0002', '.title-bar-0002', 'clock');
+        // Minimized clock: the whole small-clock area is a drag handle too.
+        makeDraggable('.floating-container-0002', '.clock-mini-drag', 'clock');
         // The page is non-scrollable vertically; keep it pinned to the top so the
         // toolbar stays reachable. (CSS already positions the floating windows on-screen.)
         window.scrollTo(0, 0);
