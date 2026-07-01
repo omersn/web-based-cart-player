@@ -191,15 +191,21 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         <!-- Automation Playlist: scheduled auto-playback queue. Hidden until an
              item is sent here (right-click a cart); managed by automation.js. -->
         <aside class="automation-panel" id="automationPanel">
-            <!-- Big clickable time header (From/To + hour). Label/time/caret sit in
-                 fixed grid columns so switching From <-> To never shifts the time. -->
+            <!-- Time header. The o-> icon is its own toggle (flips From <-> To in
+                 one click); the label+time is a separate button that opens the
+                 picker. Both are centred as one unit with a fixed-width label, so
+                 the time never shifts when From <-> To flips. -->
             <div class="auto-header-wrap">
-                <button class="auto-header" id="autoHeader" title="Set start/end time">
-                    <span class="auto-header-icon" id="autoHeaderIcon"></span>
-                    <span class="auto-header-label" id="autoTimeLabel">From</span>
-                    <span class="auto-header-time" id="autoTime">--:--</span>
+                <div class="auto-header" id="autoHeaderRow">
+                    <button type="button" class="auto-anchor-toggle" id="autoAnchorToggle" title="Toggle start / end (From ↔ To)">
+                        <span class="auto-header-icon" id="autoHeaderIcon"></span>
+                    </button>
+                    <button type="button" class="auto-header-main" id="autoHeader" title="Set start / end time">
+                        <span class="auto-header-label" id="autoTimeLabel">From</span>
+                        <span class="auto-header-time" id="autoTime">--:--</span>
+                    </button>
                     <i class="ph ph-caret-down auto-header-caret"></i>
-                </button>
+                </div>
                 <div class="auto-pop" id="autoPop" hidden>
                     <div class="auto-pop-modes">
                         <button data-anchor="start" id="autoPopStart">START AT</button>

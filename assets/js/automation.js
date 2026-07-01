@@ -338,6 +338,18 @@
         el('autoPop').hidden = true;
         draft = null;
     }
+    // The o-> icon in the header: a one-click toggle between From (start-at) and
+    // To (end-at). Commits straight to the real schedule (it's NOT part of the
+    // draft popover) and re-renders every dependent display. Works in MANUAL
+    // too — the header stays interactive there, just muted.
+    function toggleAnchor() {
+        if (state.locked || state.running) return;
+        if (!el('autoPop').hidden) closePopDiscard(); // don't leave a stale draft behind
+        state.anchorMode = state.anchorMode === 'end' ? 'start' : 'end';
+        state.firedForThisSchedule = false; // new anchor -> re-arm AUTO
+        saveState();
+        render();
+    }
     function togglePop(force) {
         const pop = el('autoPop');
         const openNow = force != null ? force : pop.hidden;
@@ -624,10 +636,18 @@
                 if (rm) rm.addEventListener('click', (e) => { e.stopPropagation(); removeAt(block.from, block.to); });
                 return row;
             };
+            // Right-click anywhere on a block removes it (the whole chain, for a
+            // group) — a quick alternative to the trash button. removeAt keeps
+            // the locked/running guard, so it's a no-op once the batch is armed
+            // or on air. (The panel already suppresses the native context menu.)
+            const rightClickRemove = (node) => node.addEventListener('contextmenu', (e) => {
+                e.preventDefault(); e.stopPropagation(); removeAt(block.from, block.to);
+            });
             if (block.groupId == null) {
                 const idx = block.from;
                 const row = makeItemRow(block.items[0], idx);
                 attachDrag(row, block);
+                rightClickRemove(row);
                 list.appendChild(row);
             } else {
                 const g = document.createElement('div');
@@ -640,6 +660,7 @@
                 trash.addEventListener('click', (e) => { e.stopPropagation(); removeAt(block.from, block.to); });
                 g.appendChild(trash);
                 attachDrag(g, block);
+                rightClickRemove(g);
                 list.appendChild(g);
             }
         });
@@ -652,7 +673,10 @@
 
         // header
         el('autoHeaderIcon').innerHTML = state.anchorMode === 'end' ? ICON.end : ICON.start;
-        el('autoHeader').classList.toggle('end-mode', state.anchorMode === 'end');
+        el('autoHeaderRow').classList.toggle('end-mode', state.anchorMode === 'end');
+        // MANUAL: mute the schedule header (it isn't actively counting down) but
+        // keep it clickable — see the .sched-muted rule (opacity only).
+        el('autoHeaderRow').classList.toggle('sched-muted', state.mode === 'manual');
         el('autoTimeLabel').textContent = state.anchorMode === 'end' ? 'To' : 'From';
         // autoTime itself is set inside updateTimes() (below), since it needs
         // to fall back to "—:—" for a stale/elapsed schedule.
@@ -760,6 +784,7 @@
         buildPickerCombos();
         initListDragDrop();
         el('autoHeader').addEventListener('click', () => togglePop());
+        el('autoAnchorToggle').addEventListener('click', (e) => { e.stopPropagation(); toggleAnchor(); });
         el('autoPopStart').addEventListener('click', () => { if (draft) { draft.anchorMode = 'start'; syncDraftUI(); } });
         el('autoPopEnd').addEventListener('click', () => { if (draft) { draft.anchorMode = 'end'; syncDraftUI(); } });
         el('autoTimeTyped').addEventListener('input', onTyped);
@@ -776,7 +801,7 @@
         // right-click-triggered drag) instead of just being a no-op.
         el('automationPanel').addEventListener('contextmenu', (e) => e.preventDefault());
         document.addEventListener('click', (e) => {
-            if (!el('autoPop').hidden && !e.target.closest('#autoPop') && !e.target.closest('#autoHeader')) closePopDiscard();
+            if (!el('autoPop').hidden && !e.target.closest('#autoPop') && !e.target.closest('#autoHeaderRow')) closePopDiscard();
         });
         // Enter, anywhere inside the open picker, commits it (same as OK).
         el('autoPop').addEventListener('keydown', (e) => {

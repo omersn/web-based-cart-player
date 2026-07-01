@@ -229,23 +229,42 @@ body.layout-locked .title-bar-0002 { cursor: default; }
    time's on-screen position. A permanent tint marks this as the panel's most
    important control, like a section header. */
 .auto-header-wrap { flex: 0 0 auto; position: relative; border-bottom: 1px solid var(--hairline); }
+/* Centred assembly: [o-> toggle] [label + time], with the caret pinned right.
+   Everything is fixed-width, so nothing shifts when From <-> To flips. */
 .auto-header {
-    width: 100%; display: grid; grid-template-columns: 40px 100px 1fr 20px; align-items: center; column-gap: 10px;
-    padding: 16px; border: none; background: rgba(255, 255, 255, 0.045); cursor: pointer; text-align: left;
+    position: relative;
+    display: flex; align-items: center; justify-content: center; column-gap: 12px;
+    padding: 16px; background: rgba(255, 255, 255, 0.045);
     color: var(--text-strong); font-family: 'JetBrains Mono', monospace;
 }
-.auto-header:hover { background: var(--raised); }
-.auto-header-icon { color: var(--text-secondary); display: flex; }
-.auto-header.end-mode .auto-header-icon { color: var(--amber); }
-/* Label and time share one font size (both read as part of the same statement). */
-/* Sized to comfortably fit HH:MM:SS (seconds matter for radio) even on the
-   panel's narrowest width. min-width:0 stops a grid item's default auto
-   (min-content) sizing from forcing its track wider than the 1fr share —
-   without it, a long value could push part of the button's own content
-   outside its clickable box instead of just being clipped/ellipsized. */
-.auto-header-label { font-size: 27px; font-weight: 700; color: var(--text-tertiary); text-align: right; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.auto-header-time { font-size: 27px; font-weight: 800; line-height: 1; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.auto-header-caret { color: var(--text-tertiary); font-size: 18px; }
+/* o-> anchor toggle: a real button that flips From (start-at) <-> To (end-at)
+   in one click, sitting right beside the time it labels — not just an icon. */
+.auto-anchor-toggle {
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: none; cursor: pointer; padding: 5px; border-radius: 8px;
+    color: var(--text-secondary); flex: 0 0 auto;
+}
+.auto-anchor-toggle:hover { background: var(--raised); color: var(--text-primary); }
+.auto-header.end-mode .auto-anchor-toggle { color: var(--amber); }
+.auto-header-icon { display: flex; }
+/* The time-setting button: opens the picker. */
+.auto-header-main {
+    display: flex; align-items: baseline; column-gap: 10px;
+    border: none; background: none; cursor: pointer; padding: 4px 8px; border-radius: 8px;
+    color: var(--text-strong); font-family: 'JetBrains Mono', monospace;
+}
+.auto-header-main:hover { background: var(--raised); }
+/* Label and time share one font size (both read as part of the same statement),
+   sized to fit HH:MM:SS (seconds matter for radio) on the panel's narrowest
+   width. The label is a FIXED-WIDTH box, right-aligned so From/To always hugs
+   the time and its differing length can't shove the time sideways. */
+.auto-header-label { font-size: 27px; font-weight: 700; color: var(--text-tertiary); text-align: right; white-space: nowrap; width: 2.7em; flex: 0 0 auto; }
+.auto-header-time { font-size: 27px; font-weight: 800; line-height: 1; white-space: nowrap; }
+.auto-header-caret { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); font-size: 18px; pointer-events: none; }
+/* MANUAL mode: the schedule isn't actively counting down to an auto-fire, so the
+   header reads as muted — but stays fully interactive (you can still set the
+   From/To time and flip the anchor for when you switch back to AUTO). */
+.auto-header.sched-muted { opacity: 0.5; }
 /* Big, bold, industrial time picker — custom combo dropdowns (not the native OS
    picker) for hour / 15-min blocks, plus a typed field for a precise minute. */
 .auto-pop {
