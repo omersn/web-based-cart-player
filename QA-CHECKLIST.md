@@ -77,6 +77,9 @@ on the board to queue them. The panel appears on the right once at least one car
       start is back-timed so the batch **ends** exactly at the picked time.
 - [ ] `STARTS IN` counts down with hours shown for symmetry (e.g. `-0:41:34`).
 - [ ] All schedule readouts show seconds (`HH:MM:SS`).
+- [ ] The `STARTS IN` / `ENDS AT` values are **always the same font size** as each other and
+      **never overflow** their halves — even a wide countdown (e.g. `-23:56:20`) shrinks both to fit.
+      Verify at the panel's min and max widths.
 - [ ] A schedule set to the **past** shows `—:—` and drops to MANUAL — never a bogus ~24h countdown.
 
 ## 8. Locking & guards

@@ -363,7 +363,10 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .auto-times-block { flex: 1; text-align: center; padding: 12px 6px; min-width: 0; }
 .auto-times-block + .auto-times-block { border-left: 1px solid var(--hairline); }
 .auto-times-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-tertiary); }
-.auto-times-value { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--text-strong); line-height: 1.1; font-size: 32px; }
+/* font-size is set by fitTimes() in automation.js so both read-outs share one
+   size that shrinks to fit the wider of the two; 32px here is just the fallback
+   ceiling. nowrap so the fit math measures the full line, not a wrapped one. */
+.auto-times-value { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--text-strong); line-height: 1.1; font-size: 32px; white-space: nowrap; }
 .auto-times-block.imminent .auto-times-value { color: #f0453f; }
 .auto-times-block.live .auto-times-value { color: #f0453f; animation: nowBlink 1s steps(1) infinite; }
 @keyframes nowBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }

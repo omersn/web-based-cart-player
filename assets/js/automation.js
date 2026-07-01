@@ -692,13 +692,38 @@
             startsBlock.classList.add('live');
             startsBlock.querySelector('.auto-times-label').textContent = 'On air';
             el('autoCountdown').textContent = 'NOW';
-            return;
+        } else {
+            startsBlock.classList.remove('live');
+            startsBlock.querySelector('.auto-times-label').textContent = 'Starts in';
+            const secs = secsToStart();
+            el('autoCountdown').textContent = '-' + fmtCountdown(secs);
+            startsBlock.classList.toggle('imminent', secs <= 30);
         }
-        startsBlock.classList.remove('live');
-        startsBlock.querySelector('.auto-times-label').textContent = 'Starts in';
-        const secs = secsToStart();
-        el('autoCountdown').textContent = '-' + fmtCountdown(secs);
-        startsBlock.classList.toggle('imminent', secs <= 30);
+        fitTimes();
+    }
+    // Both "Starts in" / "Ends at" read-outs share ONE font size, shrunk just
+    // enough that the WIDER of the two fits its half-box (a countdown with hours
+    // and a leading "-", e.g. -23:35:41, is wider than a plain 20:00:00). Keeps
+    // them equal-sized and non-overflowing at any panel width. Cached on the
+    // two strings + box width so the common case (no change) skips the reflow.
+    let lastFitKey = '';
+    function fitTimes() {
+        const a = el('autoCountdown'), b = el('autoEndAt');
+        const blockA = a.parentElement, blockB = b.parentElement;
+        if (!blockA.clientWidth) return; // hidden (MANUAL) / not laid out yet
+        const key = a.textContent + '|' + b.textContent + '|' + blockA.clientWidth;
+        if (key === lastFitKey) return;
+        lastFitKey = key;
+        const BASE = 32, MIN = 13;
+        a.style.fontSize = b.style.fontSize = BASE + 'px';
+        let scale = 1;
+        [[a, blockA], [b, blockB]].forEach(([v, block]) => {
+            const cs = getComputedStyle(block);
+            const avail = block.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+            if (v.scrollWidth > 0 && avail > 0) scale = Math.min(scale, avail / v.scrollWidth);
+        });
+        const size = Math.max(MIN, Math.min(BASE, Math.floor(BASE * scale)));
+        a.style.fontSize = b.style.fontSize = size + 'px';
     }
 
     // ---- tick -------------------------------------------------------------
@@ -779,6 +804,8 @@
         el('autoPop').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') { e.preventDefault(); commitDraft(); }
         });
+        // Re-fit the two time read-outs when the panel width changes.
+        window.addEventListener('resize', fitTimes);
         loadState();
         render();
     }
