@@ -34,6 +34,51 @@
     };
     let idSeq = 1, groupSeq = 1, progressRaf = null;
 
+    // ---- persistence (localStorage) ---------------------------------------
+    // Reload restores the queue, its order/colours/names, and the schedule.
+    // Playback progress is NOT restored — a fresh load always starts idle; if
+    // the scheduled time has already passed, AUTO mode will fire right away.
+    const AUTO_STORE = 'cartPlayerAutomation';
+    function saveState() {
+        try {
+            localStorage.setItem(AUTO_STORE, JSON.stringify({
+                anchorTime: state.anchorTime.toISOString(),
+                anchorMode: state.anchorMode,
+                mode: state.mode,
+                items: state.items.map((it) => ({
+                    groupId: it.groupId, name: it.name, file: it.file,
+                    start: it.start, end: it.end, volume: it.volume, color: it.color, runtime: it.runtime,
+                })),
+            }));
+        } catch (e) { /* ignore (storage disabled/full) */ }
+    }
+    function loadState() {
+        try {
+            const raw = localStorage.getItem(AUTO_STORE);
+            if (!raw) return;
+            const data = JSON.parse(raw);
+            if (!data || !Array.isArray(data.items)) return;
+            state.anchorMode = data.anchorMode === 'end' ? 'end' : 'start';
+            state.mode = data.mode === 'manual' ? 'manual' : 'auto';
+            const t = new Date(data.anchorTime);
+            state.anchorTime = Number.isNaN(t.getTime()) ? nextFullHour() : t;
+            data.items.forEach((d) => {
+                const audio = new Audio(`uploads/${d.file}`);
+                audio.preload = 'auto';
+                const item = {
+                    id: idSeq++, groupId: d.groupId, name: d.name, file: d.file,
+                    start: d.start, end: d.end, volume: d.volume, color: d.color, runtime: d.runtime,
+                    audio, played: false,
+                };
+                primeAudio(item);
+                state.items.push(item);
+            });
+            const maxGroupId = data.items.reduce((m, d) => (d.groupId != null ? Math.max(m, d.groupId) : m), 0);
+            groupSeq = Math.max(groupSeq, maxGroupId + 1);
+            if (state.items.length > 0) show();
+        } catch (e) { /* ignore corrupt storage */ }
+    }
+
     // ---- time helpers -----------------------------------------------------
     function nextFullHour() { const d = new Date(); d.setHours(d.getHours() + 1, 0, 0, 0); return d; }
     function fmtClock(d) { return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
@@ -86,6 +131,7 @@
             state.items.push(item);
         });
         show();
+        saveState();
         render();
     }
 
@@ -121,6 +167,7 @@
         if (state.locked || state.running) return;
         state.items.slice(from, to + 1).forEach(it => { try { it.audio.pause(); } catch (e) {} });
         state.items.splice(from, to - from + 1);
+        saveState();
         render();
     }
 
@@ -192,7 +239,7 @@
     }
 
     // ---- modes / transport -----------------------------------------------
-    function setMode(m) { state.mode = m; render(); } // allowed while running (escape to manual for Stop)
+    function setMode(m) { state.mode = m; saveState(); render(); } // allowed while running (escape to manual for Stop)
     function onPlayPause() {
         if (state.mode !== 'manual') return;
         if (!state.running) beginPlayback(0);
@@ -208,14 +255,14 @@
         pop.hidden = !openNow;
         if (openNow) syncPicker();
     }
-    function setAnchor(mode) { state.anchorMode = mode; render(); }
+    function setAnchor(mode) { state.anchorMode = mode; saveState(); render(); }
     function setAnchorHM(h, m) {
         const cur = state.anchorTime;
         const hh = h != null ? h : cur.getHours();
         const mm = m != null ? m : cur.getMinutes();
         const d = new Date(); d.setHours(hh, mm, 0, 0);
         if (d.getTime() < Date.now() + 60000) d.setDate(d.getDate() + 1); // next occurrence
-        state.anchorTime = d; render();
+        state.anchorTime = d; saveState(); render();
     }
     function buildPickerGrids() {
         const hours = el('autoPopHours'); hours.innerHTML = '';
@@ -254,8 +301,11 @@
         if (state.running) return;
         state.items.forEach(it => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
         state.items = [];
+        try { localStorage.removeItem(AUTO_STORE); } catch (e) { /* ignore */ }
         render();
-        setTimeout(() => el('automationPanel').classList.remove('active'), 2000);
+        // Brief pause on the now-empty list — just long enough to register that
+        // it's cleared — before the panel closes.
+        setTimeout(() => el('automationPanel').classList.remove('active'), 700);
     }
 
     function syncLock() {
@@ -264,36 +314,61 @@
         el('automationPanel').classList.toggle('locked', lock);
     }
 
-    // ---- drag & drop reorder (block-aware) --------------------------------
-    let dragBlock = null, dropLine = null;
-    function removeDropLine() { if (dropLine && dropLine.parentNode) dropLine.parentNode.removeChild(dropLine); }
-    function reorderBlock(src, target, after) {
+    // ---- drag & drop reorder (block-aware, container-delegated) -----------
+    // Delegating dragover/drop to the LIST CONTAINER (rather than each row) is
+    // what lets a drop register in the empty space below the last item — and
+    // using the exact same "insertion index" for both the guide line and the
+    // actual move keeps the two perfectly in sync.
+    let dragBlock = null, dropLine = null, dropBlocks = [];
+    function removeDropLine() { if (dropLine && dropLine.parentNode) dropLine.parentNode.removeChild(dropLine); dropLine = null; }
+    // Insertion index (a position BETWEEN blocks, 0..dropBlocks.length) for a
+    // given pointer Y, based on the midpoint of each rendered block's node.
+    function insertionIndexAt(list, clientY) {
+        const nodes = [...list.children].filter((n) => n.dataset.from !== undefined);
+        for (let i = 0; i < nodes.length; i++) {
+            const rect = nodes[i].getBoundingClientRect();
+            if (clientY < rect.top + rect.height / 2) return i;
+        }
+        return nodes.length; // past the last row -> end of the list
+    }
+    function reorderBlock(src, insertBlockIndex) {
         const srcCount = src.to - src.from + 1;
-        let insertAt = after ? target.to + 1 : target.from;
+        // insertBlockIndex counts blocks BEFORE removal; translate to an item index.
+        let insertAt = insertBlockIndex >= dropBlocks.length
+            ? state.items.length
+            : dropBlocks[insertBlockIndex].from;
         const moved = state.items.splice(src.from, srcCount);
         if (src.from < insertAt) insertAt -= srcCount;
         state.items.splice(insertAt, 0, ...moved);
+        saveState();
         render();
     }
     function attachDrag(node, block) {
+        node.dataset.from = block.from;
         node.draggable = !(state.locked || state.running);
-        node.addEventListener('dragstart', (e) => { dragBlock = block; node.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', ''); } catch (x) {} });
-        node.addEventListener('dragend', () => { node.classList.remove('dragging'); removeDropLine(); dragBlock = null; });
-        node.addEventListener('dragover', (e) => {
-            if (!dragBlock || dragBlock === block) return;
-            e.preventDefault();
-            const rect = node.getBoundingClientRect();
-            const after = (e.clientY - rect.top) > rect.height / 2;
-            if (!dropLine) { dropLine = document.createElement('div'); dropLine.className = 'auto-drop-line'; }
-            if (after) node.after(dropLine); else node.before(dropLine);
+        node.addEventListener('dragstart', (e) => {
+            dragBlock = block; dropBlocks = blocks();
+            node.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move';
+            try { e.dataTransfer.setData('text/plain', ''); } catch (x) {}
         });
-        node.addEventListener('drop', (e) => {
+        node.addEventListener('dragend', () => { node.classList.remove('dragging'); removeDropLine(); dragBlock = null; });
+    }
+    function initListDragDrop() {
+        const list = el('autoList');
+        list.addEventListener('dragover', (e) => {
+            if (!dragBlock) return;
             e.preventDefault();
-            const valid = dragBlock && dragBlock !== block;
-            const rect = node.getBoundingClientRect();
-            const after = (e.clientY - rect.top) > rect.height / 2;
+            const idx = insertionIndexAt(list, e.clientY);
+            if (!dropLine) { dropLine = document.createElement('div'); dropLine.className = 'auto-drop-line'; }
+            const nodes = [...list.children].filter((n) => n.dataset.from !== undefined);
+            if (idx >= nodes.length) list.appendChild(dropLine); else nodes[idx].before(dropLine);
+        });
+        list.addEventListener('drop', (e) => {
+            if (!dragBlock) return;
+            e.preventDefault();
+            const idx = insertionIndexAt(list, e.clientY);
             removeDropLine();
-            if (valid) reorderBlock(dragBlock, block, after);
+            reorderBlock(dragBlock, idx);
         });
     }
 
@@ -370,7 +445,7 @@
             startsBlock.classList.remove('imminent');
             startsBlock.classList.add('live');
             startsBlock.querySelector('.auto-times-label').textContent = 'On air';
-            el('autoCountdown').textContent = 'LIVE';
+            el('autoCountdown').textContent = 'NOW';
             return;
         }
         startsBlock.classList.remove('live');
@@ -406,10 +481,12 @@
     // ---- wire up ----------------------------------------------------------
     function init() {
         buildPickerGrids();
+        initListDragDrop();
         el('autoHeader').addEventListener('click', () => togglePop());
         el('autoPopStart').addEventListener('click', () => setAnchor('start'));
         el('autoPopEnd').addEventListener('click', () => setAnchor('end'));
         el('autoTimeTyped').addEventListener('input', (e) => onTyped(e.target.value));
+        el('autoPopOk').addEventListener('click', () => togglePop(false));
         el('autoModeAuto').addEventListener('click', () => setMode('auto'));
         el('autoModeManual').addEventListener('click', () => setMode('manual'));
         el('autoPlayBtn').addEventListener('click', onPlayPause);
@@ -418,6 +495,7 @@
         document.addEventListener('click', (e) => {
             if (!el('autoPop').hidden && !e.target.closest('#autoPop') && !e.target.closest('#autoHeader')) togglePop(false);
         });
+        loadState();
         render();
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

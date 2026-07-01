@@ -208,6 +208,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                     <div class="auto-pop-hours" id="autoPopHours"></div>
                     <div class="auto-pop-grid-label">Minute</div>
                     <div class="auto-pop-mins" id="autoPopMins"></div>
+                    <button class="auto-pop-ok" id="autoPopOk">OK</button>
                 </div>
             </div>
 

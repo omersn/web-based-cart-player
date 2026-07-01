@@ -125,10 +125,10 @@ body {
 .dock-bar {
     display: none;
     flex: 0 0 auto;
-    gap: 1px;
+    gap: 3px;
     height: 200px;
     min-width: 0;
-    background: var(--hairline);   /* shows through the 1px gap as a divider */
+    background: rgba(255, 255, 255, 0.16);   /* shows through the gap as a clear divider */
     border-top: 1px solid var(--hairline);
 }
 .dock-pane {
@@ -217,10 +217,10 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 /* ---- Automation Playlist panel -------------------------------------- */
 .automation-panel {
     display: none;              /* .active -> flex */
-    flex: 0 0 33%; min-width: 360px;
+    flex: 0 0 28%; min-width: 340px; max-width: 460px;
     flex-direction: column; min-height: 0;
     background: var(--bg-panel);
-    border-left: 1px solid var(--hairline);
+    border-left: 3px solid var(--hairline);   /* clear separator from the board */
 }
 .automation-panel.active { display: flex; }
 
@@ -256,6 +256,8 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .auto-pop-hours button, .auto-pop-mins button { height: 44px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--raised); color: var(--text-primary); font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 700; cursor: pointer; }
 .auto-pop-hours button:hover, .auto-pop-mins button:hover { background: var(--raised-hover); }
 .auto-pop-hours button.sel, .auto-pop-mins button.sel { background: var(--cyan-tint); border-color: var(--cyan-border); color: var(--cyan-text); }
+.auto-pop-ok { width: 100%; height: 52px; margin-top: 2px; border: none; border-radius: 10px; cursor: pointer; background: var(--cyan-tint); color: var(--cyan-text); border: 1px solid var(--cyan-border); font-weight: 800; font-size: 18px; letter-spacing: 0.1em; }
+.auto-pop-ok:hover { background: rgba(52, 195, 212, 0.24); }
 /* Drop indicator line during reorder */
 .auto-drop-line { height: 3px; margin: 1px 2px; border-radius: 2px; background: var(--chain, #34c3d4); box-shadow: 0 0 8px rgba(52,195,212,0.7); }
 
@@ -296,16 +298,21 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .auto-total { flex: 0 0 auto; display: flex; justify-content: space-between; padding: 8px 16px; font-size: 12px; color: var(--text-secondary); border-top: 1px solid var(--hairline); }
 .auto-total span:last-child { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--text-primary); }
 
-/* Split start / end readout */
-.auto-times { flex: 0 0 auto; display: flex; border-top: 1px solid var(--hairline); }
+/* AUTO area (clocks) and MANUAL area (transport) swap in the same slot without
+   shifting the layout — both share a fixed min-height. */
+.auto-auto-area { display: flex; flex-direction: column; gap: 8px; min-height: 122px; justify-content: center; }
+.auto-auto-area[hidden] { display: none; }
+/* Split start / end readout — a brighter tile so the eye lands here fast. */
+.auto-times { display: flex; border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; background: rgba(255, 255, 255, 0.06); }
 .auto-times-block { flex: 1; text-align: center; padding: 12px 6px; min-width: 0; }
 .auto-times-block + .auto-times-block { border-left: 1px solid var(--hairline); }
 .auto-times-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-tertiary); }
 .auto-times-value { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--text-strong); line-height: 1.1; }
-#autoStartsBlock .auto-times-value { font-size: 42px; }
-#autoEndAt { font-size: 30px; }
+#autoStartsBlock .auto-times-value { font-size: 40px; }
+#autoEndAt { font-size: 28px; }
 .auto-times-block.imminent .auto-times-value { color: #f0453f; }
-.auto-times-block.live .auto-times-value { color: var(--green-text); }
+.auto-times-block.live .auto-times-value { color: #f0453f; animation: nowBlink 1s steps(1) infinite; }
+@keyframes nowBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 
 /* Playback control area */
 .auto-controls { flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 16px; border-top: 1px solid var(--hairline); }
@@ -315,11 +322,11 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .auto-armed { text-align: center; font-weight: 800; font-size: 15px; letter-spacing: 0.14em; color: var(--green-text); animation: autoPulse 1.6s ease-in-out infinite; }
 .auto-armed[hidden] { display: none; }
 @keyframes autoPulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
-.auto-transport { display: flex; gap: 8px; }
-.auto-transport button { flex: 1; height: 50px; border-radius: 10px; border: 1px solid var(--hairline); background: var(--raised); color: var(--text-secondary); font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-.auto-transport button:disabled { opacity: 0.3; cursor: not-allowed; }
-.auto-transport .auto-play:not(:disabled) { background: linear-gradient(180deg, #33b06a, #2a9e5f); color: #fff; border: none; }
-.auto-transport .auto-stop:not(:disabled) { color: #f0453f; }
+.auto-transport { display: flex; gap: 8px; min-height: 122px; align-items: stretch; }
+.auto-transport[hidden] { display: none; }
+.auto-transport button { flex: 1; border-radius: 10px; border: 1px solid var(--hairline); background: var(--raised); color: var(--text-secondary); font-size: 30px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.auto-transport .auto-play { background: linear-gradient(180deg, #33b06a, #2a9e5f); color: #fff; border: none; }
+.auto-transport .auto-stop { color: #f0453f; }
 .auto-clear-btn { height: 38px; border: 1px solid var(--hairline); border-radius: 8px; cursor: pointer; background: none; color: var(--text-tertiary); font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px; }
 .auto-clear-btn:hover { color: #f0453f; border-color: rgba(240, 69, 63, 0.4); }
 
