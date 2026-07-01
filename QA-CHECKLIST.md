@@ -18,27 +18,29 @@ on the board to queue them. The panel appears on the right once at least one car
 - [ ] `Clear & hide` empties and hides the panel, and clears persisted state.
 
 ## 2. Header — time & anchor (From / To)
-- [ ] The `o->` icon sits **next to** the centered time (not off to the far left).
+- [ ] The whole assembly (`o-> From` + time + caret) is **centered** in the panel.
+- [ ] The From/To label is part of the **`o->` toggle button** (icon + label as one control; both
+      turn amber together in To mode).
 - [ ] The time (HH:MM:SS) stays in the **same horizontal position** when toggling From ↔ To — it
       never jumps. Verify at a wide window and at the panel's minimum width.
-- [ ] Clicking anywhere on the **time/label** area opens the picker popover (whole area is clickable,
-      including the digits — regression from when only the label opened it).
-- [ ] Clicking the **`o->` icon** flips From ↔ To in one click (does NOT open the popover).
-- [ ] After the `o->` toggle: header label (From/To), popover START AT/END AT active state, and the
-      `ENDS AT` value all update to match.
-- [ ] Icon turns amber in **To** (end-at) mode.
-- [ ] Caret stays pinned to the right edge in all states.
+- [ ] Clicking the **time** opens the picker popover.
+- [ ] Clicking the **`o-> From/To` toggle** flips From ↔ To in one click (does NOT open the popover).
+- [ ] After the toggle: header label (From/To) and the `ENDS AT` value both update to match.
 
 ## 3. Time picker popover (draft — apply only on OK)
-- [ ] Open picker, change hour/minute/mode, then click **outside** (or re-click the header): changes
-      are **discarded**, the committed schedule is unchanged.
-- [ ] Open picker, change values, click **OK**: changes apply to the header + all displays.
-- [ ] **Enter** while the picker is open commits the same as OK.
-- [ ] Hour combo opens scrolled to the **current** real-world hour (not next hour).
+- [ ] The popover is lean: just an **hour box** and a **minute box** (no START/END buttons, no
+      separate typed field — the anchor is set by the header toggle).
+- [ ] **Type directly** in the hour/minute boxes; out-of-range input clamps (e.g. hour `99` → `23`,
+      minute `99` → `59`) as you type. A precise minute like `37` is accepted (not just 15-min steps).
+- [ ] Each box also **drops down** a quick-pick list on focus/click; picking one fills the box.
+- [ ] Open picker, change values, then click **outside** (or re-click the header): changes are
+      **discarded**, the committed schedule is unchanged.
+- [ ] Open picker, change values, click **OK** (or press **Enter**): changes apply to the header +
+      all displays.
+- [ ] Hour dropdown opens scrolled to the **current** real-world hour (not next hour).
 - [ ] Past hours/minutes are grayed/disabled; the next top-of-hour is subtly highlighted.
-- [ ] Combo dropdowns are not clipped by the popover box and center on the selected value.
-- [ ] Typing a precise `HH:MM` clamps out-of-range input (e.g. `99` → `23`) as you type.
-- [ ] Picking a time < 1 minute away is refused with a toast; the schedule is left unchanged.
+- [ ] Dropdown lists are not clipped by the popover box and center on the selected value.
+- [ ] Committing a time < 1 minute away is refused with a toast; the schedule is left unchanged.
 
 ## 4. Toast (validation warnings)
 - [ ] Warnings appear **visibly** over the header area (red banner), not hidden behind the topbar or

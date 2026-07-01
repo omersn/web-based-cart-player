@@ -323,13 +323,13 @@
     }
 
     // ---- header popover / anchor / big time picker -----------------------
-    // Everything in the popover (mode toggle, hour/minute combos, typed field)
-    // edits a DRAFT, not the real schedule — nothing takes effect until OK (or
-    // Enter) commits it. Closing any other way (clicking outside, toggling the
-    // header again) discards the draft.
-    let draft = null; // { anchorMode, hh, mm } while the popover is open
+    // The popover only edits the TIME (hour + minute) as a DRAFT — nothing takes
+    // effect until OK (or Enter) commits it; closing any other way (click
+    // outside, re-toggling the header) discards it. From/To (the anchor) is set
+    // separately by the header's o-> toggle, so the popover has no mode buttons.
+    let draft = null; // { hh, mm } while the popover is open
     function openPop() {
-        draft = { anchorMode: state.anchorMode, hh: state.anchorTime.getHours(), mm: state.anchorTime.getMinutes() };
+        draft = { hh: state.anchorTime.getHours(), mm: state.anchorTime.getMinutes() };
         el('autoPop').hidden = false;
         syncPicker();
         refreshPickerLive();
@@ -378,68 +378,75 @@
         if (!draft) { closePopDiscard(); return; }
         const d = nextOccurrence(draft.hh, draft.mm);
         if (d.getTime() - Date.now() < 60000) { toast('Must be at least 1 minute away'); return; }
-        state.anchorMode = draft.anchorMode;
         state.anchorTime = d;
         state.firedForThisSchedule = false; // new schedule -> arm AUTO again
         saveState();
         closePopDiscard();
         render();
     }
-    // Custom-built combo widgets (not native <select>s) — full control over
-    // colouring the next-hour option and greying out past times, without the
-    // OS's own picker chrome/appearance leaking through.
+    // The hour/minute fields are typeable inputs that ALSO drop down a list of
+    // quick picks (custom-built, not native <select>s, so we can colour the
+    // next-hour option and grey out past times). Type a precise value, or pick.
     function buildPickerCombos() {
-        const hourBtn = el('autoHourComboBtn');
+        const hourInput = el('autoHourComboBtn');
         const hourList = el('autoHourComboList');
-        const minBtn = el('autoMinComboBtn');
+        const minInput = el('autoMinComboBtn');
         const minList = el('autoMinComboList');
 
-        hourList.innerHTML = '';
-        for (let h = 0; h < 24; h++) {
-            const opt = document.createElement('button');
-            opt.type = 'button'; opt.textContent = String(h).padStart(2, '0'); opt.dataset.h = String(h);
-            opt.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (!draft) return;
-                draft.hh = h;
-                hourList.hidden = true;
-                syncDraftUI();
-                refreshPickerLive();
+        // Build a dropdown of quick-pick options for one field.
+        const buildList = (listEl, inputEl, values, key) => {
+            listEl.innerHTML = '';
+            values.forEach((v) => {
+                const opt = document.createElement('button');
+                opt.type = 'button';
+                opt.textContent = String(v).padStart(2, '0');
+                opt.dataset[key] = String(v);
+                opt.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (!draft) return;
+                    if (key === 'h') draft.hh = v; else draft.mm = v;
+                    inputEl.value = String(v).padStart(2, '0');
+                    listEl.hidden = true;
+                    refreshPickerLive();
+                });
+                listEl.appendChild(opt);
             });
-            hourList.appendChild(opt);
-        }
-        hourBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            minList.hidden = true;
-            hourList.hidden = !hourList.hidden;
-            // Open scrolled to the CURRENT real-world hour (where you are right
-            // now), not centred on the armed/selected hour (often "next hour",
-            // which could be a different, less useful starting point).
-            if (!hourList.hidden) { refreshPickerLive(); scrollToCurrentHour(hourList); }
-        });
+        };
+        buildList(hourList, hourInput, [...Array(24).keys()], 'h');
+        buildList(minList, minInput, [0, 15, 30, 45], 'm');
 
-        minList.innerHTML = '';
-        for (let m = 0; m < 60; m += 15) {
-            const opt = document.createElement('button');
-            opt.type = 'button'; opt.textContent = String(m).padStart(2, '0'); opt.dataset.m = String(m);
-            opt.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (!draft) return;
-                draft.mm = m;
-                minList.hidden = true;
-                syncDraftUI();
-                refreshPickerLive();
-            });
-            minList.appendChild(opt);
-        }
-        minBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            hourList.hidden = true;
-            minList.hidden = !minList.hidden;
-            if (!minList.hidden) { refreshPickerLive(); centerSelectedCombo(minList); }
-        });
+        // Open a field's dropdown (closing the other), scrolled to a useful spot.
+        const openList = (listEl, otherList, scrollFn) => {
+            otherList.hidden = true;
+            listEl.hidden = false;
+            refreshPickerLive();
+            if (scrollFn) scrollFn(listEl);
+        };
+        // Focusing/clicking a field shows its dropdown; typing edits the draft.
+        // Open the hour list scrolled to the CURRENT real-world hour (not the
+        // armed one), the minute list centred on the selected quick-pick.
+        hourInput.addEventListener('focus', () => openList(hourList, minList, scrollToCurrentHour));
+        hourInput.addEventListener('click', (e) => { e.stopPropagation(); openList(hourList, minList, scrollToCurrentHour); });
+        hourInput.addEventListener('input', () => onComboType(hourInput, 'h'));
+        hourInput.addEventListener('blur', syncDraftUI); // normalise "3" -> "03"
+        minInput.addEventListener('focus', () => openList(minList, hourList, centerSelectedCombo));
+        minInput.addEventListener('click', (e) => { e.stopPropagation(); openList(minList, hourList, centerSelectedCombo); });
+        minInput.addEventListener('input', () => onComboType(minInput, 'm'));
+        minInput.addEventListener('blur', syncDraftUI);
 
         document.addEventListener('click', () => { hourList.hidden = true; minList.hidden = true; });
+    }
+    // Live-edit a combo field: keep only digits, clamp to range, update the draft.
+    function onComboType(inputEl, which) {
+        if (!draft) return;
+        const digits = inputEl.value.replace(/\D/g, '');
+        if (digits !== inputEl.value) inputEl.value = digits; // strip stray non-numerics as typed
+        if (digits === '') return;                            // mid-edit; leave the draft until a number lands
+        const max = which === 'h' ? 23 : 59;
+        let n = parseInt(digits, 10);
+        if (n > max) { n = max; inputEl.value = String(n); }
+        if (which === 'h') draft.hh = n; else draft.mm = n;
+        refreshPickerLive();
     }
     // Opening a combo scrolls its list so the currently selected value is
     // centred, rather than always starting scrolled to the top.
@@ -476,43 +483,17 @@
             opt.classList.toggle('sel', m === selMin);
         });
     }
-    // Reflects the DRAFT in the popover's own controls (combo buttons, typed
-    // field, mode buttons) — the header itself stays showing the last
-    // COMMITTED schedule until OK is clicked.
+    // Reflects the DRAFT in the popover's hour/minute fields — the header itself
+    // stays showing the last COMMITTED schedule until OK is clicked. Skips a
+    // field that's being typed in, so it never clobbers the operator's input.
     function syncPicker() {
         syncDraftUI();
     }
     function syncDraftUI() {
         if (!draft) return;
-        el('autoPopStart').classList.toggle('active', draft.anchorMode === 'start');
-        el('autoPopEnd').classList.toggle('active', draft.anchorMode === 'end');
-        el('autoHourComboBtn').textContent = String(draft.hh).padStart(2, '0');
-        el('autoMinComboBtn').textContent = String(draft.mm).padStart(2, '0'); // shows the exact minute, even off the 15-step grid
-        const typed = el('autoTimeTyped');
-        if (document.activeElement !== typed) typed.value = `${String(draft.hh).padStart(2, '0')}:${String(draft.mm).padStart(2, '0')}`;
-    }
-    // Also visually clamps the field as you type (fixes "99" staying on screen
-    // for the hour — it was clamped internally but the field kept showing the
-    // raw digits since it doesn't rewrite itself while focused).
-    function onTyped(e) {
-        if (!draft) return;
-        const raw = e.target.value;
-        const parts = raw.match(/^(\d{1,2}):?(\d{0,2})$/);
-        if (!parts) return;
-        const hRaw = parts[1], mRaw = parts[2];
-        const h = Math.min(23, parseInt(hRaw, 10) || 0);
-        const m = mRaw ? Math.min(59, parseInt(mRaw, 10)) : 0;
-        if (hRaw.length === 2 && parseInt(hRaw, 10) > 23) {
-            const rest = raw.includes(':') ? raw.slice(raw.indexOf(':')) : '';
-            e.target.value = String(h).padStart(2, '0') + rest;
-        }
-        if (mRaw && mRaw.length === 2 && parseInt(mRaw, 10) > 59) {
-            e.target.value = raw.slice(0, raw.indexOf(':') + 1) + String(m).padStart(2, '0');
-        }
-        draft.hh = h; draft.mm = m;
-        el('autoHourComboBtn').textContent = String(h).padStart(2, '0');
-        el('autoMinComboBtn').textContent = String(m).padStart(2, '0');
-        refreshPickerLive();
+        const hEl = el('autoHourComboBtn'), mEl = el('autoMinComboBtn');
+        if (document.activeElement !== hEl) hEl.value = String(draft.hh).padStart(2, '0');
+        if (document.activeElement !== mEl) mEl.value = String(draft.mm).padStart(2, '0');
     }
 
     // ---- show / clear -----------------------------------------------------
@@ -680,8 +661,6 @@
         el('autoTimeLabel').textContent = state.anchorMode === 'end' ? 'To' : 'From';
         // autoTime itself is set inside updateTimes() (below), since it needs
         // to fall back to "—:—" for a stale/elapsed schedule.
-        el('autoPopStart').classList.toggle('active', state.anchorMode === 'start');
-        el('autoPopEnd').classList.toggle('active', state.anchorMode === 'end');
         syncPicker();
 
         // AUTO shows the clocks (+ a Stop button once it's actually playing);
@@ -785,9 +764,6 @@
         initListDragDrop();
         el('autoHeader').addEventListener('click', () => togglePop());
         el('autoAnchorToggle').addEventListener('click', (e) => { e.stopPropagation(); toggleAnchor(); });
-        el('autoPopStart').addEventListener('click', () => { if (draft) { draft.anchorMode = 'start'; syncDraftUI(); } });
-        el('autoPopEnd').addEventListener('click', () => { if (draft) { draft.anchorMode = 'end'; syncDraftUI(); } });
-        el('autoTimeTyped').addEventListener('input', onTyped);
         el('autoPopOk').addEventListener('click', () => commitDraft());
         el('autoModeAuto').addEventListener('click', () => setMode('auto'));
         el('autoModeManual').addEventListener('click', () => setMode('manual'));

@@ -191,39 +191,35 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         <!-- Automation Playlist: scheduled auto-playback queue. Hidden until an
              item is sent here (right-click a cart); managed by automation.js. -->
         <aside class="automation-panel" id="automationPanel">
-            <!-- Time header. The o-> icon is its own toggle (flips From <-> To in
-                 one click); the label+time is a separate button that opens the
-                 picker. Both are centred as one unit with a fixed-width label, so
-                 the time never shifts when From <-> To flips. -->
+            <!-- Time header, centred as one unit. The o-> toggle carries the
+                 From/To label (one click flips start-at <-> end-at); the time
+                 opens the picker. A fixed-width label keeps the time from
+                 shifting when From <-> To flips. -->
             <div class="auto-header-wrap">
                 <div class="auto-header" id="autoHeaderRow">
                     <button type="button" class="auto-anchor-toggle" id="autoAnchorToggle" title="Toggle start / end (From ↔ To)">
                         <span class="auto-header-icon" id="autoHeaderIcon"></span>
-                    </button>
-                    <button type="button" class="auto-header-main" id="autoHeader" title="Set start / end time">
                         <span class="auto-header-label" id="autoTimeLabel">From</span>
-                        <span class="auto-header-time" id="autoTime">--:--</span>
                     </button>
-                    <i class="ph ph-caret-down auto-header-caret"></i>
+                    <button type="button" class="auto-header-main" id="autoHeader" title="Set time">
+                        <span class="auto-header-time" id="autoTime">--:--</span>
+                        <i class="ph ph-caret-down auto-header-caret"></i>
+                    </button>
                 </div>
+                <!-- Picker: type directly in the hour/minute boxes, or pick from
+                     each box's dropdown. (From/To is set by the header toggle.) -->
                 <div class="auto-pop" id="autoPop" hidden>
-                    <div class="auto-pop-modes">
-                        <button data-anchor="start" id="autoPopStart">START AT</button>
-                        <button data-anchor="end" id="autoPopEnd">END AT</button>
-                    </div>
                     <div class="auto-pop-selects">
                         <div class="auto-combo" id="autoHourCombo">
-                            <button type="button" class="auto-combo-btn" id="autoHourComboBtn">00</button>
+                            <input type="text" class="auto-combo-btn" id="autoHourComboBtn" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="Hour" value="00">
                             <div class="auto-combo-list" id="autoHourComboList" hidden></div>
                         </div>
                         <span class="auto-pop-colon">:</span>
                         <div class="auto-combo" id="autoMinCombo">
-                            <button type="button" class="auto-combo-btn" id="autoMinComboBtn">00</button>
+                            <input type="text" class="auto-combo-btn" id="autoMinComboBtn" inputmode="numeric" maxlength="2" autocomplete="off" aria-label="Minute" value="00">
                             <div class="auto-combo-list" id="autoMinComboList" hidden></div>
                         </div>
                     </div>
-                    <div class="auto-pop-caption">Or type a precise time</div>
-                    <input type="text" id="autoTimeTyped" class="auto-pop-typed" inputmode="numeric" placeholder="HH:MM" maxlength="5" autocomplete="off">
                     <button class="auto-pop-ok" id="autoPopOk">OK</button>
                 </div>
             </div>

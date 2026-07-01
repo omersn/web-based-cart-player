@@ -229,44 +229,44 @@ body.layout-locked .title-bar-0002 { cursor: default; }
    time's on-screen position. A permanent tint marks this as the panel's most
    important control, like a section header. */
 .auto-header-wrap { flex: 0 0 auto; position: relative; border-bottom: 1px solid var(--hairline); }
-/* Centred assembly: [o-> toggle] [label + time], with the caret pinned right.
-   Everything is fixed-width, so nothing shifts when From <-> To flips. */
+/* Centred assembly: [o-> toggle incl. From/To] [time + caret]. The toggle's
+   label is a fixed-width box, so nothing shifts when From <-> To flips. */
 .auto-header {
     position: relative;
-    display: flex; align-items: center; justify-content: center; column-gap: 12px;
+    display: flex; align-items: center; justify-content: center; column-gap: 10px;
     padding: 16px; background: rgba(255, 255, 255, 0.045);
     color: var(--text-strong); font-family: 'JetBrains Mono', monospace;
 }
 /* o-> anchor toggle: a real button that flips From (start-at) <-> To (end-at)
-   in one click, sitting right beside the time it labels — not just an icon. */
+   in one click. Carries the From/To label right next to its icon, so the two
+   read as one control (both go amber together in To mode). */
 .auto-anchor-toggle {
-    display: flex; align-items: center; justify-content: center;
-    border: none; background: none; cursor: pointer; padding: 5px; border-radius: 8px;
+    display: flex; align-items: center; column-gap: 9px;
+    border: none; background: none; cursor: pointer; padding: 6px 10px; border-radius: 8px;
     color: var(--text-secondary); flex: 0 0 auto;
 }
 .auto-anchor-toggle:hover { background: var(--raised); color: var(--text-primary); }
 .auto-header.end-mode .auto-anchor-toggle { color: var(--amber); }
 .auto-header-icon { display: flex; }
+/* Fixed-width label (fits "From"), left-aligned so From/To stays tight to the
+   icon and its differing length can't shove the time sideways. Inherits the
+   toggle's colour so it ambers up in To mode. */
+.auto-header-label { font-size: 27px; font-weight: 700; white-space: nowrap; width: 2.5em; text-align: left; flex: 0 0 auto; }
 /* The time-setting button: opens the picker. */
 .auto-header-main {
-    display: flex; align-items: baseline; column-gap: 10px;
-    border: none; background: none; cursor: pointer; padding: 4px 8px; border-radius: 8px;
-    color: var(--text-strong); font-family: 'JetBrains Mono', monospace;
+    display: flex; align-items: center; column-gap: 8px;
+    border: none; background: none; cursor: pointer; padding: 6px 8px; border-radius: 8px;
+    color: var(--text-strong); font-family: 'JetBrains Mono', monospace; flex: 0 0 auto;
 }
 .auto-header-main:hover { background: var(--raised); }
-/* Label and time share one font size (both read as part of the same statement),
-   sized to fit HH:MM:SS (seconds matter for radio) on the panel's narrowest
-   width. The label is a FIXED-WIDTH box, right-aligned so From/To always hugs
-   the time and its differing length can't shove the time sideways. */
-.auto-header-label { font-size: 27px; font-weight: 700; color: var(--text-tertiary); text-align: right; white-space: nowrap; width: 2.7em; flex: 0 0 auto; }
 .auto-header-time { font-size: 27px; font-weight: 800; line-height: 1; white-space: nowrap; }
-.auto-header-caret { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); font-size: 18px; pointer-events: none; }
+.auto-header-caret { color: var(--text-tertiary); font-size: 16px; }
 /* MANUAL mode: the schedule isn't actively counting down to an auto-fire, so the
    header reads as muted — but stays fully interactive (you can still set the
    From/To time and flip the anchor for when you switch back to AUTO). */
 .auto-header.sched-muted { opacity: 0.5; }
-/* Big, bold, industrial time picker — custom combo dropdowns (not the native OS
-   picker) for hour / 15-min blocks, plus a typed field for a precise minute. */
+/* Big, bold, industrial time picker — two typeable fields (hour / minute), each
+   with its own dropdown of quick picks (custom-styled, not the native OS list). */
 .auto-pop {
     position: absolute; top: calc(100% - 1px); left: 8px; right: 8px; z-index: 30;
     background: #171b21; border: 1px solid var(--hairline); border-radius: 12px;
@@ -277,20 +277,18 @@ body.layout-locked .title-bar-0002 { cursor: default; }
        combo list's dropdown (which has its own independent scroll below). */
 }
 .auto-pop[hidden] { display: none; }
-.auto-pop-modes { display: flex; gap: 8px; }
-.auto-pop-modes button { flex: 1; height: 48px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--raised); color: var(--text-secondary); font-weight: 800; font-size: 15px; letter-spacing: 0.06em; cursor: pointer; }
-.auto-pop-modes button.active { background: var(--cyan-tint); border-color: var(--cyan-border); color: var(--cyan-text); }
 .auto-pop-selects { display: flex; align-items: center; justify-content: center; gap: 8px; }
-/* Custom combo: a button showing the current value, opening our OWN styled
-   list (not the OS's) — lets us colour the next-hour entry directly instead
-   of a text badge, and grey out/disable past times cleanly. */
+/* Custom combo: a typeable input showing the current value, opening our OWN
+   styled list (not the OS's) — lets us colour the next-hour entry directly
+   instead of a text badge, and grey out/disable past times cleanly. */
 .auto-combo { position: relative; flex: 1; }
 .auto-combo-btn {
     width: 100%; height: 64px; border: 1px solid var(--hairline); border-radius: 10px;
     background: var(--raised); color: var(--text-strong); font-family: 'JetBrains Mono', monospace;
-    font-size: 28px; font-weight: 700; text-align: center; cursor: pointer;
+    font-size: 28px; font-weight: 700; text-align: center; cursor: pointer; box-sizing: border-box; padding: 0;
 }
 .auto-combo-btn:hover { background: var(--raised-hover); }
+.auto-combo-btn:focus { outline: none; border-color: var(--cyan-border); background: var(--raised-hover); }
 .auto-combo-list {
     position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 40;
     max-height: 220px; overflow-y: auto; background: #1c2129; border: 1px solid var(--hairline);
@@ -308,9 +306,6 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .auto-combo-list button.next-hour { background: rgba(52, 195, 212, 0.16); color: var(--cyan-text); }
 .auto-combo-list button:disabled { color: rgba(255, 255, 255, 0.2); cursor: not-allowed; }
 .auto-pop-colon { font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 800; color: var(--text-tertiary); }
-.auto-pop-caption { font-size: 11px; text-align: center; color: var(--text-tertiary); }
-.auto-pop-typed { width: 100%; height: 46px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--raised); color: var(--text-strong); text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; box-sizing: border-box; }
-.auto-pop-typed:focus { outline: none; border-color: var(--cyan-border); }
 .auto-pop-ok { width: 100%; height: 52px; margin-top: 2px; border: none; border-radius: 10px; cursor: pointer; background: var(--cyan-tint); color: var(--cyan-text); border: 1px solid var(--cyan-border); font-weight: 800; font-size: 18px; letter-spacing: 0.1em; }
 .auto-pop-ok:hover { background: rgba(52, 195, 212, 0.24); }
 /* Ghost drag preview: a translucent clone of the dragged item shown at the
