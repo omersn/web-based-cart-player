@@ -60,6 +60,17 @@ function upload_path(string $file): string
 }
 
 // ---------------------------------------------------------------------------
+// Toolbar features
+// ---------------------------------------------------------------------------
+
+/**
+ * Show the "utility" toolbar chips: Download, Mobile access (QR), and Credits.
+ * Hidden for now while the product direction shifts away from them — flip to
+ * true to bring the three buttons back (the code is untouched, just gated).
+ */
+const SHOW_UTILITY_CHIPS = false;
+
+// ---------------------------------------------------------------------------
 // Cart-wall layout
 // ---------------------------------------------------------------------------
 

@@ -125,8 +125,11 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 <button type="button" class="icon-btn" id="chip-auto" onclick="window.Automation && window.Automation.toggle();" title="Automation playlist">
                     <i class="ph ph-playlist"></i><span class="status-dot amber"></span>
                 </button>
+                <?php if (SHOW_UTILITY_CHIPS): ?>
                 <span class="icon-sep"></span>
-                <!-- One-shot actions. -->
+                <!-- One-shot actions. Temporarily hidden via SHOW_UTILITY_CHIPS
+                     (config.php) while the product direction shifts; flip that
+                     flag to true to bring them back. -->
                 <a class="icon-btn" id="chip-download" href="download.php" title="Download">
                     <i class="ph ph-download-simple"></i>
                 </a>
@@ -136,6 +139,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 <button type="button" class="icon-btn" id="chip-credits" onclick="showCredits();" title="Credits">
                     <i class="ph ph-info"></i>
                 </button>
+                <?php endif; ?>
             </div>
 
             <div class="transport-cluster">

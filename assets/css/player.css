@@ -268,7 +268,7 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 /* MANUAL mode: the schedule isn't actively counting down to an auto-fire, so the
    header reads as muted — but stays fully interactive (you can still set the
    From/To time and flip the anchor for when you switch back to AUTO). */
-.auto-header.sched-muted { opacity: 0.5; }
+.auto-header.sched-muted { opacity: 0.3; }
 /* Big, bold, industrial time picker — two typeable fields (hour / minute), each
    with its own dropdown of quick picks (custom-styled, not the native OS list). */
 .auto-pop {
