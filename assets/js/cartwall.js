@@ -561,13 +561,9 @@
         }
 
         // Right-click a cart -> send it straight to the automation playlist (in
-        // the parent shell). Replaces the old "play at top of hour" menu, which
-        // is disabled now that the automation panel owns scheduled playback.
-        document.addEventListener('contextmenu', (event) => {
-            const button = event.target.closest('.button, .buttonext');
-            contextMenu.style.display = 'none';
-            if (!button || button.classList.contains('empty') || !button._cart) return;
-            event.preventDefault();
+        // the parent shell). Right-clicking any cart of a CHAIN queues the whole
+        // chain as one group. Replaces the old "play at top of hour" menu.
+        function itemFor(button) {
             const a = button._audio;
             const c = button._cart;
             const end = (c.end != null ? c.end : (a ? a.duration : 0)) || 0;
@@ -576,9 +572,33 @@
                 const dEl = button.querySelector('.duration');
                 if (dEl) { const [m, s] = dEl.textContent.split(':').map(Number); runtime = (m * 60 + s) || 0; }
             }
+            return { name: c.name, file: c.file, start: c.start, end: c.end, color: c.color, volume: c.volume, runtime };
+        }
+        function gatherChain(button) {
+            if (!button.classList.contains('chain')) return [button];
+            let start = button;
+            while (!start.classList.contains('chain-start') && start.previousElementSibling && start.previousElementSibling.classList.contains('chain')) {
+                start = start.previousElementSibling;
+            }
+            const run = [];
+            let node = start;
+            while (node && node.classList.contains('chain')) {
+                if (node._cart && !node.classList.contains('empty')) run.push(node);
+                if (node.classList.contains('chain-end')) break;
+                node = node.nextElementSibling;
+            }
+            return run.length ? run : [button];
+        }
+        document.addEventListener('contextmenu', (event) => {
+            const button = event.target.closest('.button, .buttonext');
+            contextMenu.style.display = 'none';
+            if (!button || button.classList.contains('empty') || !button._cart) return;
+            event.preventDefault();
+            const buttons = gatherChain(button);
+            const grouped = buttons.length > 1;
             try {
                 window.parent.postMessage({ source: 'cartwall', cmd: 'automation-add',
-                    item: { name: c.name, file: c.file, start: c.start, end: c.end, color: c.color, volume: c.volume, runtime } }, '*');
+                    items: buttons.map(itemFor), grouped }, '*');
             } catch (e) { /* no parent */ }
         });
 

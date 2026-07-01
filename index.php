@@ -191,28 +191,49 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         <!-- Automation Playlist: scheduled auto-playback queue. Hidden until an
              item is sent here (right-click a cart); managed by automation.js. -->
         <aside class="automation-panel" id="automationPanel">
-            <div class="auto-head">
-                <div class="auto-time-block">
-                    <div class="auto-time-label" id="autoTimeLabel">From</div>
-                    <button class="auto-time" id="autoTime" title="Set the time">--:--</button>
-                </div>
-                <button class="auto-anchor" id="autoAnchor" title="Start at / end at the top of the hour">
-                    <i class="ph ph-arrow-circle-right"></i>
+            <!-- Big clickable time header (From/To + hour) -->
+            <div class="auto-header-wrap">
+                <button class="auto-header" id="autoHeader" title="Set start/end time">
+                    <span class="auto-header-icon" id="autoHeaderIcon"></span>
+                    <span class="auto-header-text"><span id="autoTimeLabel">From</span> <span id="autoTime">--:--</span></span>
+                    <i class="ph ph-caret-down auto-header-caret"></i>
                 </button>
+                <div class="auto-pop" id="autoPop" hidden>
+                    <div class="auto-pop-modes">
+                        <button data-anchor="start" id="autoPopStart">Start at hour</button>
+                        <button data-anchor="end" id="autoPopEnd">End at hour</button>
+                    </div>
+                    <label class="auto-pop-time">Time <input type="time" id="autoTimeInput"></label>
+                </div>
             </div>
 
             <div class="auto-list" id="autoList"></div>
 
-            <div class="auto-total"><span>Total</span><span id="autoTotal">0:00</span></div>
+            <div class="auto-total"><span id="autoTotalLabel">Total</span><span id="autoTotal">0:00</span></div>
 
-            <div class="auto-countdown" id="autoCountdownBox">
-                <div class="auto-countdown-label" id="autoCountdownLabel">Starts in</div>
-                <div class="auto-countdown-value" id="autoCountdown">--:--</div>
+            <!-- Split start/end readout -->
+            <div class="auto-times">
+                <div class="auto-times-block" id="autoStartsBlock">
+                    <div class="auto-times-label">Starts in</div>
+                    <div class="auto-times-value" id="autoCountdown">-0:00</div>
+                </div>
+                <div class="auto-times-block">
+                    <div class="auto-times-label">Ends at</div>
+                    <div class="auto-times-value" id="autoEndAt">--:--</div>
+                </div>
             </div>
 
+            <!-- Playback control area -->
             <div class="auto-controls">
-                <button class="auto-mode-btn" id="autoModeBtn">AUTO START</button>
-                <button class="auto-setauto-btn" id="autoSetAutoBtn" hidden>SET AUTO START</button>
+                <div class="auto-mode-switch" id="autoModeSwitch">
+                    <button data-mode="auto" id="autoModeAuto" class="active">AUTO</button>
+                    <button data-mode="manual" id="autoModeManual">MANUAL</button>
+                </div>
+                <div class="auto-armed" id="autoArmed">AUTO START</div>
+                <div class="auto-transport">
+                    <button class="auto-play" id="autoPlayBtn" disabled title="Play / pause"><i class="ph-fill ph-play"></i></button>
+                    <button class="auto-stop" id="autoStopBtn" disabled title="Stop"><i class="ph-fill ph-stop"></i></button>
+                </div>
                 <button class="auto-clear-btn" id="autoClearBtn"><i class="ph ph-trash"></i> Clear &amp; hide</button>
             </div>
         </aside>
@@ -522,9 +543,9 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             const d = event.data;
             if (!d || d.source !== 'cartwall') return;
 
-            // Right-click on a cart -> send it to the automation playlist.
+            // Right-click on a cart -> send it (or its whole chain) to automation.
             if (d.cmd === 'automation-add') {
-                if (window.Automation) window.Automation.addItem(d.item);
+                if (window.Automation) window.Automation.addItems(d.items, d.grouped);
                 return;
             }
 
