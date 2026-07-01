@@ -743,9 +743,26 @@
 
     // ---- tick -------------------------------------------------------------
     setInterval(() => {
-        if (state.items.length === 0) return;
         syncLock();
         if (state.running) { el('autoTotal').textContent = fmtDur(remainingRuntime()); }
+
+        if (state.items.length === 0) {
+            // Empty but open (an operator holding the panel for an upcoming
+            // break): the "Starts in" countdown keeps running for planning and
+            // for consistency with a loaded queue. There's nothing to fire, so
+            // an elapsed AUTO anchor just rolls to the next full hour — the same
+            // fresh reset loadState() does — rather than sitting at a stale
+            // negative. ("Ends at" is pinned to the anchor, so with a zero-length
+            // queue it naturally stays put.)
+            if (state.mode === 'auto' && secsToStart() <= 0) {
+                state.anchorTime = nextFullHour();
+                state.anchorMode = 'start';
+                state.firedForThisSchedule = false;
+                saveState();
+            }
+            updateTimes();
+            return;
+        }
 
         // A stale schedule (elapsed, already fired once, still sitting there)
         // hands off to the operator instead of quietly staying "armed".
