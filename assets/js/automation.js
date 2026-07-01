@@ -156,6 +156,7 @@
         show();
         saveState();
         render();
+        const l = el('autoList'); l.scrollTop = l.scrollHeight; // reveal the just-added item(s) at the bottom
     }
 
     function primeAudio(item) {
@@ -239,6 +240,7 @@
         state.items.forEach(it => { it.played = false; });
         state.playingIndex = (fromIndex != null ? fromIndex : 0) - 1;
         playNext();
+        el('autoList').scrollTop = 0; // snap the queue back to the top as playback begins
     }
     function playNext() {
         const prev = state.items[state.playingIndex];
@@ -344,7 +346,10 @@
     // too — the header stays interactive there, just muted.
     function toggleAnchor() {
         if (state.locked || state.running) return;
-        if (!el('autoPop').hidden) closePopDiscard(); // don't leave a stale draft behind
+        // Deliberately does NOT close an open picker — you can flip From/To with
+        // the picker still up (the picker only edits the time; the anchor is
+        // independent). Its own listener stopPropagation-s, so the outside-click
+        // handler doesn't fire either. render() re-syncs the header + picker.
         state.anchorMode = state.anchorMode === 'end' ? 'start' : 'end';
         state.firedForThisSchedule = false; // new anchor -> re-arm AUTO
         saveState();
@@ -617,18 +622,10 @@
                 if (rm) rm.addEventListener('click', (e) => { e.stopPropagation(); removeAt(block.from, block.to); });
                 return row;
             };
-            // Right-click anywhere on a block removes it (the whole chain, for a
-            // group) — a quick alternative to the trash button. removeAt keeps
-            // the locked/running guard, so it's a no-op once the batch is armed
-            // or on air. (The panel already suppresses the native context menu.)
-            const rightClickRemove = (node) => node.addEventListener('contextmenu', (e) => {
-                e.preventDefault(); e.stopPropagation(); removeAt(block.from, block.to);
-            });
             if (block.groupId == null) {
                 const idx = block.from;
                 const row = makeItemRow(block.items[0], idx);
                 attachDrag(row, block);
-                rightClickRemove(row);
                 list.appendChild(row);
             } else {
                 const g = document.createElement('div');
@@ -641,7 +638,6 @@
                 trash.addEventListener('click', (e) => { e.stopPropagation(); removeAt(block.from, block.to); });
                 g.appendChild(trash);
                 attachDrag(g, block);
-                rightClickRemove(g);
                 list.appendChild(g);
             }
         });

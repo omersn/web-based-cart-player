@@ -18,13 +18,15 @@ on the board to queue them. The panel appears on the right once at least one car
 - [ ] `Clear & hide` empties and hides the panel, and clears persisted state.
 
 ## 2. Header — time & anchor (From / To)
-- [ ] The whole assembly (`o-> From` + time + caret) is **centered** in the panel.
-- [ ] The From/To label is part of the **`o->` toggle button** (icon + label as one control; both
-      turn amber together in To mode).
+- [ ] The whole assembly (`From o->` + time + caret) is **centered** in the panel.
+- [ ] The From/To label is part of the **`o->` toggle button**, shown **before** the icon (label +
+      icon read as one control; both turn amber together in To mode).
 - [ ] The time (HH:MM:SS) stays in the **same horizontal position** when toggling From ↔ To — it
       never jumps. Verify at a wide window and at the panel's minimum width.
 - [ ] Clicking the **time** opens the picker popover.
-- [ ] Clicking the **`o-> From/To` toggle** flips From ↔ To in one click (does NOT open the popover).
+- [ ] Clicking the **`From/To o->` toggle** flips From ↔ To in one click (does NOT open the popover).
+- [ ] With the picker **open**, clicking the toggle flips From ↔ To and leaves the picker **open**;
+      a click anywhere else outside still closes it.
 - [ ] After the toggle: header label (From/To) and the `ENDS AT` value both update to match.
 
 ## 3. Time picker popover (draft — apply only on OK)
@@ -56,8 +58,9 @@ on the board to queue them. The panel appears on the right once at least one car
       flash** at drag start.
 - [ ] Drag & drop works reliably (not cancelled mid-drag).
 - [ ] Chained groups drag as one unit and cannot be split.
-- [ ] **Right-click** a queue item removes it; right-click a chain group removes the whole chain.
 - [ ] The native browser context menu never appears inside the panel.
+- [ ] Adding an item scrolls the queue to the **bottom** (the new item is visible).
+- [ ] Starting playback scrolls the queue back to the **top**.
 
 ## 6. AUTO vs MANUAL modes
 - [ ] AUTO shows the `STARTS IN` / `ENDS AT` clocks; a Stop button appears once it's on air.

@@ -198,8 +198,8 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             <div class="auto-header-wrap">
                 <div class="auto-header" id="autoHeaderRow">
                     <button type="button" class="auto-anchor-toggle" id="autoAnchorToggle" title="Toggle start / end (From ↔ To)">
-                        <span class="auto-header-icon" id="autoHeaderIcon"></span>
                         <span class="auto-header-label" id="autoTimeLabel">From</span>
+                        <span class="auto-header-icon" id="autoHeaderIcon"></span>
                     </button>
                     <button type="button" class="auto-header-main" id="autoHeader" title="Set time">
                         <span class="auto-header-time" id="autoTime">--:--</span>

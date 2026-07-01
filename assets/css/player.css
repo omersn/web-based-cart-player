@@ -248,10 +248,10 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .auto-anchor-toggle:hover { background: var(--raised); color: var(--text-primary); }
 .auto-header.end-mode .auto-anchor-toggle { color: var(--amber); }
 .auto-header-icon { display: flex; }
-/* Fixed-width label (fits "From"), left-aligned so From/To stays tight to the
-   icon and its differing length can't shove the time sideways. Inherits the
-   toggle's colour so it ambers up in To mode. */
-.auto-header-label { font-size: 27px; font-weight: 700; white-space: nowrap; width: 2.5em; text-align: left; flex: 0 0 auto; }
+/* Fixed-width label (fits "From"), right-aligned so From/To stays tight to the
+   icon that follows it and its differing length can't shove the time sideways.
+   Inherits the toggle's colour so it ambers up in To mode. */
+.auto-header-label { font-size: 27px; font-weight: 700; white-space: nowrap; width: 2.5em; text-align: right; flex: 0 0 auto; }
 /* The time-setting button: opens the picker. */
 .auto-header-main {
     display: flex; align-items: center; column-gap: 8px;
