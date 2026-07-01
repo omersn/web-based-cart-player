@@ -211,9 +211,11 @@ body.layout-locked .title-bar-0002 { cursor: default; }
     background: linear-gradient(180deg, #f0453f, #c22f2a);
     color: #fff; font-family: 'JetBrains Mono', monospace;
     transform: translateY(100%); transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
-    box-shadow: 0 -6px 24px rgba(240, 69, 63, 0.35);
 }
-.countdown-bar.show { transform: translateY(0); }
+/* Glow only while shown — on the base rule its upward shadow bled ~30px up into
+   the screen even when the bar was retracted below the viewport (red tint at
+   the bottom edge). */
+.countdown-bar.show { transform: translateY(0); box-shadow: 0 -6px 24px rgba(240, 69, 63, 0.35); }
 .countdown-bar .countdown-value { font-weight: 700; font-size: 34px; letter-spacing: 0.06em; }
 
 /* ---- Automation Playlist panel -------------------------------------- */
