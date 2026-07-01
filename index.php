@@ -191,11 +191,13 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         <!-- Automation Playlist: scheduled auto-playback queue. Hidden until an
              item is sent here (right-click a cart); managed by automation.js. -->
         <aside class="automation-panel" id="automationPanel">
-            <!-- Big clickable time header (From/To + hour) -->
+            <!-- Big clickable time header (From/To + hour). Label/time/caret sit in
+                 fixed grid columns so switching From <-> To never shifts the time. -->
             <div class="auto-header-wrap">
                 <button class="auto-header" id="autoHeader" title="Set start/end time">
                     <span class="auto-header-icon" id="autoHeaderIcon"></span>
-                    <span class="auto-header-text"><span id="autoTimeLabel">From</span> <span id="autoTime">--:--</span></span>
+                    <span class="auto-header-label" id="autoTimeLabel">From</span>
+                    <span class="auto-header-time" id="autoTime">--:--</span>
                     <i class="ph ph-caret-down auto-header-caret"></i>
                 </button>
                 <div class="auto-pop" id="autoPop" hidden>
@@ -203,24 +205,26 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                         <button data-anchor="start" id="autoPopStart">START AT</button>
                         <button data-anchor="end" id="autoPopEnd">END AT</button>
                     </div>
+                    <div class="auto-pop-selects">
+                        <select class="auto-pop-select" id="autoPopHourSelect" aria-label="Hour"></select>
+                        <span class="auto-pop-colon">:</span>
+                        <select class="auto-pop-select" id="autoPopMinSelect" aria-label="Minute"></select>
+                    </div>
+                    <div class="auto-pop-caption">Or type a precise time</div>
                     <input type="text" id="autoTimeTyped" class="auto-pop-typed" inputmode="numeric" placeholder="HH:MM" maxlength="5" autocomplete="off">
-                    <div class="auto-pop-grid-label">Hour</div>
-                    <div class="auto-pop-hours" id="autoPopHours"></div>
-                    <div class="auto-pop-grid-label">Minute</div>
-                    <div class="auto-pop-mins" id="autoPopMins"></div>
                     <button class="auto-pop-ok" id="autoPopOk">OK</button>
                 </div>
             </div>
 
             <div class="auto-list" id="autoList"></div>
 
-            <div class="auto-total"><span id="autoTotalLabel">Total</span><span id="autoTotal">0:00</span></div>
+            <div class="auto-total" id="autoTotalRow"><span id="autoTotalLabel">Total</span><span id="autoTotal">0:00</span></div>
 
             <!-- Playback control area: mode switch always; AUTO shows the clocks,
                  MANUAL shows the transport controls. -->
             <div class="auto-controls">
                 <div class="auto-mode-switch" id="autoModeSwitch">
-                    <button data-mode="auto" id="autoModeAuto" class="active">AUTO</button>
+                    <button data-mode="auto" id="autoModeAuto" class="active"><span class="auto-armed-dot" id="autoArmedDot"></span>AUTO</button>
                     <button data-mode="manual" id="autoModeManual">MANUAL</button>
                 </div>
 
@@ -235,12 +239,12 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                             <div class="auto-times-value" id="autoEndAt">--:--</div>
                         </div>
                     </div>
-                    <div class="auto-armed" id="autoArmed">AUTO START</div>
+                    <button class="auto-stop-auto" id="autoStopAutoBtn" hidden title="Stop"><i class="ph-fill ph-stop"></i> STOP</button>
                 </div>
 
                 <div class="auto-transport" id="autoTransport" hidden>
                     <button class="auto-play" id="autoPlayBtn" title="Play / pause"><i class="ph-fill ph-play"></i></button>
-                    <button class="auto-stop" id="autoStopBtn" title="Stop"><i class="ph-fill ph-stop"></i></button>
+                    <button class="auto-stop" id="autoStopBtn" title="Stop" disabled><i class="ph-fill ph-stop"></i></button>
                 </div>
 
                 <button class="auto-clear-btn" id="autoClearBtn"><i class="ph ph-trash"></i> Clear &amp; hide</button>
@@ -427,6 +431,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 const iframe = document.getElementById(id);
                 if (iframe && iframe.src && !iframe.src.includes('about:blank')) iframe.src = iframe.src;
             });
+            if (window.Automation) window.Automation.stop();
         }
         // --- Window manager -------------------------------------------------
         // Each of the two views (clock / Station IDs) carries two independent
@@ -536,18 +541,19 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         // playback, which clears the lock.)
         const framePlaying = new Map();
         // Layout is locked while any cart is on air OR the automation playlist is
-        // active (queued/scheduled/running) — the board is still playable, but
-        // the layout can't be rearranged.
+        // actually RUNNING — not merely queued/scheduled. While automation is
+        // idle (armed but not yet firing), the ID/Clock windows can still be
+        // docked/toggled/dragged freely; the lock only bites once it's live.
         function recomputeLock() {
             const anyPlaying = [...framePlaying.values()].some((n) => n > 0);
-            const autoActive = !!(window.Automation && window.Automation.isActive());
-            const locked = anyPlaying || autoActive;
+            const autoRunning = !!(window.Automation && window.Automation.isRunning());
+            const locked = anyPlaying || autoRunning;
             if (locked !== layoutLocked) {
                 layoutLocked = locked;
                 document.body.classList.toggle('layout-locked', layoutLocked);
             }
         }
-        setInterval(recomputeLock, 300); // catches automation activate/clear
+        setInterval(recomputeLock, 300); // catches automation start/stop
         window.addEventListener('message', (event) => {
             const d = event.data;
             if (!d || d.source !== 'cartwall') return;

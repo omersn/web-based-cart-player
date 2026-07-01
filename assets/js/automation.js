@@ -15,6 +15,8 @@
  */
 (() => {
     const HOUR = 3600; // seconds
+    const LOCK_LEAD = 10;  // seconds before start (and while running) that the panel locks
+    const FIT_BUFFER = 5;  // seconds of slack allowed when checking "will this fit before start"
     const CAT = { '1': '#2f6fd6', '2': '#2f9e5f', '3': '#b0479e', '4': '#c98a2b', '5': '#2aa7bf' };
     const el = (id) => document.getElementById(id);
 
@@ -31,6 +33,11 @@
         running: false,
         playingIndex: -1,
         locked: false,
+        // Set once AUTO has fired for the current schedule, so the tick loop
+        // doesn't immediately re-trigger playback after the queue finishes (the
+        // anchor time stays in the past forever once it's passed). Cleared
+        // whenever the schedule actually changes (new items, new anchor time).
+        firedForThisSchedule: false,
     };
     let idSeq = 1, groupSeq = 1, progressRaf = null;
 
@@ -111,8 +118,8 @@
         if (!Array.isArray(list) || list.length === 0) return;
         const sumNew = list.reduce((a, d) => a + (Number(d.runtime) || 0), 0);
         if (state.locked || state.running) return toast('Playlist locked');
-        if (secsToStart() <= 5) return toast('Too close to start');
-        if (sumNew > secsToStart() + 5) return toast("Won't fit before start");
+        if (secsToStart() <= LOCK_LEAD) return toast('Too close to start');
+        if (sumNew > secsToStart() + FIT_BUFFER) return toast("Won't fit before start");
         if (totalRuntime() + sumNew > HOUR) return toast('Would overrun the hour');
 
         const gid = grouped && list.length > 1 ? groupSeq++ : null;
@@ -130,6 +137,7 @@
             primeAudio(item);
             state.items.push(item);
         });
+        state.firedForThisSchedule = false; // new material queued -> arm AUTO again
         show();
         saveState();
         render();
@@ -170,6 +178,19 @@
         saveState();
         render();
     }
+    // Removed automatically ~1s after a cart finishes playing (see playNext).
+    // Keeping the list shrinking as it plays is what keeps auto-scroll smooth
+    // and leaves an empty list once the whole batch is done.
+    function removeItemById(id) {
+        const i = state.items.findIndex((it) => it.id === id);
+        if (i < 0) return;
+        try { state.items[i].audio.pause(); } catch (e) {}
+        state.items.splice(i, 1);
+        if (state.playingIndex > i) state.playingIndex--;
+        saveState();
+        render();
+        centerCurrent();
+    }
 
     // ---- playback ---------------------------------------------------------
     function beginPlayback(fromIndex) {
@@ -181,7 +202,13 @@
     }
     function playNext() {
         const prev = state.items[state.playingIndex];
-        if (prev) { try { prev.audio.pause(); } catch (e) {} clearTimeout(prev._timer); prev.played = true; }
+        if (prev) {
+            try { prev.audio.pause(); } catch (e) {}
+            clearTimeout(prev._timer);
+            prev.played = true;
+            const prevId = prev.id;
+            setTimeout(() => removeItemById(prevId), 1000);
+        }
         state.playingIndex++;
         if (state.playingIndex >= state.items.length) { endPlayback(); render(); return; }
         const it = state.items[state.playingIndex];
@@ -208,9 +235,13 @@
         state.items.forEach(it => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
         stopProgress();
     }
-    function stopAll() {
+    // Stop reachable from either mode (the dedicated AUTO-mode Stop button, the
+    // MANUAL transport's Stop, or the shell's "Stop all"). Interrupting like
+    // this does NOT auto-remove the interrupted item (only natural completion,
+    // in playNext, does that).
+    function forceStop() {
+        if (!state.running) return;
         endPlayback();
-        state.items.forEach(it => { it.played = false; });
         render();
     }
 
@@ -239,13 +270,12 @@
     }
 
     // ---- modes / transport -----------------------------------------------
-    function setMode(m) { state.mode = m; saveState(); render(); } // allowed while running (escape to manual for Stop)
+    function setMode(m) { state.mode = m; saveState(); render(); }
     function onPlayPause() {
         if (state.mode !== 'manual') return;
         if (!state.running) beginPlayback(0);
         else { const it = state.items[state.playingIndex]; if (it && it.audio.paused) resume(); else pause(); }
     }
-    function onStop() { if (state.mode === 'manual') stopAll(); }
 
     // ---- header popover / anchor / big time picker -----------------------
     function togglePop(force) {
@@ -253,45 +283,112 @@
         const openNow = force != null ? force : pop.hidden;
         if (openNow && (state.locked || state.running)) return;
         pop.hidden = !openNow;
-        if (openNow) syncPicker();
+        if (openNow) { syncPicker(); refreshPickerLive(); }
     }
-    function setAnchor(mode) { state.anchorMode = mode; saveState(); render(); }
+    function setAnchor(mode) {
+        state.anchorMode = mode;
+        state.firedForThisSchedule = false; // From/To flip changes the actual start -> new schedule
+        saveState(); render();
+    }
+    // The next occurrence of hh:mm — today, unless that time has ALREADY
+    // passed today, in which case tomorrow. (Bug fix: the old check used a 60s
+    // FUTURE look-ahead here, which wrongly rolled picks like "1 minute from
+    // now" a full day forward instead of keeping them today.)
+    function nextOccurrence(hh, mm) {
+        const d = new Date(); d.setHours(hh, mm, 0, 0);
+        // Only roll to TOMORROW if this time-of-day clearly already elapsed
+        // today (more than a minute ago) — e.g. picking an early hour that's
+        // passed, meaning "tomorrow morning". A pick that's merely seconds in
+        // the past (picked the current minute) is NOT rolled a day forward;
+        // it falls through to the 1-minute-away rejection below instead, so
+        // it's a clean refusal rather than a silently-scheduled next day.
+        if (d.getTime() < Date.now() - 60000) d.setDate(d.getDate() + 1);
+        return d;
+    }
     function setAnchorHM(h, m) {
         const cur = state.anchorTime;
         const hh = h != null ? h : cur.getHours();
         const mm = m != null ? m : cur.getMinutes();
-        const d = new Date(); d.setHours(hh, mm, 0, 0);
-        if (d.getTime() < Date.now() + 60000) d.setDate(d.getDate() + 1); // next occurrence
-        state.anchorTime = d; saveState(); render();
+        const d = nextOccurrence(hh, mm);
+        // Safety: refuse (don't apply) anything less than a minute away.
+        if (d.getTime() - Date.now() < 60000) { toast('Must be at least 1 minute away'); syncPicker(); return; }
+        state.anchorTime = d;
+        state.firedForThisSchedule = false; // new schedule -> arm AUTO again
+        saveState(); render();
     }
-    function buildPickerGrids() {
-        const hours = el('autoPopHours'); hours.innerHTML = '';
+    function buildPickerSelects() {
+        const hourSel = el('autoPopHourSelect');
+        hourSel.innerHTML = '';
         for (let h = 0; h < 24; h++) {
-            const b = document.createElement('button');
-            b.textContent = String(h).padStart(2, '0'); b.dataset.h = h;
-            b.addEventListener('click', () => setAnchorHM(h, null));
-            hours.appendChild(b);
+            const opt = document.createElement('option');
+            opt.value = String(h); opt.textContent = String(h).padStart(2, '0');
+            hourSel.appendChild(opt);
         }
-        const mins = el('autoPopMins'); mins.innerHTML = '';
-        for (let m = 0; m < 60; m += 5) {
-            const b = document.createElement('button');
-            b.textContent = String(m).padStart(2, '0'); b.dataset.m = m;
-            b.addEventListener('click', () => setAnchorHM(null, m));
-            mins.appendChild(b);
+        hourSel.addEventListener('change', () => {
+            setAnchorHM(parseInt(hourSel.value, 10), null);
+            refreshPickerLive();
+        });
+
+        const minSel = el('autoPopMinSelect');
+        minSel.innerHTML = '';
+        for (let m = 0; m < 60; m += 15) {
+            const opt = document.createElement('option');
+            opt.value = String(m); opt.textContent = String(m).padStart(2, '0');
+            minSel.appendChild(opt);
         }
+        minSel.addEventListener('change', () => setAnchorHM(null, parseInt(minSel.value, 10)));
+    }
+    // Marks the next top-of-the-hour option (always — so it's the visible
+    // default reference point even once something else is picked) and grays
+    // out/disables times already in the past today. Re-run every time the
+    // popover opens, since "now" keeps moving.
+    function refreshPickerLive() {
+        const now = new Date();
+        const curH = now.getHours(), curM = now.getMinutes();
+        const nextH = nextFullHour().getHours();
+
+        const hourSel = el('autoPopHourSelect');
+        [...hourSel.options].forEach((opt) => {
+            const h = parseInt(opt.value, 10);
+            opt.disabled = h < curH;
+            opt.textContent = String(h).padStart(2, '0') + (h === nextH ? ' — next hour' : '');
+            opt.style.fontWeight = h === nextH ? '800' : '400';
+            opt.style.background = h === nextH ? 'rgba(52, 195, 212, 0.16)' : '';
+        });
+
+        const minSel = el('autoPopMinSelect');
+        const selHour = parseInt(hourSel.value, 10);
+        [...minSel.options].forEach((opt) => {
+            const m = parseInt(opt.value, 10);
+            opt.disabled = selHour === curH && m <= curM;
+            opt.style.fontWeight = m === 0 ? '800' : '400';
+            opt.style.background = m === 0 ? 'rgba(52, 195, 212, 0.16)' : '';
+        });
     }
     function syncPicker() {
         const hh = state.anchorTime.getHours(), mm = state.anchorTime.getMinutes();
-        el('autoPopHours').querySelectorAll('button').forEach(b => b.classList.toggle('sel', +b.dataset.h === hh));
-        el('autoPopMins').querySelectorAll('button').forEach(b => b.classList.toggle('sel', +b.dataset.m === mm));
+        el('autoPopHourSelect').value = String(hh);
+        el('autoPopMinSelect').value = (mm % 15 === 0) ? String(mm) : ''; // non-15 values: typed field is authoritative
         const typed = el('autoTimeTyped');
         if (document.activeElement !== typed) typed.value = fmtClock(state.anchorTime);
     }
-    function onTyped(v) {
-        const parts = v.match(/^(\d{1,2}):?(\d{0,2})$/);
+    // Also visually clamps the field as you type (fixes "99" staying on screen
+    // for the hour — it was clamped internally but the field kept showing the
+    // raw digits since it doesn't rewrite itself while focused).
+    function onTyped(e) {
+        const raw = e.target.value;
+        const parts = raw.match(/^(\d{1,2}):?(\d{0,2})$/);
         if (!parts) return;
-        const h = Math.min(23, parseInt(parts[1], 10) || 0);
-        const m = parts[2] ? Math.min(59, parseInt(parts[2], 10)) : 0;
+        const hRaw = parts[1], mRaw = parts[2];
+        const h = Math.min(23, parseInt(hRaw, 10) || 0);
+        const m = mRaw ? Math.min(59, parseInt(mRaw, 10)) : 0;
+        if (hRaw.length === 2 && parseInt(hRaw, 10) > 23) {
+            const rest = raw.includes(':') ? raw.slice(raw.indexOf(':')) : '';
+            e.target.value = String(h).padStart(2, '0') + rest;
+        }
+        if (mRaw && mRaw.length === 2 && parseInt(mRaw, 10) > 59) {
+            e.target.value = raw.slice(0, raw.indexOf(':') + 1) + String(m).padStart(2, '0');
+        }
         setAnchorHM(h, m);
     }
 
@@ -301,6 +398,7 @@
         if (state.running) return;
         state.items.forEach(it => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
         state.items = [];
+        state.firedForThisSchedule = false;
         try { localStorage.removeItem(AUTO_STORE); } catch (e) { /* ignore */ }
         render();
         // Brief pause on the now-empty list — just long enough to register that
@@ -309,7 +407,7 @@
     }
 
     function syncLock() {
-        const lock = state.running || (state.mode === 'auto' && state.items.length > 0 && secsToStart() <= 5);
+        const lock = state.running || (state.mode === 'auto' && state.items.length > 0 && secsToStart() <= LOCK_LEAD);
         state.locked = lock;
         el('automationPanel').classList.toggle('locked', lock);
     }
@@ -412,9 +510,11 @@
             }
         });
 
-        // total (or remaining while running)
+        // total (or remaining while running) — reads like the on-air countdown
+        // bars elsewhere (red background, white text) while playing.
         el('autoTotalLabel').textContent = state.running ? 'Remaining' : 'Total';
         el('autoTotal').textContent = fmtDur(remainingRuntime());
+        el('autoTotalRow').classList.toggle('running', state.running);
 
         // header
         el('autoHeaderIcon').innerHTML = state.anchorMode === 'end' ? ICON.end : ICON.start;
@@ -425,13 +525,16 @@
         el('autoPopEnd').classList.toggle('active', state.anchorMode === 'end');
         syncPicker();
 
-        // AUTO shows the clocks; MANUAL shows the transport controls.
+        // AUTO shows the clocks (+ a Stop button once it's actually playing);
+        // MANUAL shows the full transport (Play/Pause + Stop).
         el('autoModeAuto').classList.toggle('active', state.mode === 'auto');
         el('autoModeManual').classList.toggle('active', state.mode === 'manual');
         const manual = state.mode === 'manual';
         el('autoAutoArea').hidden = manual;
         el('autoTransport').hidden = !manual;
-        el('autoArmed').hidden = state.running; // the clocks show LIVE while playing
+        el('autoStopAutoBtn').hidden = !(state.mode === 'auto' && state.running);
+        el('autoPlayBtn').disabled = !manual;
+        el('autoStopBtn').disabled = !state.running;
         const playing = state.running && state.items[state.playingIndex] && !state.items[state.playingIndex].audio.paused;
         el('autoPlayBtn').innerHTML = playing ? '<i class="ph-fill ph-pause"></i>' : '<i class="ph-fill ph-play"></i>';
 
@@ -461,7 +564,13 @@
         syncLock();
         if (state.running) { el('autoTotal').textContent = fmtDur(remainingRuntime()); }
         updateTimes();
-        if (state.mode === 'auto' && !state.running && secsToStart() <= 0) beginPlayback(0);
+        // firedForThisSchedule guards against re-triggering the instant the
+        // batch finishes: the anchor time is a fixed point in the past by then,
+        // so secsToStart()<=0 stays true forever until a new schedule is set.
+        if (state.mode === 'auto' && !state.running && !state.firedForThisSchedule && secsToStart() <= 0) {
+            state.firedForThisSchedule = true;
+            beginPlayback(0);
+        }
     }, 250);
 
     // ---- toast ------------------------------------------------------------
@@ -480,17 +589,18 @@
 
     // ---- wire up ----------------------------------------------------------
     function init() {
-        buildPickerGrids();
+        buildPickerSelects();
         initListDragDrop();
         el('autoHeader').addEventListener('click', () => togglePop());
         el('autoPopStart').addEventListener('click', () => setAnchor('start'));
         el('autoPopEnd').addEventListener('click', () => setAnchor('end'));
-        el('autoTimeTyped').addEventListener('input', (e) => onTyped(e.target.value));
+        el('autoTimeTyped').addEventListener('input', onTyped);
         el('autoPopOk').addEventListener('click', () => togglePop(false));
         el('autoModeAuto').addEventListener('click', () => setMode('auto'));
         el('autoModeManual').addEventListener('click', () => setMode('manual'));
         el('autoPlayBtn').addEventListener('click', onPlayPause);
-        el('autoStopBtn').addEventListener('click', onStop);
+        el('autoStopBtn').addEventListener('click', forceStop);
+        el('autoStopAutoBtn').addEventListener('click', forceStop);
         el('autoClearBtn').addEventListener('click', clearAndHide);
         document.addEventListener('click', (e) => {
             if (!el('autoPop').hidden && !e.target.closest('#autoPop') && !e.target.closest('#autoHeader')) togglePop(false);
@@ -505,5 +615,6 @@
         addItem: (item) => addItems([item], false),
         isActive: () => state.items.length > 0,
         isRunning: () => state.running,
+        stop: forceStop, // used by the shell's "Stop all"
     };
 })();

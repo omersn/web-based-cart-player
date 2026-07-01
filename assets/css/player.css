@@ -224,20 +224,24 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 }
 .automation-panel.active { display: flex; }
 
-/* Big clickable time header + popover */
+/* Big clickable time header + popover. Icon/label/time/caret sit in fixed grid
+   columns (label right-aligned) so switching From <-> To never shifts the
+   time's on-screen position. A permanent tint marks this as the panel's most
+   important control, like a section header. */
 .auto-header-wrap { flex: 0 0 auto; position: relative; border-bottom: 1px solid var(--hairline); }
 .auto-header {
-    width: 100%; display: flex; align-items: center; gap: 12px;
-    padding: 16px; border: none; background: none; cursor: pointer; text-align: left;
+    width: 100%; display: grid; grid-template-columns: 40px 76px 1fr 20px; align-items: center; column-gap: 10px;
+    padding: 16px; border: none; background: rgba(255, 255, 255, 0.045); cursor: pointer; text-align: left;
     color: var(--text-strong); font-family: 'JetBrains Mono', monospace;
 }
 .auto-header:hover { background: var(--raised); }
-.auto-header-icon { flex-shrink: 0; color: var(--text-secondary); display: flex; }
+.auto-header-icon { color: var(--text-secondary); display: flex; }
 .auto-header.end-mode .auto-header-icon { color: var(--amber); }
-.auto-header-text { flex: 1 1 auto; font-size: 40px; font-weight: 800; line-height: 1; white-space: nowrap; }
-.auto-header-text #autoTimeLabel { color: var(--text-tertiary); }
+.auto-header-label { font-size: 20px; font-weight: 700; color: var(--text-tertiary); text-align: right; white-space: nowrap; }
+.auto-header-time { font-size: 40px; font-weight: 800; line-height: 1; white-space: nowrap; }
 .auto-header-caret { color: var(--text-tertiary); font-size: 18px; }
-/* Big, bold, industrial time picker — all hours at once, minutes in 5s. */
+/* Big, bold, industrial time picker — dropdowns (hours / 15-min blocks) plus a
+   typed field for a precise minute. */
 .auto-pop {
     position: absolute; top: calc(100% - 1px); left: 8px; right: 8px; z-index: 30;
     background: #171b21; border: 1px solid var(--hairline); border-radius: 12px;
@@ -249,13 +253,18 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .auto-pop-modes { display: flex; gap: 8px; }
 .auto-pop-modes button { flex: 1; height: 48px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--raised); color: var(--text-secondary); font-weight: 800; font-size: 15px; letter-spacing: 0.06em; cursor: pointer; }
 .auto-pop-modes button.active { background: var(--cyan-tint); border-color: var(--cyan-border); color: var(--cyan-text); }
-.auto-pop-typed { width: 100%; height: 54px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--raised); color: var(--text-strong); text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 30px; font-weight: 700; box-sizing: border-box; }
+.auto-pop-selects { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.auto-pop-select {
+    flex: 1; height: 64px; border: 1px solid var(--hairline); border-radius: 10px;
+    background: var(--raised); color: var(--text-strong); font-family: 'JetBrains Mono', monospace;
+    font-size: 28px; font-weight: 700; text-align: center; text-align-last: center; cursor: pointer; padding: 0 6px;
+}
+.auto-pop-select:focus { outline: none; border-color: var(--cyan-border); }
+.auto-pop-select option:disabled { color: rgba(255, 255, 255, 0.22); }
+.auto-pop-colon { font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 800; color: var(--text-tertiary); }
+.auto-pop-caption { font-size: 11px; text-align: center; color: var(--text-tertiary); }
+.auto-pop-typed { width: 100%; height: 46px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--raised); color: var(--text-strong); text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; box-sizing: border-box; }
 .auto-pop-typed:focus { outline: none; border-color: var(--cyan-border); }
-.auto-pop-grid-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-tertiary); font-weight: 700; }
-.auto-pop-hours, .auto-pop-mins { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
-.auto-pop-hours button, .auto-pop-mins button { height: 44px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--raised); color: var(--text-primary); font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 700; cursor: pointer; }
-.auto-pop-hours button:hover, .auto-pop-mins button:hover { background: var(--raised-hover); }
-.auto-pop-hours button.sel, .auto-pop-mins button.sel { background: var(--cyan-tint); border-color: var(--cyan-border); color: var(--cyan-text); }
 .auto-pop-ok { width: 100%; height: 52px; margin-top: 2px; border: none; border-radius: 10px; cursor: pointer; background: var(--cyan-tint); color: var(--cyan-text); border: 1px solid var(--cyan-border); font-weight: 800; font-size: 18px; letter-spacing: 0.1em; }
 .auto-pop-ok:hover { background: rgba(52, 195, 212, 0.24); }
 /* Drop indicator line during reorder */
@@ -295,8 +304,11 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 }
 .auto-group-trash:hover { color: #f0453f; }
 
-.auto-total { flex: 0 0 auto; display: flex; justify-content: space-between; padding: 8px 16px; font-size: 12px; color: var(--text-secondary); border-top: 1px solid var(--hairline); }
+.auto-total { flex: 0 0 auto; display: flex; justify-content: space-between; padding: 8px 16px; font-size: 12px; color: var(--text-secondary); border-top: 1px solid var(--hairline); transition: background-color 0.15s ease, color 0.15s ease; }
 .auto-total span:last-child { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--text-primary); }
+/* While playing, "Remaining" reads like the on-air countdown bars elsewhere. */
+.auto-total.running { background: var(--red-grad); color: #fff; }
+.auto-total.running span:last-child { color: #fff; }
 
 /* AUTO area (clocks) and MANUAL area (transport) swap in the same slot without
    shifting the layout — both share a fixed min-height. */
@@ -307,31 +319,40 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .auto-times-block { flex: 1; text-align: center; padding: 12px 6px; min-width: 0; }
 .auto-times-block + .auto-times-block { border-left: 1px solid var(--hairline); }
 .auto-times-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-tertiary); }
-.auto-times-value { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--text-strong); line-height: 1.1; }
-#autoStartsBlock .auto-times-value { font-size: 40px; }
-#autoEndAt { font-size: 28px; }
+.auto-times-value { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--text-strong); line-height: 1.1; font-size: 32px; }
 .auto-times-block.imminent .auto-times-value { color: #f0453f; }
 .auto-times-block.live .auto-times-value { color: #f0453f; animation: nowBlink 1s steps(1) infinite; }
 @keyframes nowBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+/* Stop button reachable from AUTO mode while it's actually playing, without
+   switching to MANUAL. */
+.auto-stop-auto { height: 46px; border: none; border-radius: 10px; cursor: pointer; background: var(--red-grad); color: #fff; font-weight: 800; font-size: 15px; letter-spacing: 0.08em; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.auto-stop-auto[hidden] { display: none; }
 
 /* Playback control area */
 .auto-controls { flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 16px; border-top: 1px solid var(--hairline); }
 .auto-mode-switch { display: flex; border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; }
-.auto-mode-switch button { flex: 1; height: 40px; border: none; background: none; color: var(--text-secondary); font-weight: 800; font-size: 13px; letter-spacing: 0.1em; cursor: pointer; }
+.auto-mode-switch button { flex: 1; height: 40px; border: none; background: none; color: var(--text-secondary); font-weight: 800; font-size: 13px; letter-spacing: 0.1em; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; }
 .auto-mode-switch button.active { background: var(--cyan-tint); color: var(--cyan-text); }
-.auto-armed { text-align: center; font-weight: 800; font-size: 15px; letter-spacing: 0.14em; color: var(--green-text); animation: autoPulse 1.6s ease-in-out infinite; }
-.auto-armed[hidden] { display: none; }
-@keyframes autoPulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+/* Small blinking dot marking AUTO as armed — replaces the old "AUTO START" label. */
+.auto-armed-dot { width: 8px; height: 8px; border-radius: 50%; background: #f0453f; opacity: 0; }
+.auto-mode-switch button.active .auto-armed-dot { opacity: 1; animation: autoDotBlink 1.1s steps(1) infinite; }
+@keyframes autoDotBlink { 50% { opacity: 0.15; } }
 .auto-transport { display: flex; gap: 8px; min-height: 122px; align-items: stretch; }
 .auto-transport[hidden] { display: none; }
 .auto-transport button { flex: 1; border-radius: 10px; border: 1px solid var(--hairline); background: var(--raised); color: var(--text-secondary); font-size: 30px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.auto-transport button:disabled { opacity: 0.3; cursor: not-allowed; }
 .auto-transport .auto-play { background: linear-gradient(180deg, #33b06a, #2a9e5f); color: #fff; border: none; }
-.auto-transport .auto-stop { color: #f0453f; }
+.auto-transport .auto-stop:not(:disabled) { color: #f0453f; }
 .auto-clear-btn { height: 38px; border: 1px solid var(--hairline); border-radius: 8px; cursor: pointer; background: none; color: var(--text-tertiary); font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px; }
 .auto-clear-btn:hover { color: #f0453f; border-color: rgba(240, 69, 63, 0.4); }
 
-/* Locked (within 5s of start, or while running): freeze the editing affordances. */
-.automation-panel.locked .auto-list, .automation-panel.locked .auto-header { pointer-events: none; opacity: 0.7; }
+/* Locked (within the lead time of start, or while running): freeze the time
+   picker and AUTO/MANUAL switch, and disable (but don't darken) removal — the
+   queue itself stays fully coloured and readable, only the bin icons dim. */
+.automation-panel.locked .auto-header { pointer-events: none; opacity: 0.7; }
+.automation-panel.locked .auto-mode-switch { pointer-events: none; opacity: 0.7; }
+.automation-panel.locked .auto-remove,
+.automation-panel.locked .auto-group-trash { pointer-events: none; opacity: 0.3; }
 
 /* Header "deck" pill (Clock / Station IDs source selector) */
 .window-select-wrap { position: relative; display: inline-flex; align-items: center; }
