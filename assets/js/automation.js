@@ -83,6 +83,16 @@
             const maxGroupId = data.items.reduce((m, d) => (d.groupId != null ? Math.max(m, d.groupId) : m), 0);
             groupSeq = Math.max(groupSeq, maxGroupId + 1);
             if (state.items.length > 0) show();
+            // A RESTORED schedule that's already stale (elapsed while the tab was
+            // closed/idle, with an empty queue so there's nothing to protect)
+            // starts fresh, rather than silently blocking the next add forever.
+            // This only runs once, right after loading — NOT on every add — so it
+            // can't mistake a freshly, deliberately set near-term time (e.g. an
+            // "End at" just set a few seconds out) for a stale leftover.
+            if (state.items.length === 0 && secsToStart() <= LOCK_LEAD) {
+                state.anchorTime = nextFullHour();
+                state.anchorMode = 'start';
+            }
         } catch (e) { /* ignore corrupt storage */ }
     }
 
@@ -123,15 +133,6 @@
         if (!Array.isArray(list) || list.length === 0) return;
         const sumNew = list.reduce((a, d) => a + (Number(d.runtime) || 0), 0);
         if (state.locked || state.running) return toast('Playlist locked');
-        // Starting a brand-new queue (nothing in it yet): if the anchor time is
-        // a stale leftover (e.g. restored from a previous session, now in the
-        // past or about to pass), there's no existing schedule to protect —
-        // just default it fresh rather than perpetually rejecting every add.
-        if (state.items.length === 0 && secsToStart() <= LOCK_LEAD) {
-            state.anchorTime = nextFullHour();
-            state.anchorMode = 'start';
-            state.firedForThisSchedule = false;
-        }
         if (secsToStart() <= LOCK_LEAD) return toast('Too close to start');
         if (sumNew > secsToStart() + FIT_BUFFER) return toast("Won't fit before start");
         if (totalRuntime() + sumNew > HOUR) return toast('Would overrun the hour');
@@ -322,17 +323,26 @@
     }
 
     // ---- header popover / anchor / big time picker -----------------------
+    // Everything in the popover (mode toggle, hour/minute combos, typed field)
+    // edits a DRAFT, not the real schedule — nothing takes effect until OK (or
+    // Enter) commits it. Closing any other way (clicking outside, toggling the
+    // header again) discards the draft.
+    let draft = null; // { anchorMode, hh, mm } while the popover is open
+    function openPop() {
+        draft = { anchorMode: state.anchorMode, hh: state.anchorTime.getHours(), mm: state.anchorTime.getMinutes() };
+        el('autoPop').hidden = false;
+        syncPicker();
+        refreshPickerLive();
+    }
+    function closePopDiscard() {
+        el('autoPop').hidden = true;
+        draft = null;
+    }
     function togglePop(force) {
         const pop = el('autoPop');
         const openNow = force != null ? force : pop.hidden;
         if (openNow && (state.locked || state.running)) return;
-        pop.hidden = !openNow;
-        if (openNow) { syncPicker(); refreshPickerLive(); }
-    }
-    function setAnchor(mode) {
-        state.anchorMode = mode;
-        state.firedForThisSchedule = false; // From/To flip changes the actual start -> new schedule
-        saveState(); render();
+        if (openNow) openPop(); else closePopDiscard();
     }
     // The next occurrence of hh:mm — today, unless that time has ALREADY
     // passed today, in which case tomorrow. (Bug fix: the old check used a 60s
@@ -349,16 +359,19 @@
         if (d.getTime() < Date.now() - 60000) d.setDate(d.getDate() + 1);
         return d;
     }
-    function setAnchorHM(h, m) {
-        const cur = state.anchorTime;
-        const hh = h != null ? h : cur.getHours();
-        const mm = m != null ? m : cur.getMinutes();
-        const d = nextOccurrence(hh, mm);
-        // Safety: refuse (don't apply) anything less than a minute away.
-        if (d.getTime() - Date.now() < 60000) { toast('Must be at least 1 minute away'); syncPicker(); return; }
+    // Commit the draft to the real schedule (OK / Enter). Rejects (toasts, and
+    // leaves the popover open so the operator can adjust) rather than closing
+    // on an invalid pick.
+    function commitDraft() {
+        if (!draft) { closePopDiscard(); return; }
+        const d = nextOccurrence(draft.hh, draft.mm);
+        if (d.getTime() - Date.now() < 60000) { toast('Must be at least 1 minute away'); return; }
+        state.anchorMode = draft.anchorMode;
         state.anchorTime = d;
         state.firedForThisSchedule = false; // new schedule -> arm AUTO again
-        saveState(); render();
+        saveState();
+        closePopDiscard();
+        render();
     }
     // Custom-built combo widgets (not native <select>s) — full control over
     // colouring the next-hour option and greying out past times, without the
@@ -375,8 +388,10 @@
             opt.type = 'button'; opt.textContent = String(h).padStart(2, '0'); opt.dataset.h = String(h);
             opt.addEventListener('click', (e) => {
                 e.stopPropagation();
-                setAnchorHM(h, null);
+                if (!draft) return;
+                draft.hh = h;
                 hourList.hidden = true;
+                syncDraftUI();
                 refreshPickerLive();
             });
             hourList.appendChild(opt);
@@ -397,8 +412,11 @@
             opt.type = 'button'; opt.textContent = String(m).padStart(2, '0'); opt.dataset.m = String(m);
             opt.addEventListener('click', (e) => {
                 e.stopPropagation();
-                setAnchorHM(null, m);
+                if (!draft) return;
+                draft.mm = m;
                 minList.hidden = true;
+                syncDraftUI();
+                refreshPickerLive();
             });
             minList.appendChild(opt);
         }
@@ -430,8 +448,8 @@
         const now = new Date();
         const curH = now.getHours(), curM = now.getMinutes();
         const nextH = nextFullHour().getHours();
-        const selHour = state.anchorTime.getHours();
-        const selMin = state.anchorTime.getMinutes();
+        const selHour = draft ? draft.hh : state.anchorTime.getHours();
+        const selMin = draft ? draft.mm : state.anchorTime.getMinutes();
 
         [...el('autoHourComboList').children].forEach((opt) => {
             const h = parseInt(opt.dataset.h, 10);
@@ -446,17 +464,26 @@
             opt.classList.toggle('sel', m === selMin);
         });
     }
+    // Reflects the DRAFT in the popover's own controls (combo buttons, typed
+    // field, mode buttons) — the header itself stays showing the last
+    // COMMITTED schedule until OK is clicked.
     function syncPicker() {
-        const hh = state.anchorTime.getHours(), mm = state.anchorTime.getMinutes();
-        el('autoHourComboBtn').textContent = String(hh).padStart(2, '0');
-        el('autoMinComboBtn').textContent = String(mm).padStart(2, '0'); // shows the exact minute, even off the 15-step grid
+        syncDraftUI();
+    }
+    function syncDraftUI() {
+        if (!draft) return;
+        el('autoPopStart').classList.toggle('active', draft.anchorMode === 'start');
+        el('autoPopEnd').classList.toggle('active', draft.anchorMode === 'end');
+        el('autoHourComboBtn').textContent = String(draft.hh).padStart(2, '0');
+        el('autoMinComboBtn').textContent = String(draft.mm).padStart(2, '0'); // shows the exact minute, even off the 15-step grid
         const typed = el('autoTimeTyped');
-        if (document.activeElement !== typed) typed.value = fmtClock(state.anchorTime);
+        if (document.activeElement !== typed) typed.value = `${String(draft.hh).padStart(2, '0')}:${String(draft.mm).padStart(2, '0')}`;
     }
     // Also visually clamps the field as you type (fixes "99" staying on screen
     // for the hour — it was clamped internally but the field kept showing the
     // raw digits since it doesn't rewrite itself while focused).
     function onTyped(e) {
+        if (!draft) return;
         const raw = e.target.value;
         const parts = raw.match(/^(\d{1,2}):?(\d{0,2})$/);
         if (!parts) return;
@@ -470,7 +497,10 @@
         if (mRaw && mRaw.length === 2 && parseInt(mRaw, 10) > 59) {
             e.target.value = raw.slice(0, raw.indexOf(':') + 1) + String(m).padStart(2, '0');
         }
-        setAnchorHM(h, m);
+        draft.hh = h; draft.mm = m;
+        el('autoHourComboBtn').textContent = String(h).padStart(2, '0');
+        el('autoMinComboBtn').textContent = String(m).padStart(2, '0');
+        refreshPickerLive();
     }
 
     // ---- show / clear -----------------------------------------------------
@@ -540,14 +570,15 @@
             dropGhost.classList.add('auto-ghost');
             dropGhost.removeAttribute('draggable');
             delete dropGhost.dataset.from;
-            // Insert the ghost in the SAME spot right away (synchronously) so
-            // there's no gap/jitter between the original vanishing and the
-            // ghost appearing — dragover then repositions it as the mouse moves.
+            // Insert the ghost AND hide the original in the same synchronous
+            // pass — doing these in two separate ticks (as a previous version
+            // did, deferring the hide via setTimeout) left a brief window where
+            // BOTH were visible (an extra-item flash) or NEITHER was (a gap),
+            // depending on the order. The browser's native drag-image snapshot
+            // is taken before this handler even runs, so hiding here doesn't
+            // risk it.
             node.after(dropGhost);
-            // Hide the original a tick later — hiding it synchronously here
-            // risks the browser cancelling the drag before it captures its
-            // native drag-image snapshot.
-            setTimeout(() => node.classList.add('dragging'), 0);
+            node.classList.add('dragging');
         });
         node.addEventListener('dragend', () => { node.classList.remove('dragging'); removeDropGhost(); dragBlock = null; });
     }
@@ -688,16 +719,22 @@
     }, 250);
 
     // ---- toast ------------------------------------------------------------
-    // Fixed to the viewport, right next to the time selector (not nested
-    // inside the panel — so a rejection is never silently swallowed by a
-    // still-hidden panel — and not centred on the whole screen either).
+    // Floats just ABOVE the panel's header entirely — right by the time
+    // selector, but never overlapping the header button or the popover's own
+    // content below it (the OK button in particular), no matter how tall the
+    // popover gets. Anchored to the panel (absolute), not a fixed viewport
+    // offset, so it can't be swallowed by a hidden panel either.
+    // pointer-events:none is essential: a merely-invisible (opacity:0) element
+    // is still hit-tested and would silently eat clicks meant for whatever
+    // sits underneath/behind it once faded (this is what made the header's
+    // time area unclickable — the old fixed-position toast never went away).
     let toastTimer = null;
     function toast(msg) {
         let t = el('autoToast');
         if (!t) {
             t = document.createElement('div'); t.id = 'autoToast';
-            t.style.cssText = 'position:fixed; top:82px; right:16px; z-index:20000; background:rgba(240,69,63,0.96); color:#fff; padding:10px 16px; border-radius:8px; font-size:13px; font-weight:700; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,0.4); transition:opacity .2s; max-width:380px;';
-            document.body.appendChild(t);
+            t.style.cssText = 'position:absolute; top:-46px; left:8px; right:8px; z-index:50; background:rgba(240,69,63,0.96); color:#fff; padding:10px 16px; border-radius:8px; font-size:13px; font-weight:700; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,0.4); transition:opacity .2s; pointer-events:none;';
+            el('automationPanel').appendChild(t);
         }
         t.textContent = msg; t.style.opacity = '1';
         clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.style.opacity = '0'; }, 1800);
@@ -709,10 +746,10 @@
         buildPickerCombos();
         initListDragDrop();
         el('autoHeader').addEventListener('click', () => togglePop());
-        el('autoPopStart').addEventListener('click', () => setAnchor('start'));
-        el('autoPopEnd').addEventListener('click', () => setAnchor('end'));
+        el('autoPopStart').addEventListener('click', () => { if (draft) { draft.anchorMode = 'start'; syncDraftUI(); } });
+        el('autoPopEnd').addEventListener('click', () => { if (draft) { draft.anchorMode = 'end'; syncDraftUI(); } });
         el('autoTimeTyped').addEventListener('input', onTyped);
-        el('autoPopOk').addEventListener('click', () => togglePop(false));
+        el('autoPopOk').addEventListener('click', () => commitDraft());
         el('autoModeAuto').addEventListener('click', () => setMode('auto'));
         el('autoModeManual').addEventListener('click', () => setMode('manual'));
         el('autoPlayBtn').addEventListener('click', onPlayPause);
@@ -725,11 +762,11 @@
         // right-click-triggered drag) instead of just being a no-op.
         el('automationPanel').addEventListener('contextmenu', (e) => e.preventDefault());
         document.addEventListener('click', (e) => {
-            if (!el('autoPop').hidden && !e.target.closest('#autoPop') && !e.target.closest('#autoHeader')) togglePop(false);
+            if (!el('autoPop').hidden && !e.target.closest('#autoPop') && !e.target.closest('#autoHeader')) closePopDiscard();
         });
-        // Enter, anywhere inside the open picker, closes it (same as OK).
+        // Enter, anywhere inside the open picker, commits it (same as OK).
         el('autoPop').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); togglePop(false); }
+            if (e.key === 'Enter') { e.preventDefault(); commitDraft(); }
         });
         loadState();
         render();
