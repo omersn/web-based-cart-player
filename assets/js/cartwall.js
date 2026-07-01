@@ -259,7 +259,8 @@
 
         const audio = new Audio(`uploads/${audioFilename}`);
         button._audio = audio;
-        button._endAt = endAt;   // hard stop point, for the shared countdown
+        button._endAt = endAt;       // hard stop point, for the shared countdown
+        button._startAt = startAt;   // start point, for chain-total durations
 
         // --- The preload hack: prime each clip so its first real play is instant.
         audio.addEventListener('canplaythrough', () => {
@@ -478,11 +479,28 @@
     // where one cart ending hid the countdown while others were still playing:
     // we look at ALL .button.playing and show the longest remaining time, so the
     // countdown stays up until the last cart finishes.
+    // Full playable length of a cart (end point minus start point).
+    function fullDuration(btn) {
+        const a = btn._audio;
+        if (!a) return 0;
+        const end = (btn._endAt != null ? btn._endAt : a.duration) || 0;
+        return Math.max(0, end - (btn._startAt || 0));
+    }
+    // Remaining time for a playing cart. For a chained cart the countdown covers
+    // the WHOLE chain: this cart's remaining plus the full length of every cart it
+    // auto-plays into, up to and including the terminal cart.
     function computeRemaining(btn) {
         const a = btn._audio;
         if (!a) return 0;
         const end = (btn._endAt != null ? btn._endAt : a.duration) || 0;
-        return Math.max(0, end - a.currentTime);
+        let total = Math.max(0, end - a.currentTime);
+        let node = btn;
+        while (node && node.classList.contains('buttonext')) {
+            node = node.nextElementSibling;
+            if (!node || node.tagName !== 'BUTTON') break;
+            total += fullDuration(node);
+        }
+        return total;
     }
     function refreshBackTimer() {
         const backtimer = document.getElementById('backtimer');
