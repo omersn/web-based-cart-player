@@ -189,7 +189,11 @@ body {
 body.layout-locked #chip-ids,
 body.layout-locked #chip-clock,
 body.layout-locked .window-controls,
-body.layout-locked .dock-undock { pointer-events: none; opacity: 0.4; }
+body.layout-locked .dock-nav { pointer-events: none; opacity: 0.4; }
+/* The undock button sits ON TOP of the dock iframe: keep it click-capturing so
+   a click can't fall through to a cart behind it, but make it inert while
+   locked (undock() no-ops when layout is locked). */
+body.layout-locked .dock-undock { opacity: 0.4; cursor: not-allowed; }
 body.layout-locked .title-bar-0001,
 body.layout-locked .title-bar-0002 { cursor: default; }
 
@@ -229,14 +233,28 @@ body.layout-locked .title-bar-0002 { cursor: default; }
     background: #0c0f14;
     transition: none;
 }
-/* Minimized: collapse the body, keep only the header visible. */
 /* Minimize:
    - Station-ID window (0001) collapses 2 rows of sub-carts -> 1 row. The body
      stays mounted; the second row is simply clipped by overflow:hidden (D).
-   - Clock window (0002) collapses down to just its header. */
+   - Clock window (0002) shrinks to a small, still-useful clock: just the ring,
+     with the title bar / dropdown hidden (a collapsed dropdown you can't see
+     the result of is useless). A small restore button pops it back (7.6). */
 .floating-container-0001.minimized { height: 156px !important; }
-.floating-container-0002.minimized { height: 42px !important; }
-.floating-container-0002.minimized .iframe-content-0002 { display: none; }
+.floating-container-0002.minimized { width: 160px !important; height: 160px !important; }
+.floating-container-0002.minimized .title-bar-0002 { display: none; }
+.floating-container-0002.minimized .iframe-content-0002 { height: 100%; }
+.floating-container-0002.minimized .window-restore { display: flex; }
+
+/* Restore ("expand") button for the minimized clock — a small corner overlay. */
+.window-restore {
+    display: none; position: absolute; top: 5px; right: 5px; z-index: 6;
+    width: 20px; height: 20px; border-radius: 5px; border: none; cursor: pointer;
+    background: rgba(0, 0, 0, 0.45); color: var(--text-secondary);
+    align-items: center; justify-content: center; font-size: 12px;
+    opacity: 0.5; transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+.floating-container-0002.minimized:hover .window-restore { opacity: 1; }
+.window-restore:hover { background: rgba(0, 0, 0, 0.75); color: #fff; }
 
 /* ---- Loading overlay ----------------------------------------------------- */
 .overlay {

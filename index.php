@@ -33,6 +33,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>Cart Player &mdash; <?= htmlspecialchars(STATION_NAME) ?></title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='6' fill='%2334c3d4'/%3E%3Ccircle cx='16' cy='16' r='12' fill='none' stroke='%2334c3d4' stroke-width='2' opacity='.5'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="assets/css/player.css">
 </head>
 <body>
@@ -107,6 +108,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
 
     <!-- Draggable clock window -->
     <div class="floating-container-0002" id="floatingDiv2">
+        <button class="window-restore" onclick="toggleMinimize('floatingDiv2')" title="Expand clock"><i class="ph ph-arrows-out-simple"></i></button>
         <div class="title-bar-0002" id="titleBar2">
             <div class="window-select-wrap">
                 <select id="clock-select" class="window-select">
@@ -239,8 +241,13 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             const progressBar = document.getElementById('progressBar');
             const grid = document.getElementById('cartgrid');
             const floater = document.getElementById('floater');
+            const dockIds = document.getElementById('dockIdsFrame');
             const gridSrc = grid.src;
             const floaterSrc = floater.src;
+            // The visible ID grid may be the floating window OR the dock; prime
+            // whichever has real content (the other is about:blank).
+            const dockIdsLive = dockIds.src && !dockIds.src.includes('about:blank');
+            const dockIdsSrc = dockIds.src;
 
             // Nudge the keep-alive clip now that we have a gesture so AUDIO STBY
             // lights up immediately instead of waiting for the next 30s beat.
@@ -258,9 +265,14 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             setTimeout(() => {
                 grid.src = 'grid.php?from=35&to=60&pagination=0&fit=1&mainbar=1&timestamp=' + Date.now();
                 floater.src = 'grid.php?from=110&to=120&pagination=0&smalltext=15&smallbacktimer=1&btnh=76&timestamp=' + Date.now();
+                if (dockIdsLive) dockIds.src = 'grid.php?from=35&to=45&pagination=0&smalltext=15&btnh=76&fit=1&timestamp=' + Date.now();
             }, 800);
             // …and back to the original views, which primes their carts.
-            setTimeout(() => { grid.src = gridSrc; floater.src = floaterSrc; }, 1900);
+            setTimeout(() => {
+                grid.src = gridSrc;
+                floater.src = floaterSrc;
+                if (dockIdsLive) dockIds.src = dockIdsSrc;
+            }, 1900);
             // Reveal once the kick has completed.
             setTimeout(() => { overlay.style.display = 'none'; }, 2900);
         }
@@ -373,11 +385,13 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         const idSectionUrls = [...document.getElementById('ids-select').options].map(o => o.value + '&fit=1');
         let dockIdsIndex = 0;
         function dockIdsNav(dir) {
+            if (layoutLocked) return; // don't reload the grid mid-playback
             dockIdsIndex = (dockIdsIndex + dir + idSectionUrls.length) % idSectionUrls.length;
             document.getElementById('dockIdsFrame').src = idSectionUrls[dockIdsIndex];
         }
         const winState = (() => {
-            const def = { clock: { docked: false, visible: true }, ids: { docked: false, visible: true } };
+            // First visit (no saved state) starts with BOTH views docked.
+            const def = { clock: { docked: true, visible: true }, ids: { docked: true, visible: true } };
             try {
                 const saved = JSON.parse(localStorage.getItem(WIN_STORE));
                 if (saved && saved.clock && saved.ids) return saved;
@@ -391,7 +405,14 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         function renderWindows() {
             for (const key of ['clock', 'ids']) {
                 const s = winState[key];
-                document.querySelector(WIN[key].floatSel).style.display = (s.visible && !s.docked) ? 'block' : 'none';
+                const floatEl = document.querySelector(WIN[key].floatSel);
+                const floating = s.visible && !s.docked;
+                floatEl.style.display = floating ? 'block' : 'none';
+                // Restore a remembered floating position (saved on drag).
+                if (floating && s.pos) {
+                    floatEl.style.left = s.pos.left;
+                    floatEl.style.top = s.pos.top;
+                }
                 const chip = document.getElementById(WIN[key].chip);
                 if (chip) chip.classList.toggle('is-active', s.visible);
             }
@@ -426,7 +447,16 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         function closeFloatingDiv2() { closeWindow('clock'); }
         function toggleMinimize(containerId) {
             if (layoutLocked) return;
-            document.getElementById(containerId).classList.toggle('minimized');
+            const el = document.getElementById(containerId);
+            el.classList.toggle('minimized');
+            // The minimized clock shows the compact ring only; restore returns to
+            // whatever view its dropdown had selected.
+            if (containerId === 'floatingDiv2') {
+                const minimized = el.classList.contains('minimized');
+                document.getElementById('floater2').src = minimized
+                    ? 'clock.php?dock=1'
+                    : document.getElementById('clock-select').value;
+            }
         }
 
         renderWindows(); // apply persisted window state on load
@@ -473,7 +503,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         dragOverlay.className = 'drag-overlay';
         document.body.appendChild(dragOverlay);
 
-        function makeDraggable(containerSelector, titleSelector) {
+        function makeDraggable(containerSelector, titleSelector, key) {
             const container = document.querySelector(containerSelector);
             const title = document.querySelector(titleSelector);
             if (!container || !title) return;
@@ -487,6 +517,11 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 dragOverlay.classList.remove('active');
                 document.removeEventListener('mousemove', onMove);
                 document.removeEventListener('mouseup', stop);
+                // Remember the floating window's position across reloads.
+                if (key && winState[key]) {
+                    winState[key].pos = { left: container.style.left, top: container.style.top };
+                    saveWinState();
+                }
             };
             title.addEventListener('mousedown', (e) => {
                 if (layoutLocked) return; // no re-layout while on air
@@ -501,8 +536,8 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 document.addEventListener('mouseup', stop);
             });
         }
-        makeDraggable('.floating-container-0001', '.title-bar-0001');
-        makeDraggable('.floating-container-0002', '.title-bar-0002');
+        makeDraggable('.floating-container-0001', '.title-bar-0001', 'ids');
+        makeDraggable('.floating-container-0002', '.title-bar-0002', 'clock');
         // The page is non-scrollable vertically; keep it pinned to the top so the
         // toolbar stays reachable. (CSS already positions the floating windows on-screen.)
         window.scrollTo(0, 0);
