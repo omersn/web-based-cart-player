@@ -553,6 +553,7 @@
     function attachDrag(node, block) {
         node.dataset.from = block.from;
         node.draggable = !(state.locked || state.running);
+        let hideRaf = 0; // pending "hide the original" frame for THIS row
         node.addEventListener('dragstart', (e) => {
             // Native drag should only ever start from the primary (left)
             // button — guards against a right-click (which shouldn't drag at
@@ -580,9 +581,24 @@
             // can lag further behind on a busy event loop (the actual "extra
             // item visible" flash that prompted this change in the first place).
             node.after(dropGhost);
-            requestAnimationFrame(() => node.classList.add('dragging'));
+            hideRaf = requestAnimationFrame(() => {
+                hideRaf = 0;
+                // Guard against a tiny/instant drag whose dragend already fired
+                // in THIS same frame (before the rAF ran): hiding now would
+                // strand the row display:none with no cleanup left, so it would
+                // vanish until the next render(). Only hide if the drag is still
+                // live.
+                if (dragBlock) node.classList.add('dragging');
+            });
         });
-        node.addEventListener('dragend', () => { node.classList.remove('dragging'); removeDropGhost(); dragBlock = null; });
+        node.addEventListener('dragend', () => {
+            // Cancel a still-pending hide so it can't fire AFTER we've cleaned
+            // up (the race that made a barely-dragged row disappear).
+            if (hideRaf) { cancelAnimationFrame(hideRaf); hideRaf = 0; }
+            node.classList.remove('dragging');
+            removeDropGhost();
+            dragBlock = null;
+        });
     }
     function initListDragDrop() {
         const list = el('autoList');
