@@ -20,7 +20,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const audio = document.getElementById('keep-alive-audio');
     const indicator = document.getElementById('keep-alive-indicator');
 
-    let wasOnline = navigator.onLine;
     audio.volume = 0.01; // 1% — effectively inaudible, but enough to keep the device awake.
 
     // Force a style reflow so indicator class changes are applied immediately.
@@ -34,30 +33,46 @@ document.addEventListener('DOMContentLoaded', () => {
     // Tell the parent page (the Connected/Standby pill in the top bar) about
     // our online/offline state. Harmless if nobody is listening (e.g. when
     // this page is opened standalone).
-    const notifyParent = (status) => {
+    const notifyParent = (patch) => {
         try {
-            window.parent.postMessage({ source: 'keep-alive', status }, '*');
+            window.parent.postMessage({ source: 'keep-alive', ...patch }, '*');
         } catch (e) { /* no parent window — ignore */ }
     };
 
     const setIndicatorGreen = () => {
-        if (!navigator.onLine) {
-            return; // never show green while offline
-        }
         indicator.classList.remove('offline', 'yellow');
         indicator.classList.add('blinking');
         forceDOMUpdate(indicator);
-        notifyParent('online');
     };
 
     const setIndicatorOffline = () => {
         indicator.classList.remove('blinking', 'yellow');
         indicator.classList.add('offline');
         forceDOMUpdate(indicator);
-        notifyParent('offline');
     };
 
-    // Report each beat (or failure) to the server log.
+    // ---- Connection monitor -------------------------------------------------
+    // Ping the server directly (a HEAD request is almost free) so the "Connected"
+    // pill reflects real server reachability, not just the browser's onLine guess.
+    // Runs more often than the 30s audio heartbeat so "we're up" stays current.
+    const pingServer = () => {
+        if (!navigator.onLine) {
+            setIndicatorOffline();
+            notifyParent({ connection: 'offline' });
+            return;
+        }
+        fetch(`keep-alive.php?ping=${Date.now()}`, { method: 'HEAD', cache: 'no-store' })
+            .then(() => {
+                setIndicatorGreen();
+                notifyParent({ connection: 'online' });
+            })
+            .catch(() => {
+                setIndicatorOffline();
+                notifyParent({ connection: 'offline' });
+            });
+    };
+
+    // Report an audio heartbeat (or failure) to the server log.
     const logEvent = (message, isError = false) => {
         if (!navigator.onLine) {
             return;
@@ -71,50 +86,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 isError,
                 timestamp: new Date().toISOString(),
             }),
-        }).catch(() => setIndicatorOffline());
+        }).catch(() => {});
     };
 
-    // The actual heartbeat: try to play the silent clip.
+    // ---- Audio keep-alive ---------------------------------------------------
+    // Play the near-silent clip to keep the output device warm. Success means the
+    // audio subsystem is on standby and ready ("AUDIO STBY"); a failure — usually
+    // the autoplay gate before any user gesture — reports "AUDIO OFF".
     const playKeepAliveAudio = () => {
-        if (!navigator.onLine) {
-            setIndicatorOffline();
-            logEvent('Skipped playback: offline.', true);
-            return;
-        }
-
         const playPromise = audio.play();
         if (playPromise !== undefined) {
             playPromise
                 .then(() => {
                     logEvent('Keep-alive heartbeat succeeded.');
-                    setIndicatorGreen();
+                    notifyParent({ audio: 'active' });
                 })
                 .catch((err) => {
-                    // Browsers block audio until the user has interacted with the
-                    // page once; that is the usual cause of a failed early beat.
                     logEvent(`Heartbeat failed: ${err.message}`, true);
-                    setIndicatorOffline();
+                    notifyParent({ audio: 'idle' });
                 });
         } else {
             logEvent('Audio playback not supported or interrupted.', true);
-            setIndicatorOffline();
+            notifyParent({ audio: 'idle' });
         }
     };
 
-    const updateNetworkStatus = () => {
-        if (navigator.onLine && !wasOnline) {
-            logEvent('Reconnected to the network.');
-            setIndicatorGreen();
-        } else if (!navigator.onLine && wasOnline) {
-            logEvent('Disconnected from the network.', true);
-            setIndicatorOffline();
-        }
-        wasOnline = navigator.onLine;
-    };
+    window.addEventListener('online', pingServer);
+    window.addEventListener('offline', pingServer);
 
-    window.addEventListener('online', updateNetworkStatus);
-    window.addEventListener('offline', updateNetworkStatus);
+    // The parent posts this right after the user's first gesture (the START
+    // button), so the audio heartbeat can start immediately instead of being
+    // blocked by the autoplay gate until the next 30s beat.
+    window.addEventListener('message', (event) => {
+        if (event.data && event.data.cmd === 'keepalive-play') playKeepAliveAudio();
+    });
 
-    setInterval(playKeepAliveAudio, 30000); // 30-second heartbeat
-    updateNetworkStatus();
+    setInterval(pingServer, 10000);         // 10-second connection ping
+    setInterval(playKeepAliveAudio, 30000); // 30-second audio heartbeat
+    pingServer();
+    playKeepAliveAudio();
 });

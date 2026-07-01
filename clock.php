@@ -55,9 +55,15 @@
         }
         .readout .hm { font-size: 44px; font-weight: 700; color: #f2f5f8; line-height: 1; }
         .readout .countdown { font-size: 16px; font-weight: 600; color: #ff5b54; margin-top: 6px; }
+
+        /* Compact sizing when docked (?dock=1) so the ring fits the short dock. */
+        body.dock .ring { width: 150px; height: 150px; }
+        body.dock .ring::after { width: 116px; height: 116px; }
+        body.dock .readout .hm { font-size: 30px; }
+        body.dock .readout .countdown { font-size: 12px; margin-top: 4px; }
     </style>
 </head>
-<body>
+<body class="<?= isset($_GET['dock']) ? 'dock' : '' ?>">
     <div class="ring" id="ring">
         <div class="readout">
             <div class="hm" id="hm">00:00</div>

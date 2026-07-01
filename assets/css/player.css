@@ -79,14 +79,18 @@ body {
 .floating-container-0002 {
     display: block;
     position: fixed; /* fixed so it can't enlarge / scroll the page */
+    z-index: 5000;   /* above the board / topbar / ticker, below popups + drag overlay */
     background: var(--bg-panel);
     border-radius: 14px;
     box-shadow: 0 22px 50px rgba(0, 0, 0, 0.6);
     border: 1px solid var(--hairline);
     overflow: hidden;
 }
-.floating-container-0001 { width: 640px; height: 165px; top: 44px; left: 30px; }
-.floating-container-0002 { width: 300px; height: 300px; top: 240px; left: 30px; }
+/* Default positions clear the 66px topbar and stack on the left so both stay
+   on-screen even on narrower viewports. The Station-ID window is tall enough to
+   show both rows of sub-carts; the clock sits just beneath it. */
+.floating-container-0001 { width: 640px; height: 270px; top: 78px; left: 20px; }
+.floating-container-0002 { width: 300px; height: 300px; top: 360px; left: 20px; }
 
 .title-bar-0001, .title-bar-0002 {
     width: 100%;
@@ -101,16 +105,107 @@ body {
     padding: 0 10px;
 }
 .window-controls { display: flex; align-items: center; gap: 8px; }
-.window-dot {
-    width: 11px; height: 11px; border-radius: 50%;
-    background: #f0453f; border: none; cursor: pointer; padding: 0;
-}
-.window-minimize {
+.window-minimize, .window-dock, .window-close {
     width: 18px; height: 18px; border-radius: 4px; border: none; cursor: pointer;
     background: var(--raised); color: var(--text-secondary);
     display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1;
 }
-.window-minimize:hover { background: var(--raised-hover); color: var(--text-primary); }
+.window-minimize:hover, .window-dock:hover { background: var(--raised-hover); color: var(--text-primary); }
+.window-close:hover { background: rgba(240, 69, 63, 0.9); color: #fff; }
+.window-dock i, .window-close i { font-size: 12px; }
+
+/* ---- Bottom dock ----------------------------------------------------- */
+/* A flex row between the board and the ticker; when a view is docked the board
+   (flex:1) shrinks to make room and re-fits its carts. Kept deliberately bare —
+   no headers, no padding — so the docked carts get the full height and stay big
+   and easy to hit on a live show. Panes butt together with a hairline gap. */
+.dock-bar {
+    display: none;
+    flex: 0 0 auto;
+    gap: 1px;
+    height: 200px;
+    min-width: 1180px;
+    background: var(--hairline);   /* shows through the 1px gap as a divider */
+    border-top: 1px solid var(--hairline);
+}
+.dock-pane {
+    position: relative;
+    display: flex; min-width: 0;
+    background: var(--bg-app);
+    overflow: hidden;
+}
+.dock-pane iframe { border: none; height: 100%; flex: 1 1 0; min-width: 0; }
+/* Undock lives as a small, unobtrusive corner overlay (no header bar). */
+.dock-undock {
+    position: absolute; top: 4px; right: 4px; z-index: 6;
+    width: 20px; height: 20px; border-radius: 5px; border: none; cursor: pointer;
+    background: rgba(0, 0, 0, 0.45); color: var(--text-secondary);
+    display: flex; align-items: center; justify-content: center; font-size: 12px;
+    opacity: 0.5; transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+.dock-pane:hover .dock-undock { opacity: 1; }
+.dock-undock:hover { background: rgba(0, 0, 0, 0.75); color: #fff; }
+
+/* < > section nav for the docked Station-ID grid (no dropdown once docked). */
+.dock-nav {
+    flex: 0 0 44px; align-self: stretch; border: none; cursor: pointer;
+    background: var(--raised); color: var(--text-secondary);
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+.dock-nav:hover { background: var(--raised-hover); color: var(--text-primary); }
+
+/* Widths per mode (set on .dock-bar by renderWindows): */
+.dock-bar.clock-only .dock-clock { flex: 1 1 auto; }
+.dock-bar.ids-only   .dock-ids   { flex: 1 1 auto; }
+/* Clock is a snug fixed width (just the ring) so it doesn't waste side space. */
+.dock-bar.both .dock-clock { flex: 0 0 230px; }
+.dock-bar.both .dock-ids   { flex: 1 1 auto; }
+/* In the narrow (both) layout the clock pane shows only the ring, not the
+   separate "time to end of hour" panel. */
+.dock-bar.both .dock-clock-count { display: none; }
+
+/* ---- Start gate ------------------------------------------------------ */
+/* Shown first; the click unlocks browser audio autoplay before loading. */
+.start-overlay {
+    position: fixed; inset: 0; z-index: 10001;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+    background: radial-gradient(circle at 50% 42%, #12161c, #06080b);
+}
+.start-button {
+    display: inline-flex; align-items: center; gap: 12px;
+    padding: 20px 56px; border: none; border-radius: 16px; cursor: pointer;
+    font-family: 'Assistant', Arial, sans-serif; font-weight: 800; font-size: 30px; letter-spacing: 0.1em;
+    color: #fff; background: var(--red-grad); box-shadow: 0 10px 44px var(--red-glow);
+}
+.start-button:hover { filter: brightness(1.08); }
+.start-button:active { transform: scale(0.97); }
+.start-button i { font-size: 26px; }
+.start-hint { color: var(--text-secondary); font-family: 'Assistant', Arial, sans-serif; font-size: 14px; }
+
+/* ---- Live-safety lock ------------------------------------------------ */
+/* While any cart is on air, layout controls are disabled and dimmed so the
+   layout can't be disturbed mid-jingle. */
+body.layout-locked #chip-ids,
+body.layout-locked #chip-clock,
+body.layout-locked .window-controls,
+body.layout-locked .dock-undock { pointer-events: none; opacity: 0.4; }
+body.layout-locked .title-bar-0001,
+body.layout-locked .title-bar-0002 { cursor: default; }
+
+/* ---- Big on-air countdown bar --------------------------------------- */
+/* Slides up over the ticker while the board is playing (same footprint). */
+.countdown-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1005;
+    height: 46px;
+    display: flex; align-items: center; justify-content: center; gap: 16px;
+    background: linear-gradient(180deg, #f0453f, #c22f2a);
+    color: #fff; font-family: 'JetBrains Mono', monospace;
+    transform: translateY(100%); transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+    box-shadow: 0 -6px 24px rgba(240, 69, 63, 0.35);
+}
+.countdown-bar.show { transform: translateY(0); }
+.countdown-bar .countdown-value { font-weight: 700; font-size: 34px; letter-spacing: 0.06em; }
 
 /* Header "deck" pill (Clock / Station IDs source selector) */
 .window-select-wrap { position: relative; display: inline-flex; align-items: center; }
@@ -135,8 +230,12 @@ body {
     transition: none;
 }
 /* Minimized: collapse the body, keep only the header visible. */
-.floating-container-0001.minimized, .floating-container-0002.minimized { height: 42px !important; }
-.floating-container-0001.minimized .iframe-content-0001,
+/* Minimize:
+   - Station-ID window (0001) collapses 2 rows of sub-carts -> 1 row. The body
+     stays mounted; the second row is simply clipped by overflow:hidden (D).
+   - Clock window (0002) collapses down to just its header. */
+.floating-container-0001.minimized { height: 156px !important; }
+.floating-container-0002.minimized { height: 42px !important; }
 .floating-container-0002.minimized .iframe-content-0002 { display: none; }
 
 /* ---- Loading overlay ----------------------------------------------------- */
@@ -226,6 +325,8 @@ body {
 .topbar-end { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 
 .icon-cluster { display: flex; align-items: center; gap: 6px; }
+/* Divider separating the window-toggle buttons from the one-shot actions. */
+.icon-sep { width: 1px; height: 24px; background: var(--hairline); margin: 0 4px; flex-shrink: 0; }
 .icon-btn {
     position: relative;
     width: 40px; height: 40px;
@@ -240,10 +341,15 @@ body {
     text-decoration: none;
 }
 .icon-btn:hover { background: var(--raised-hover); color: var(--text-primary); }
-.icon-btn.is-active { background: var(--cyan-tint); border-color: var(--cyan-border); color: var(--cyan-text); }
-.icon-btn .status-dot { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; }
-.icon-btn .status-dot.amber { background: var(--amber); }
-.icon-btn .status-dot.red { background: #f0453f; }
+/* The toggle indication lives in the coloured DOT only, never the whole
+   button (A): dim/grey when the window is hidden, bright when it's open. */
+.icon-btn .status-dot {
+    position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--text-tertiary); opacity: 0.4;
+    transition: opacity 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.icon-btn.is-active .status-dot.amber { background: var(--amber); opacity: 1; box-shadow: 0 0 6px rgba(224, 165, 43, 0.75); }
+.icon-btn.is-active .status-dot.red { background: #f0453f; opacity: 1; box-shadow: 0 0 6px rgba(240, 69, 63, 0.75); }
 
 .transport-cluster { display: flex; align-items: center; gap: 10px; }
 .status-pill {
@@ -258,6 +364,12 @@ body {
 }
 .status-pill.standby { background: rgba(255, 255, 255, 0.05); border-color: var(--hairline); color: var(--text-secondary); }
 .status-pill.standby .pulse-dot { background: var(--text-tertiary); animation: none; }
+/* Audio keep-alive pill: amber "standby" look while the silent clip runs, to
+   read as distinct from the green connection pill. */
+.status-pill.audio { background: rgba(224, 165, 43, 0.14); border-color: rgba(224, 165, 43, 0.35); color: #e8b556; }
+.status-pill.audio .pulse-dot { background: var(--amber); }
+.status-pill.audio.standby { background: rgba(255, 255, 255, 0.05); border-color: var(--hairline); color: var(--text-secondary); }
+.status-pill.audio.standby .pulse-dot { background: var(--text-tertiary); animation: none; }
 
 .btn-stop {
     display: inline-flex; align-items: center; gap: 8px;
@@ -276,15 +388,6 @@ body {
 }
 .clock-anchor .hm { font-size: 20px; font-weight: 700; color: var(--text-strong); }
 .clock-anchor .sec { font-size: 13px; font-weight: 600; color: var(--clock-dim); }
-
-.btn-admin {
-    display: inline-flex; align-items: center; gap: 8px;
-    height: 40px; padding: 0 16px; border-radius: 10px;
-    background: var(--cyan-tint); border: 1px solid var(--cyan-border); color: var(--cyan-text);
-    font-weight: 700; font-size: 14px; text-decoration: none; font-family: 'Assistant', Arial, sans-serif;
-}
-.btn-admin:hover { background: rgba(52, 195, 212, 0.22); }
-.btn-admin i { font-size: 16px; }
 
 /* ---- Bottom ticker --------------------------------------------------- */
 .statuses-bar {
@@ -316,7 +419,17 @@ body {
     background: var(--cyan-tint); color: var(--cyan-text);
     display: flex; align-items: center; justify-content: center; font-size: 13px;
 }
+/* The chip's "manage" area (avatar + role) links to admin.php / dj.php — the
+   old top-bar Admin button now lives here (G). */
+.ticker-chip .chip-main { display: inline-flex; align-items: center; gap: 8px; color: inherit; text-decoration: none; }
+.ticker-chip .chip-main:hover { color: var(--cyan-text); }
+.ticker-chip .chip-main i { font-size: 15px; opacity: 0.8; }
 .ticker-chip .logout-link { color: var(--text-tertiary); font-weight: 400; font-size: 11px; text-decoration: underline; margin-left: 4px; }
+
+/* The Connected/Standby pill now sits in the ticker next to the user chip (H). */
+.statuses-bar .status-pill { flex-shrink: 0; }
+/* Announcement text takes the remaining width and ellipsises. */
+.ticker-msg { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /*
  * Transparent overlay shown ONLY while a floating window is being dragged.

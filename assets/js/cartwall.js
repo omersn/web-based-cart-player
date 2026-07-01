@@ -17,10 +17,11 @@
  * the first real click is instant.
  *
  * Other pieces:
- *  - A "PLAYING" pulsing tag + a 2-bar animated VU indicator on the now-playing
- *    cart (purely visual — see the studio design spec; it replaced a
- *    per-button WebAudio AnalyserNode that hit the browser's AudioContext cap
- *    once more than a handful of carts were on a page).
+ *  - A "PLAYING" pulsing tag + a 2-bar VU indicator on the now-playing cart.
+ *    The VU is audio-reactive: each cart taps a shared AudioContext through its
+ *    own AnalyserNode and the two bars follow the real signal level. Using a
+ *    single shared context (created once, lazily) avoids the per-context cap a
+ *    browser enforces once more than a handful of carts are on a page.
  *  - Chaining (data/cross.txt): a "chained" button auto-clicks the next one when
  *    it finishes, so several carts play back-to-back as one sequence.
  *  - A large "back-timer" overlay shows the remaining time of the current item
@@ -56,19 +57,37 @@
     const columns = parseInt(urlParams.get('line'), 10) || 5;
     document.documentElement.style.setProperty('--columns', columns);
 
+    // Report on-air state up to the parent shell: how many carts are playing here
+    // (used to lock layout while anything is on air) plus the shared countdown
+    // string (used to drive the big slide-up countdown bar over the ticker).
+    // Harmless when there's no parent (grid opened standalone).
+    const reportState = (playing, countdown) => {
+        try { window.parent.postMessage({ source: 'cartwall', playing, countdown }, '*'); } catch (e) { /* no parent */ }
+    };
+    // Clear our contribution before the frame is torn down / reloaded, so a
+    // reload mid-playback (e.g. Stop all) doesn't leave a stale lock/countdown.
+    window.addEventListener('pagehide', () => reportState(0, null));
+
+    // The main board reports its countdown to the parent (the big bar over the
+    // ticker); sub-windows (Station IDs, dock) show their own internal bar.
+    const isMainBoard = urlParams.get('mainbar') === '1';
+
+    // One AudioContext shared by every cart. Created lazily on first use so we
+    // don't spin one up before there's any audio, and so a single context backs
+    // all the per-cart AnalyserNodes that feed the VU meters (see buildButton).
+    let sharedAudioContext = null;
+    const getAudioContext = () => {
+        if (!sharedAudioContext) {
+            sharedAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        return sharedAudioContext;
+    };
+
     // Log a page refresh.
     window.addEventListener('load', () => {
         fetch('', { method: 'POST', body: `${new Date().toLocaleString()} - page refreshed` });
     });
 
-    // Reveal the back-timer overlay a few seconds after load.
-    window.addEventListener('load', () => {
-        setTimeout(() => {
-            const backtimer = document.getElementById('backtimer');
-            if (backtimer) backtimer.style.top = '-60px';
-            logToPanel('[INFO] Back-timer ready');
-        }, 6000);
-    });
 
     function logToPanel(message) {
         const panel = document.getElementById('messagelog');
@@ -157,14 +176,38 @@
                 };
                 pagination.appendChild(pageButton);
             }
+
+            // Buttons are appended on a small stagger; compact empty rows once
+            // they're all in place.
+            setTimeout(applyRowCompaction, itemsPerPage * 25 + 120);
         } catch (error) {
             console.error(`Error loading cartwall: ${error.message}`);
         }
     }
 
+    // In fit mode, collapse any row whose carts are ALL empty to ~20% height so
+    // the populated rows get the reclaimed vertical space.
+    function applyRowCompaction() {
+        if (urlParams.get('fit') !== '1') return;
+        const page = document.querySelector('.page.active');
+        if (!page) return;
+        const buttons = [...page.children];
+        if (buttons.length === 0) return;
+        const rowCount = Math.ceil(buttons.length / columns);
+        const rows = [];
+        for (let r = 0; r < rowCount; r++) {
+            const rowButtons = buttons.slice(r * columns, (r + 1) * columns);
+            const allEmpty = rowButtons.every(b => b.classList.contains('empty'));
+            rows.push(allEmpty ? '0.2fr' : '1fr');
+        }
+        page.style.gridTemplateRows = rows.join(' ');
+    }
+
+    const chainedAt = (bn) => specialBoxes.some(box => box.boxNumber === bn && box.flag === 1);
+
     function buildButton(line, pageIndex, index, pageDiv) {
         const boxNumber = pageIndex * itemsPerPage + index + 1;
-        const isChained = specialBoxes.some(box => box.boxNumber === boxNumber && box.flag === 1);
+        const isChained = chainedAt(boxNumber);
         const buttonClass = isChained ? 'buttonext' : 'button';
 
         const [name, audioPath, startPoint, colorCode, endPoint] = line.split('|').map(part => part.trim());
@@ -199,8 +242,24 @@
             return;
         }
 
+        // Chained run membership -> one border around the whole block (I).
+        // A run is a chained cart, its chained successors, and the terminal cart
+        // they play into. Only the run's outer edges get a border (see grid.php).
+        const inChainRun = chainedAt(boxNumber) || chainedAt(boxNumber - 1);
+        if (inChainRun) {
+            button.classList.add('chain');
+            if (chainedAt(boxNumber) && !chainedAt(boxNumber - 1)) {
+                button.classList.add('chain-start');
+            } else if (!chainedAt(boxNumber) && chainedAt(boxNumber - 1)) {
+                button.classList.add('chain-end');
+            } else {
+                button.classList.add('chain-mid');
+            }
+        }
+
         const audio = new Audio(`uploads/${audioFilename}`);
         button._audio = audio;
+        button._endAt = endAt;   // hard stop point, for the shared countdown
 
         // --- The preload hack: prime each clip so its first real play is instant.
         audio.addEventListener('canplaythrough', () => {
@@ -255,9 +314,6 @@
                     } else {
                         logToPanel(`[ERROR] Priming failed for '${name}': ${error.message}`);
                     }
-                } finally {
-                    const backtimer = document.getElementById('backtimer');
-                    if (backtimer) backtimer.style.display = 'none';
                 }
             };
 
@@ -268,52 +324,87 @@
         audio.load();
         logToPanel(`[INFO] Audio file '${audioFilename}' loaded: ${name}`);
 
-        // A dedicated AudioContext per cart is only needed to nudge the preload
-        // hack past the autoplay gate on some browsers; it is not used for
-        // level metering (that's now a CSS animation — see the "PLAYING"
-        // tag / VU bars below, always in the DOM, shown via the .playing class).
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-
-        const playingTag = document.createElement('div');
-        playingTag.classList.add('playing-tag');
-        playingTag.innerHTML = '<span class="live-dot"></span>PLAYING';
+        // The shared AudioContext nudges the preload hack past the autoplay gate
+        // AND feeds this cart's VU meter. Route the clip through an AnalyserNode
+        // so the two bars can follow the real signal level while it plays.
+        const audioContext = getAudioContext();
+        let analyser = null;
+        let vuData = null;
+        try {
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 64;
+            analyser.smoothingTimeConstant = 0.75;
+            vuData = new Uint8Array(analyser.frequencyBinCount);
+            const mediaSource = audioContext.createMediaElementSource(audio);
+            mediaSource.connect(analyser);
+            analyser.connect(audioContext.destination);
+        } catch (error) {
+            // Metering is best-effort; playback still works without it.
+            console.warn(`VU meter unavailable for '${name}': ${error.message}`);
+        }
 
         const vu = document.createElement('div');
         vu.classList.add('vu');
         vu.innerHTML = '<span></span><span></span>';
+        const vuBars = vu.querySelectorAll('span');
+
+        // Drive both bars from the same overall level so they share a scale:
+        // bar 1 follows the signal instantly, bar 2 is a smoothed trailing copy.
+        // (A raw low/high-band split looked lopsided — bass always dwarfs treble.)
+        let vuRaf = null;
+        let vuAvg = 0;
+        const driveVu = () => {
+            if (!analyser) return;
+            analyser.getByteFrequencyData(vuData);
+            let sum = 0;
+            for (let i = 0; i < vuData.length; i++) sum += vuData[i];
+            const level = sum / vuData.length / 255;   // overall loudness, 0..1
+            vuAvg = vuAvg * 0.72 + level * 0.28;        // smoothed trailing level
+            const h = (v) => `${Math.max(10, Math.min(100, v * 165))}%`;
+            vuBars[0].style.height = h(level);
+            vuBars[1].style.height = h(vuAvg);
+            vuRaf = requestAnimationFrame(driveVu);
+        };
+        const stopVu = () => {
+            if (vuRaf) { cancelAnimationFrame(vuRaf); vuRaf = null; }
+            vuAvg = 0;
+            vuBars[0].style.height = '10%';
+            vuBars[1].style.height = '10%';
+        };
 
         audio.addEventListener('loadedmetadata', () => {
             const trimmed = audio.duration - startAt;
             duration.textContent = `${Math.floor(trimmed / 60)}:${Math.floor(trimmed % 60).toString().padStart(2, '0')}`;
         });
 
-        const backtimer = () => document.getElementById('backtimer');
+        // One timeupdate listener per cart (not one added on every play). Updates
+        // this cart's own readout + progress, then refreshes the SHARED countdown,
+        // which reflects whatever is on air — not just this cart.
+        audio.addEventListener('timeupdate', () => {
+            if (audio.paused) return;
+            const remainingTime = audio.duration - audio.currentTime;
+            progress.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
+            const minutes = Math.floor(remainingTime / 60);
+            const seconds = Math.floor(remainingTime % 60).toString().padStart(2, '0');
+            duration.textContent = `${minutes}:${seconds}`;
+            duration.classList.add('active');
+            refreshBackTimer();
+        });
 
         audio.addEventListener('play', () => {
             duration.style.backgroundColor = 'black';
             duration.style.color = 'white';
             duration.style.fontWeight = 'bold';
             duration.style.padding = '0 8px';
-            backtimer().style.display = 'flex';
-
             audioContext.resume();
+            driveVu();
             progress.style.display = 'block';
+            refreshBackTimer();
             fetch('', { method: 'POST', body: `${new Date().toLocaleString()} - ${name} - played` });
-
-            audio.addEventListener('timeupdate', () => {
-                const remainingTime = audio.duration - audio.currentTime;
-                progress.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
-                const minutes = Math.floor(remainingTime / 60);
-                const seconds = Math.floor(remainingTime % 60).toString().padStart(2, '0');
-                duration.textContent = `${minutes}:${seconds}`;
-                duration.classList.add('active');
-
-                updateBackTimer(button, boxNumber, audio, minutes, seconds);
-            });
         });
 
         audio.addEventListener('pause', () => {
-            backtimer().innerHTML = ' ';
+            stopVu();
             duration.style.backgroundColor = 'transparent';
             duration.style.color = 'white';
             duration.style.fontWeight = 'normal';
@@ -324,24 +415,26 @@
             const trimmed = audio.duration - startAt;
             duration.textContent = `${Math.floor(trimmed / 60)}:${Math.floor(trimmed % 60).toString().padStart(2, '0')}`;
             duration.classList.remove('active');
+            refreshBackTimer();
             fetch('', { method: 'POST', body: `${new Date().toLocaleString()} - ${name} - stopped` });
-            backtimer().style.display = 'none';
         });
 
         audio.addEventListener('ended', () => {
-            backtimer().innerHTML = ' ';
+            stopVu();
+            button.classList.remove('playing');
             progress.style.width = '0';
             progress.style.display = 'none';
             const trimmed = audio.duration - startAt;
             duration.textContent = `${Math.floor(trimmed / 60)}:${Math.floor(trimmed % 60).toString().padStart(2, '0')}`;
             duration.classList.remove('active');
-            backtimer().style.display = 'none';
 
-            // Chain: auto-play the next button.
+            // Chain: auto-play the next button (which adds its own .playing before
+            // we refresh, so the countdown carries straight over without a blink).
             if (button.classList.contains('buttonext')) {
                 const nextButton = button.nextElementSibling;
                 if (nextButton && nextButton.tagName === 'BUTTON') nextButton.click();
             }
+            refreshBackTimer();
         });
 
         let playbackTimer = null;
@@ -375,50 +468,42 @@
         };
 
         button.appendChild(progress);
-        button.appendChild(playingTag);
         button.appendChild(vu);
         button.appendChild(span);
         button.appendChild(duration);
         pageDiv.appendChild(button);
     }
 
-    // Back-timer: show remaining time of this item, or the whole chained run.
-    function updateBackTimer(button, boxNumber, audio, minutes, seconds) {
+    // Refresh the shared countdown from EVERYTHING on air. Fixes the old bug
+    // where one cart ending hid the countdown while others were still playing:
+    // we look at ALL .button.playing and show the longest remaining time, so the
+    // countdown stays up until the last cart finishes.
+    function computeRemaining(btn) {
+        const a = btn._audio;
+        if (!a) return 0;
+        const end = (btn._endAt != null ? btn._endAt : a.duration) || 0;
+        return Math.max(0, end - a.currentTime);
+    }
+    function refreshBackTimer() {
         const backtimer = document.getElementById('backtimer');
-        const isChained = specialBoxes.some(box => box.boxNumber === boxNumber && box.flag === 1);
-
-        if (!isChained) {
-            backtimer.innerHTML = `${minutes}:${seconds}`;
+        const playing = [...document.querySelectorAll('.button.playing')];
+        if (playing.length === 0) {
+            if (backtimer) backtimer.classList.remove('show');
+            reportState(0, null);
             return;
         }
-
-        const remainingTime = audio.duration - audio.currentTime;
-        if (audio.currentTime <= 0.5 || remainingTime <= 0.5) {
-            backtimer.innerHTML = ' ';
-            return;
+        let maxRemaining = 0;
+        for (const b of playing) maxRemaining = Math.max(maxRemaining, computeRemaining(b));
+        const mm = Math.floor(maxRemaining / 60);
+        const ss = Math.floor(maxRemaining % 60).toString().padStart(2, '0');
+        const text = `${mm}:${ss}`;
+        // Sub-windows (Station IDs, dock) show their own bottom status bar; the
+        // main board reports to the parent, which shows the big bar over the ticker.
+        if (backtimer && !isMainBoard) {
+            backtimer.textContent = text;
+            backtimer.classList.add('show');
         }
-
-        let totalTime = remainingTime;
-        let addedUnchained = false;
-        let nextButton = button.nextElementSibling;
-        while (nextButton) {
-            const isNextChained = nextButton.classList.contains('buttonext');
-            const durationElement = nextButton.querySelector('.duration');
-            if (durationElement) {
-                const [m, s] = durationElement.textContent.split(':').map(part => parseInt(part, 10));
-                const nextDuration = (m * 60 + s) || 0;
-                if (isNextChained || !addedUnchained) {
-                    totalTime += nextDuration;
-                    if (!isNextChained) addedUnchained = true;
-                }
-            }
-            if (!isNextChained && addedUnchained) break;
-            nextButton = nextButton.nextElementSibling;
-        }
-
-        const totalMinutes = Math.floor(totalTime / 60);
-        const totalSeconds = Math.floor(totalTime % 60).toString().padStart(2, '0');
-        backtimer.innerHTML = `${totalMinutes}:${totalSeconds}`;
+        reportState(playing.length, text);
     }
 
     // Right-click context menu: schedule a cart to fire at the top of the hour.
@@ -490,7 +575,7 @@
                 const has = activeTimers.size > 0;
                 cancelTimersButton.disabled = !has;
                 cancelTimersButton.style.opacity = has ? 1 : 0.5;
-                cancelTimersButton.textContent = has ? `Cancel all timers (${activeTimers.size})` : 'No active timers';
+                cancelTimersButton.textContent = has ? 'Cancel all timers' : 'No active timers';
             }
 
             document.addEventListener('click', () => { contextMenu.style.display = 'none'; }, { once: true });

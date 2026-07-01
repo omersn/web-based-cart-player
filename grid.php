@@ -26,6 +26,10 @@ $pagination        = $_GET['pagination'] ?? '1';
 $smalltext         = $_GET['smalltext'] ?? '16';
 $btnh              = $_GET['btnh'] ?? '118';
 $smallbacktimer    = $_GET['smallbacktimer'] ?? '0';
+// fit=1: the main board. The active page becomes a height-filling grid so every
+// cart is always visible (no scroll), sized to both the viewport width AND
+// height. Floating windows leave this off and keep natural (btnh) row heights.
+$fit               = $_GET['fit'] ?? '0';
 $paginationDisplay = ($pagination === '0') ? 'none' : 'block';
 $backtimerStyles   = ($smallbacktimer === '1')
     ? 'left: 14px; width: 80px; height: 40px; font-size: 20px;'
@@ -48,8 +52,15 @@ $backtimerStyles   = ($smallbacktimer === '1')
             --text-secondary: #9aa4b2;
             --cat-blue: #2f6fd6; --cat-cyan: #2aa7bf; --cat-green: #2f9e5f;
             --cat-magenta: #b0479e; --cat-amber: #c98a2b; --cat-now: #d83f45;
+            --chain: rgba(52, 195, 212, 0.85);
         }
-        html, body { background-color: var(--bg-app); font-family: 'Assistant', Arial, sans-serif; }
+        html, body { background-color: var(--bg-app); font-family: 'Assistant', Arial, sans-serif; margin: 0; }
+<?php if ($fit === '1'): ?>
+        /* fit mode: fill the iframe so the active page's grid can size rows to
+           the available height — every cart visible, no scroll. */
+        html, body { height: 100%; overflow: hidden; }
+        .cartwall-container, .cartwall { height: 100%; }
+<?php endif; ?>
 
         .button .clock-icon { position: absolute; top: 1%; right: 1%; font-size: 22px; pointer-events: none; display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
         .button .clock-icon .emoji { font-size: 40px; padding-left: 27px; }
@@ -65,13 +76,17 @@ $backtimerStyles   = ($smallbacktimer === '1')
         .cartwall-container { text-align: center; }
         .page { display: none; grid-template-columns: repeat(var(--columns, 5), 1fr); gap: 12px; padding: 16px; }
         .page.active { display: grid; }
+<?php if ($fit === '1'): ?>
+        /* Height-filling board: rows share the available height equally (E). */
+        .page.active { height: 100%; box-sizing: border-box; grid-auto-rows: 1fr; }
+<?php endif; ?>
 
         .button, .buttonext {
             position: relative; padding: 12px; color: rgba(255, 255, 255, 0.96); border: none; outline: none;
             border-radius: 12px; text-align: center; cursor: pointer; font-size: <?= htmlspecialchars($smalltext) ?>px;
             font-family: 'Assistant', Arial, sans-serif; font-weight: 700;
             overflow: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 6px;
-            height: 90px; min-height: <?= htmlspecialchars($btnh) ?>px; min-width: 75px;
+            height: <?= $fit === '1' ? 'auto' : '90px' ?>; min-height: <?= $fit === '1' ? '0' : htmlspecialchars($btnh) . 'px' ?>; min-width: 75px;
             transition: transform 0.1s ease;
         }
         .button:active { transform: scale(0.98); }
@@ -111,14 +126,42 @@ $backtimerStyles   = ($smallbacktimer === '1')
         }
         .playing-tag .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: livePulse 1.6s infinite; }
         .button.playing .playing-tag { display: flex; }
+        /* 2-bar VU: heights are driven live from a WebAudio analyser in
+           cartwall.js (real audio level), not a canned animation. */
         .vu { display: none; position: absolute; top: 8px; right: 8px; z-index: 3; align-items: flex-end; gap: 3px; height: 16px; }
-        .vu span { display: block; width: 3px; background: #fff; border-radius: 1px; animation: vuBounce 0.5s ease-in-out infinite; }
-        .vu span:last-child { animation-duration: 0.6s; animation-delay: 0.12s; }
+        .vu span { display: block; width: 3px; background: #fff; border-radius: 1px; height: 10%; transition: height 0.06s linear; }
         .button.playing .vu { display: flex; }
 
-        /* Chained carts overflow into the next cell so a run reads as one long
-           "master button", matching the production behaviour. */
-        .buttonext { width: 120%; z-index: 2; }
+        /* Chained carts: ONE border wraps the whole run and the members abut as a
+           single block. Each member's INNER corners are squared and the grid gap
+           is closed (negative margin) so the tiles sit flush — no wedges between
+           them. Only the run's outer edges keep a rounded, bordered corner, drawn
+           on an overlay so it never fights the .playing glow (I). */
+        .chain-start { border-radius: 12px 0 0 12px; }
+        .chain-mid   { border-radius: 0; }
+        .chain-end   { border-radius: 0 12px 12px 0; }
+        .chain-mid, .chain-end { margin-left: -12px; }
+
+        /* On-air countdown status bar (sub-windows): slides up along the bottom. */
+        #backtimer {
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000;
+            height: 24px; display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(180deg, #f0453f, #c9302c);
+            color: #fff; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 14px; letter-spacing: 0.05em;
+            transform: translateY(100%); transition: transform 0.25s ease; pointer-events: none;
+        }
+        #backtimer.show { transform: translateY(0); }
+
+        .chain::after {
+            content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 4;
+            border-top: 2px solid var(--chain); border-bottom: 2px solid var(--chain);
+        }
+        .chain-start::after { border-left: 2px solid var(--chain); border-top-left-radius: 12px; border-bottom-left-radius: 12px; }
+        .chain-end::after   { border-right: 2px solid var(--chain); border-top-right-radius: 12px; border-bottom-right-radius: 12px; }
+        /* When a chained cart plays, drop the per-button white ring so the single
+           block border stays intact (start=no right, mid=no sides, end=no left).
+           The red fill + PLAYING tag still mark it as live. */
+        .chain.playing { box-shadow: none; }
 
         .pagination { display: <?= $paginationDisplay ?>; margin: 16px; text-align: center; }
         .pagination button { margin: 4px; padding: 8px 14px; background: var(--raised); border: 1px solid var(--hairline); color: #eef1f5; border-radius: 8px; cursor: pointer; min-width: 70px; font-family: 'Assistant', Arial, sans-serif; font-weight: 700; font-size: 13px; }
@@ -131,8 +174,10 @@ $backtimerStyles   = ($smallbacktimer === '1')
         <button id="cancel-timers-button">No active timers</button>
     </div>
 
-    <!-- Large remaining-time overlay; revealed a few seconds after load. -->
-    <div id="backtimer" style="display: none; padding-top: 59px; z-index: 1000; position: fixed; top: -9999999px; border-radius: 10px; background-color: #d83a3f; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; color: #fff; box-shadow: 0 22px 50px rgba(0, 0, 0, 0.6); <?= $backtimerStyles ?>"></div>
+    <!-- On-air countdown: a status bar that slides up along this window's bottom
+         edge while a cart plays. (The main board reports its countdown to the
+         parent shell instead, which shows the big bar over the ticker.) -->
+    <div id="backtimer"></div>
 
     <!-- Collapsible on-screen message log. -->
     <div id="messagelog-container" style="display: <?= $paginationDisplay ?>; width: 480px; position: fixed; bottom: 0; left: 60%; right: 0; background-color: #12161c; color: #9aa4b2; padding: 12px; font-family: 'Assistant', Arial, sans-serif; font-size: 12px; border-top: 1px solid rgba(255,255,255,0.09); cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; z-index: 99999;">
