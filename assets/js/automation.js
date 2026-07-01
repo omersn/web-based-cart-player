@@ -118,6 +118,15 @@
         if (!Array.isArray(list) || list.length === 0) return;
         const sumNew = list.reduce((a, d) => a + (Number(d.runtime) || 0), 0);
         if (state.locked || state.running) return toast('Playlist locked');
+        // Starting a brand-new queue (nothing in it yet): if the anchor time is
+        // a stale leftover (e.g. restored from a previous session, now in the
+        // past or about to pass), there's no existing schedule to protect —
+        // just default it fresh rather than perpetually rejecting every add.
+        if (state.items.length === 0 && secsToStart() <= LOCK_LEAD) {
+            state.anchorTime = nextFullHour();
+            state.anchorMode = 'start';
+            state.firedForThisSchedule = false;
+        }
         if (secsToStart() <= LOCK_LEAD) return toast('Too close to start');
         if (sumNew > secsToStart() + FIT_BUFFER) return toast("Won't fit before start");
         if (totalRuntime() + sumNew > HOUR) return toast('Would overrun the hour');
@@ -574,13 +583,16 @@
     }, 250);
 
     // ---- toast ------------------------------------------------------------
+    // Fixed to the viewport (not nested inside the panel) so a rejection is
+    // never silently swallowed by a still-hidden panel — a right-click that
+    // gets refused always shows SOMETHING on screen.
     let toastTimer = null;
     function toast(msg) {
         let t = el('autoToast');
         if (!t) {
             t = document.createElement('div'); t.id = 'autoToast';
-            t.style.cssText = 'position:absolute; left:16px; right:16px; bottom:180px; z-index:6; background:rgba(240,69,63,0.96); color:#fff; padding:8px 12px; border-radius:8px; font-size:12px; font-weight:700; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,0.4); transition:opacity .2s;';
-            el('automationPanel').appendChild(t);
+            t.style.cssText = 'position:fixed; left:50%; bottom:120px; transform:translateX(-50%); z-index:20000; background:rgba(240,69,63,0.96); color:#fff; padding:10px 18px; border-radius:8px; font-size:13px; font-weight:700; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,0.4); transition:opacity .2s; max-width:80vw;';
+            document.body.appendChild(t);
         }
         t.textContent = msg; t.style.opacity = '1';
         clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.style.opacity = '0'; }, 1800);
