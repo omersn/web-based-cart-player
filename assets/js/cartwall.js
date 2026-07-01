@@ -17,7 +17,10 @@
  * the first real click is instant.
  *
  * Other pieces:
- *  - A per-button WebAudio AnalyserNode draws a tiny level meter on a canvas.
+ *  - A "PLAYING" pulsing tag + a 2-bar animated VU indicator on the now-playing
+ *    cart (purely visual — see the studio design spec; it replaced a
+ *    per-button WebAudio AnalyserNode that hit the browser's AudioContext cap
+ *    once more than a handful of carts were on a page).
  *  - Chaining (data/cross.txt): a "chained" button auto-clicks the next one when
  *    it finishes, so several carts play back-to-back as one sequence.
  *  - A large "back-timer" overlay shows the remaining time of the current item
@@ -32,12 +35,14 @@
     const DATA_URL = CONFIG.dataUrl;
     const itemsPerPage = CONFIG.itemsPerPage;
 
-    const colorMapping = {
-        '1': '#007bff',
-        '2': '#4dbf49',
-        '3': '#d15ccf',
-        '4': '#d19724',
-        '5': '#5eccd6',
+    // Cart colour code -> category class (see grid.php's .cat-N rules for the
+    // actual gradient/base-colour values, kept in one place per the design tokens).
+    const categoryClass = {
+        '1': 'cat-1', // blue
+        '2': 'cat-2', // green
+        '3': 'cat-3', // magenta
+        '4': 'cat-4', // amber
+        '5': 'cat-5', // cyan
     };
 
     const urlParams = new URLSearchParams(window.location.search);
@@ -165,17 +170,18 @@
         const [name, audioPath, startPoint, colorCode, endPoint] = line.split('|').map(part => part.trim());
         const startAt = parseFloat(startPoint) || 0;
         const endAt = parseFloat(endPoint) || null;
-        const buttonColor = colorMapping[colorCode] || '#007bff';
+        const catClass = categoryClass[colorCode] || 'cat-1';
 
         const button = document.createElement('button');
         button.classList.add(buttonClass);
         button.classList.add('button');
-        button.style.backgroundColor = buttonColor;
+        button.classList.add(catClass);
 
         const progress = document.createElement('div');
         progress.classList.add('progress');
 
         const span = document.createElement('span');
+        span.classList.add('title');
         span.textContent = name;
 
         const duration = document.createElement('div');
@@ -185,14 +191,10 @@
         const audioFilename = audioPath.trim();
 
         if (audioFilename === '0.mp3') {
-            // Empty placeholder slot.
+            // Empty placeholder slot: dashed, unlabeled tile per the design spec.
             button.disabled = true;
-            button.classList.add('disabled');
-            button.style.backgroundColor = '#1c1c1c';
-            button.style.color = '#1c1c1c';
-            duration.textContent = ' ';
-            button.appendChild(span);
-            button.appendChild(duration);
+            button.classList.remove(catClass);
+            button.classList.add('empty');
             pageDiv.appendChild(button);
             return;
         }
@@ -266,28 +268,19 @@
         audio.load();
         logToPanel(`[INFO] Audio file '${audioFilename}' loaded: ${name}`);
 
-        // --- Per-button level meter (WebAudio analyser drawn on a canvas).
-        const levelMeterCanvas = document.createElement('canvas');
-        levelMeterCanvas.classList.add('levelMeter');
-        levelMeterCanvas.width = 50;
-        levelMeterCanvas.height = 10;
-
+        // A dedicated AudioContext per cart is only needed to nudge the preload
+        // hack past the autoplay gate on some browsers; it is not used for
+        // level metering (that's now a CSS animation — see the "PLAYING"
+        // tag / VU bars below, always in the DOM, shown via the .playing class).
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const analyser = audioContext.createAnalyser();
-        const source = audioContext.createMediaElementSource(audio);
-        source.connect(analyser);
-        analyser.connect(audioContext.destination);
-        const ctx = levelMeterCanvas.getContext('2d');
 
-        function drawLevelMeter() {
-            const dataArray = new Uint8Array(analyser.frequencyBinCount);
-            analyser.getByteFrequencyData(dataArray);
-            const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-            ctx.clearRect(0, 0, levelMeterCanvas.width, levelMeterCanvas.height);
-            ctx.fillStyle = '#00FF00';
-            ctx.fillRect(0, 0, (average / 255) * levelMeterCanvas.width, levelMeterCanvas.height);
-            requestAnimationFrame(drawLevelMeter);
-        }
+        const playingTag = document.createElement('div');
+        playingTag.classList.add('playing-tag');
+        playingTag.innerHTML = '<span class="live-dot"></span>PLAYING';
+
+        const vu = document.createElement('div');
+        vu.classList.add('vu');
+        vu.innerHTML = '<span></span><span></span>';
 
         audio.addEventListener('loadedmetadata', () => {
             const trimmed = audio.duration - startAt;
@@ -304,8 +297,6 @@
             backtimer().style.display = 'flex';
 
             audioContext.resume();
-            levelMeterCanvas.style.display = 'block';
-            drawLevelMeter();
             progress.style.display = 'block';
             fetch('', { method: 'POST', body: `${new Date().toLocaleString()} - ${name} - played` });
 
@@ -330,8 +321,6 @@
             audio.currentTime = startAt;
             progress.style.width = '0';
             progress.style.display = 'none';
-            levelMeterCanvas.style.display = 'none';
-            ctx.clearRect(0, 0, levelMeterCanvas.width, levelMeterCanvas.height);
             const trimmed = audio.duration - startAt;
             duration.textContent = `${Math.floor(trimmed / 60)}:${Math.floor(trimmed % 60).toString().padStart(2, '0')}`;
             duration.classList.remove('active');
@@ -343,12 +332,9 @@
             backtimer().innerHTML = ' ';
             progress.style.width = '0';
             progress.style.display = 'none';
-            levelMeterCanvas.style.display = 'none';
-            ctx.clearRect(0, 0, levelMeterCanvas.width, levelMeterCanvas.height);
             const trimmed = audio.duration - startAt;
             duration.textContent = `${Math.floor(trimmed / 60)}:${Math.floor(trimmed % 60).toString().padStart(2, '0')}`;
             duration.classList.remove('active');
-            button.style.backgroundColor = colorMapping[colorCode];
             backtimer().style.display = 'none';
 
             // Chain: auto-play the next button.
@@ -366,7 +352,6 @@
                 audio.currentTime = startAt;
                 audio.play();
                 button.classList.add('playing');
-                button.style.backgroundColor = 'red';
 
                 if (playbackTimer) clearTimeout(playbackTimer);
 
@@ -374,7 +359,6 @@
                 playbackTimer = setTimeout(() => {
                     audio.pause();
                     button.classList.remove('playing');
-                    button.style.backgroundColor = buttonColor;
                     if (button.classList.contains('buttonext')) {
                         const nextButton = button.nextElementSibling;
                         if (nextButton && nextButton.tagName === 'BUTTON') nextButton.click();
@@ -383,7 +367,6 @@
             } else {
                 audio.pause();
                 button.classList.remove('playing');
-                button.style.backgroundColor = buttonColor;
                 if (playbackTimer) {
                     clearTimeout(playbackTimer);
                     playbackTimer = null;
@@ -392,7 +375,8 @@
         };
 
         button.appendChild(progress);
-        button.appendChild(levelMeterCanvas);
+        button.appendChild(playingTag);
+        button.appendChild(vu);
         button.appendChild(span);
         button.appendChild(duration);
         pageDiv.appendChild(button);

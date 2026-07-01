@@ -31,6 +31,15 @@ document.addEventListener('DOMContentLoaded', () => {
         element.style.display = display;
     };
 
+    // Tell the parent page (the Connected/Standby pill in the top bar) about
+    // our online/offline state. Harmless if nobody is listening (e.g. when
+    // this page is opened standalone).
+    const notifyParent = (status) => {
+        try {
+            window.parent.postMessage({ source: 'keep-alive', status }, '*');
+        } catch (e) { /* no parent window — ignore */ }
+    };
+
     const setIndicatorGreen = () => {
         if (!navigator.onLine) {
             return; // never show green while offline
@@ -38,12 +47,14 @@ document.addEventListener('DOMContentLoaded', () => {
         indicator.classList.remove('offline', 'yellow');
         indicator.classList.add('blinking');
         forceDOMUpdate(indicator);
+        notifyParent('online');
     };
 
     const setIndicatorOffline = () => {
         indicator.classList.remove('blinking', 'yellow');
         indicator.classList.add('offline');
         forceDOMUpdate(indicator);
+        notifyParent('offline');
     };
 
     // Report each beat (or failure) to the server log.

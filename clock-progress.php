@@ -5,26 +5,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hourly Countdown</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700&family=Assistant:wght@700&display=swap" rel="stylesheet">
     <style>
         body {
-            background-color: black;
+            background-color: #0a0c10;
             margin: 0;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             height: 100vh;
-            font-family: Arial, sans-serif;
-            color: red;
+            font-family: 'Assistant', Arial, sans-serif;
+            color: #ff5b54;
         }
 
         .title {
-            font-size: 10vmin; /* Title size */
+            font-size: 6vmin;
             font-weight: bold;
             margin: 0;
+            color: #9aa4b2;
         }
 
         .countdown {
+            font-family: 'JetBrains Mono', monospace;
             font-size: 10vmin; /* Larger countdown */
             font-weight: bold;
             margin: 0;
@@ -34,7 +37,7 @@
             position: relative;
             width: 80%; /* Responsive width for progress bar */
             height: 2vmin; /* Height of the progress bar */
-            background-color: #330000; /* Very dark red for inactive bar */
+            background-color: rgba(255, 255, 255, 0.07); /* Faint inactive bar */
             margin: 2vmin 0;
             border-radius: 1vmin;
         }
@@ -44,7 +47,7 @@
             top: 0;
             left: 0;
             height: 100%;
-            background-color: red; /* Bright red for progress */
+            background-color: #f0453f;
             border-radius: 1vmin;
             width: 0%; /* Dynamic width for progress */
             transition: width 0.1s linear; /* Smooth animation */

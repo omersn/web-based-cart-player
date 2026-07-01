@@ -5,125 +5,88 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Broadcast Clock</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
     <style>
+        /*
+         * Countdown ring: a conic-gradient arc that fills red as the current
+         * hour elapses, with the live HH:MM in the middle and the remaining
+         * time to the top of the hour underneath. Original implementation —
+         * built for this "studio" redesign, not derived from the old
+         * dot-circle clock this file used to hold.
+         */
         body {
-            background-color: black;
+            background-color: #0a0c10;
             margin: 0;
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
-            font-family: Arial, sans-serif;
+            font-family: 'JetBrains Mono', monospace;
         }
-
-        .clock-container {
+        .ring {
             position: relative;
-            width: 100vmin; /* Responsive size */
-            height: 100vmin;
-        }
-
-        .dot {
-            position: absolute;
-            width: 1.5%; /* Dot size scales with container */
-            height: 1.5%;
-            background-color: #330000; /* Very dark red for inactive dots */
+            width: 210px;
+            height: 210px;
             border-radius: 50%;
-            transform: translate(-50%, -50%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-
-        .dot.green {
-            background-color: green;
-        }
-
-        .dot.active {
-            background-color: red; /* Bright red for active seconds dots */
-        }
-
-        .center-text {
+        .ring::before {
+            content: '';
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+            inset: 0;
+            border-radius: 50%;
+            background: conic-gradient(#f0453f var(--deg, 0deg), rgba(255, 255, 255, 0.07) var(--deg, 0deg) 360deg);
+        }
+        .ring::after {
+            content: '';
+            position: absolute;
+            width: 170px;
+            height: 170px;
+            border-radius: 50%;
+            background: #0a0c10;
+        }
+        .readout {
+            position: relative;
+            z-index: 1;
             text-align: center;
-            color: red;
+            direction: ltr;
         }
-
-        .center-text .time {
-            font-size: 10vmin; /* Scales with the container */
-            font-weight: bold;
-            margin: 0;
-        }
-
-        .center-text .seconds {
-            font-size: 5vmin; /* Scales with the container */
-            margin: 0;
-        }
+        .readout .hm { font-size: 44px; font-weight: 700; color: #f2f5f8; line-height: 1; }
+        .readout .countdown { font-size: 16px; font-weight: 600; color: #ff5b54; margin-top: 6px; }
     </style>
 </head>
 <body>
-    <div class="clock-container" id="clock">
-        <div class="center-text">
-            <div class="time" id="time">00:00</div>
-            <div class="seconds" id="seconds">00</div>
+    <div class="ring" id="ring">
+        <div class="readout">
+            <div class="hm" id="hm">00:00</div>
+            <div class="countdown" id="countdown">0:00</div>
         </div>
     </div>
 
     <script>
-        const container = document.getElementById("clock");
-        const timeDisplay = document.getElementById("time");
-        const secondsDisplay = document.getElementById("seconds");
-        const totalDots = 60; // 60 dots for the seconds
-        const greenDots = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]; // Positions for green dots
+        const ring = document.getElementById('ring');
+        const hm = document.getElementById('hm');
+        const countdown = document.getElementById('countdown');
 
-        // Create dots around the clock
-        for (let i = 0; i < totalDots; i++) {
-            const dot = document.createElement("div");
-            dot.classList.add("dot");
-
-            // Add green dots at 5-minute marks
-            if (greenDots.includes(i)) {
-                dot.classList.add("green");
-            }
-
-            container.appendChild(dot);
-
-            // Position dots in a circular pattern
-            const angle = ((i / totalDots) * 360) - 90; // Offset by -90 degrees (clockwise)
-            const radius = 40; // Percentage distance from the center
-            const radians = (angle * Math.PI) / 180; // Convert degrees to radians
-            const x = 50 + Math.cos(radians) * radius; // Calculate X position (center is 50%)
-            const y = 50 + Math.sin(radians) * radius; // Calculate Y position (center is 50%)
-
-            dot.style.left = `${x}%`;
-            dot.style.top = `${y}%`;
-        }
-
-        const dots = document.querySelectorAll(".dot");
-
-        function updateClock() {
+        function update() {
             const now = new Date();
+            const secondsIntoHour = now.getMinutes() * 60 + now.getSeconds();
+            const secondsRemaining = 3600 - secondsIntoHour;
 
-            // Update center time display
-            const hours = now.getHours().toString().padStart(2, "0");
-            const minutes = now.getMinutes().toString().padStart(2, "0");
-            const seconds = now.getSeconds().toString().padStart(2, "0");
+            hm.textContent = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-            timeDisplay.textContent = `${hours}:${minutes}`;
-            secondsDisplay.textContent = seconds;
+            const minutes = Math.floor(secondsRemaining / 60);
+            const seconds = secondsRemaining % 60;
+            countdown.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;
 
-            // Update red dots for seconds hand
-            dots.forEach((dot, index) => {
-                if (index <= now.getSeconds()) {
-                    dot.classList.add("active");
-                } else {
-                    dot.classList.remove("active");
-                }
-            });
+            const deg = (secondsIntoHour / 3600) * 360;
+            ring.style.setProperty('--deg', `${deg}deg`);
         }
 
-        // Start the clock
-        setInterval(updateClock, 1000);
-        updateClock(); // Initialize the display
+        update();
+        setInterval(update, 1000);
     </script>
 </body>
 </html>
