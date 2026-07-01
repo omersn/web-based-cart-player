@@ -21,6 +21,25 @@ $labels     = load_section_labels();
 $statusFile = data_path('status.txt');
 $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : '';
 
+// Real (non-placeholder) carts, with their 0-based index, for the live search.
+// The index maps to a board section by the same from/to ranges the section
+// selectors use, so a result can show its page and jump there.
+$searchCarts = [];
+foreach (load_carts() as $i => $line) {
+    $p    = explode('|', $line);
+    $name = trim($p[0] ?? '');
+    $file = trim($p[1] ?? '');
+    if ($name === '' || $name === '-' || $file === '' || $file === '0.mp3') continue;
+    $searchCarts[] = [
+        'i'     => $i,
+        'name'  => $name,
+        'file'  => $file,
+        'start' => (float) ($p[2] ?? 0),
+        'color' => trim($p[3] ?? '1'),
+        'end'   => (isset($p[4]) && $p[4] !== '') ? (float) $p[4] : null,
+    ];
+}
+
 // Split "Demo Radio Station" -> "DEMO RADIO" / "STATION" for the two-line brand mark.
 $nameWords = preg_split('/\s+/', trim(STATION_NAME));
 $brandSub  = strtoupper(array_pop($nameWords));
@@ -82,12 +101,14 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         <span class="topbar-divider"></span>
 
         <div class="topbar-search-zone">
-            <form id="searchForm" class="topbar-search">
+            <form id="searchForm" class="topbar-search" autocomplete="off" role="search">
                 <i class="ph ph-magnifying-glass"></i>
-                <input type="text" id="searchInput" placeholder="Search jingle&hellip;" autocomplete="off">
+                <input type="text" id="searchInput" placeholder="Search jingle&hellip;" autocomplete="off" aria-label="Search jingles">
                 <kbd id="searchKbd">&#8984;K</kbd>
-                <button type="submit" title="Search"></button>
+                <button type="button" class="search-clear" id="searchClear" title="Clear" aria-label="Clear search" hidden><i class="ph ph-x"></i></button>
             </form>
+            <!-- Live (Spotlight-style) results — populated on every keystroke. -->
+            <div class="search-results" id="searchResults" role="listbox" hidden></div>
         </div>
 
         <span class="topbar-divider"></span>
@@ -100,6 +121,9 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 </button>
                 <button type="button" class="icon-btn is-active" id="chip-clock" onclick="toggleClockWindow();" title="Clock">
                     <i class="ph ph-clock"></i><span class="status-dot red"></span>
+                </button>
+                <button type="button" class="icon-btn" id="chip-auto" onclick="window.Automation && window.Automation.toggle();" title="Automation playlist">
+                    <i class="ph ph-playlist"></i><span class="status-dot amber"></span>
                 </button>
                 <span class="icon-sep"></span>
                 <!-- One-shot actions. -->
@@ -333,6 +357,9 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     </div>
 
     <script>
+        // Real carts (name/file/trim/colour + 0-based index) for the live search.
+        window.SEARCH_CARTS = <?= json_encode($searchCarts, JSON_UNESCAPED_UNICODE) ?>;
+
         // --- Start gate + loading overlay + first-load preload kick.
         // Browsers block audio autoplay until a user gesture, and the preload
         // hack has to play each clip once. A START button gates everything: its
@@ -511,26 +538,161 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             floatingContainer.style.height = `${h}px`;
         });
 
-        // --- Search: open matching carts in the shared popup overlay. ⌘K / Ctrl+K focuses it.
-        document.getElementById('searchForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            const term = document.getElementById('searchInput').value.trim();
-            if (!term) return;
-            showPopup((c) => {
-                const frame = document.createElement('iframe');
-                frame.src = `search.php?search=${encodeURIComponent(term)}`;
-                frame.width = 640;
-                frame.height = 460;
-                frame.style.cssText = 'border:2px solid gray; border-radius:6px; background:#000;';
-                c.appendChild(frame);
-            });
-        });
-        document.addEventListener('keydown', (e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-                e.preventDefault();
-                document.getElementById('searchInput').focus();
+        // --- Live search (Spotlight-style). Filters window.SEARCH_CARTS on every
+        // keystroke; each result shows its board section (breadcrumb, click to
+        // jump there) and a preview button. ⌘K / Ctrl+K focuses it.
+        (() => {
+            const CAT = { '1': '#2f6fd6', '2': '#2f9e5f', '3': '#b0479e', '4': '#c98a2b', '5': '#2aa7bf' };
+            const input = document.getElementById('searchInput');
+            const box = document.getElementById('searchResults');
+            const carts = window.SEARCH_CARTS || [];
+            let sel = -1, rows = [];
+            let preview = null, previewBtn = null;
+
+            // Section registry: each board/floating section's index range + label
+            // + how to navigate to it. Derived from the two <select>s so it tracks
+            // any relabelling/re-ranging automatically.
+            const sections = [];
+            const addFrom = (selectId, board) => {
+                const s = document.getElementById(selectId);
+                if (!s) return;
+                [...s.options].forEach((o) => {
+                    const m = o.value.match(/from=(\d+)&to=(\d+)/);
+                    if (m) sections.push({ from: +m[1], to: +m[2], label: o.textContent.trim(), value: o.value, selectId, board });
+                });
+            };
+            addFrom('section-select', true);   // main board pages
+            addFrom('ids-select', false);      // Station-ID window pages
+            const sectionFor = (i) => sections.find((s) => i >= s.from && i < s.to) || null;
+
+            function navigate(sec, cart) {
+                if (!sec) return;
+                if (sec.board) {                                   // main board
+                    const grid = document.getElementById('cartgrid');
+                    const cur = grid.src.match(/from=(\d+)&to=(\d+)/);
+                    // If the cart is already on the page in view, don't reload —
+                    // just flash it (box is relative to whatever's loaded now).
+                    if (cur && cart.i >= +cur[1] && cart.i < +cur[2]) {
+                        flashCart(grid, cart.i - (+cur[1]) + 1, false);
+                    } else {                                        // else load its section and flash
+                        document.getElementById('section-select').value = sec.value; // keep the dropdown in sync
+                        grid.src = `${sec.value}&fit=1&mainbar=1&timestamp=${Date.now()}`;
+                        flashCart(grid, cart.i - sec.from + 1, true);
+                    }
+                } else {                                           // ID-window page -> reveal it THERE, never on the board
+                    revealInIdWindow(sec, cart.i - sec.from + 1);
+                }
             }
-        });
+            // Scroll to a cart button (by its data-box) inside an iframe and flash
+            // it. Buttons build asynchronously (staggered), so poll for the
+            // target; wait for the frame's load first if it's (re)loading.
+            function flashCart(iframe, box, needLoad) {
+                const run = () => {
+                    let tries = 60;                                 // ~7s window: the grid builds buttons + fit-reflows over a couple seconds
+                    const attempt = () => {
+                        let btn = null;
+                        try { btn = iframe.contentDocument && iframe.contentDocument.querySelector(`.button[data-box="${box}"]`); } catch (e) {}
+                        if (btn) {
+                            btn.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                            btn.classList.remove('search-flash'); void btn.offsetWidth; btn.classList.add('search-flash');
+                            setTimeout(() => btn.classList.remove('search-flash'), 5600); // ~5.4s flash, clears after
+                        } else if (tries-- > 0) { setTimeout(attempt, 120); }
+                    };
+                    attempt();
+                };
+                if (needLoad) { iframe.addEventListener('load', run, { once: true }); } else { run(); }
+            }
+            // Bring the ID window forward on the right panel (Station IDs /
+            // Sweepers & FX) and flash the cart — in whichever surface the ID
+            // window currently lives (floating window or bottom dock).
+            function revealInIdWindow(sec, box) {
+                if (!winState.ids.visible) { winState.ids.visible = true; saveWinState(); renderWindows(); }
+                const opts = [...document.getElementById('ids-select').options];
+                const secIndex = opts.findIndex((o) => o.value.includes(`from=${sec.from}&to=${sec.to}`));
+                if (secIndex < 0) return;
+                const here = (fr) => fr.src.includes(`from=${sec.from}&to=${sec.to}`);
+                let iframe, needLoad = false;
+                if (winState.ids.docked) {
+                    iframe = document.getElementById('dockIdsFrame');
+                    if (!here(iframe)) { dockIdsIndex = secIndex; iframe.src = idSectionUrls[secIndex]; needLoad = true; }
+                } else {
+                    iframe = document.getElementById('floater');
+                    if (!here(iframe)) {
+                        const sel = document.getElementById('ids-select');
+                        sel.value = opts[secIndex].value; sel.dispatchEvent(new Event('change'));
+                        needLoad = true;
+                    }
+                }
+                flashCart(iframe, box, needLoad);
+            }
+            function stopPreview() {
+                if (preview) { try { preview.pause(); } catch (e) {} preview = null; }
+                if (previewBtn) { previewBtn.classList.remove('playing'); previewBtn.innerHTML = '<i class="ph-fill ph-play"></i>'; previewBtn = null; }
+            }
+            function togglePreview(cart, btn) {
+                if (previewBtn === btn) { stopPreview(); return; }  // same one -> stop
+                stopPreview();
+                preview = new Audio(`uploads/${cart.file}`);
+                try { preview.currentTime = cart.start || 0; } catch (e) {}
+                preview.play().catch(() => {});
+                previewBtn = btn; btn.classList.add('playing'); btn.innerHTML = '<i class="ph-fill ph-pause"></i>';
+                preview.addEventListener('timeupdate', () => { if (cart.end != null && preview && preview.currentTime >= cart.end) stopPreview(); });
+                preview.addEventListener('ended', stopPreview);
+            }
+
+            const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+            function render(q) {
+                stopPreview();
+                const needle = q.toLowerCase();
+                const hits = carts.filter((c) => c.name.toLowerCase().includes(needle)).slice(0, 12);
+                sel = -1;
+                if (!hits.length) { box.innerHTML = '<div class="search-empty">No matching jingles</div>'; box.hidden = false; rows = []; return; }
+                box.innerHTML = hits.map((c) => {
+                    const sec = sectionFor(c.i);
+                    const crumb = sec ? esc(sec.label) : '&mdash;';
+                    return `<div class="search-row" data-i="${c.i}" role="option">` +
+                        `<span class="search-dot" style="background:${CAT[c.color] || CAT['1']}"></span>` +
+                        `<span class="search-name">${esc(c.name)}</span>` +
+                        `<span class="search-crumb">${crumb}</span>` +
+                        `<button type="button" class="search-play" title="Preview"><i class="ph-fill ph-play"></i></button></div>`;
+                }).join('');
+                box.hidden = false;
+                rows = [...box.querySelectorAll('.search-row')];
+                rows.forEach((row) => {
+                    const cart = carts.find((c) => c.i === +row.dataset.i);
+                    const playBtn = row.querySelector('.search-play');
+                    playBtn.addEventListener('click', (e) => { e.stopPropagation(); togglePreview(cart, playBtn); });
+                    row.addEventListener('click', () => { navigate(sectionFor(cart.i), cart); close(); });
+                });
+            }
+            function close() { box.hidden = true; box.innerHTML = ''; sel = -1; rows = []; stopPreview(); }
+            function highlight(n) {
+                if (!rows.length) return;
+                sel = (n + rows.length) % rows.length;
+                rows.forEach((r, k) => r.classList.toggle('sel', k === sel));
+                rows[sel].scrollIntoView({ block: 'nearest' });
+            }
+
+            // Swap the ⌘K hint for an X-to-clear box whenever the field has text.
+            const kbd = document.getElementById('searchKbd');
+            const clearBtn = document.getElementById('searchClear');
+            const updateHint = () => { const has = input.value.length > 0; kbd.hidden = has; clearBtn.hidden = !has; };
+            clearBtn.addEventListener('click', () => { input.value = ''; updateHint(); close(); input.focus(); });
+
+            input.addEventListener('input', () => { updateHint(); const q = input.value.trim(); q ? render(q) : close(); });
+            input.addEventListener('focus', () => { const q = input.value.trim(); if (q) render(q); });
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowDown') { e.preventDefault(); highlight(sel + 1); }
+                else if (e.key === 'ArrowUp') { e.preventDefault(); highlight(sel - 1); }
+                else if (e.key === 'Enter') { e.preventDefault(); const r = rows[sel] || rows[0]; if (r) { const ci = +r.dataset.i; navigate(sectionFor(ci), carts.find((c) => c.i === ci)); close(); input.blur(); } }
+                else if (e.key === 'Escape') { close(); input.blur(); }
+            });
+            document.getElementById('searchForm').addEventListener('submit', (e) => e.preventDefault());
+            document.addEventListener('click', (e) => { if (!e.target.closest('.topbar-search-zone')) close(); });
+            document.addEventListener('keydown', (e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); input.focus(); input.select(); }
+            });
+        })();
 
         // --- Toolbar actions.
         function stopAll() {

@@ -220,6 +220,7 @@
         button.classList.add(buttonClass);
         button.classList.add('button');
         button.classList.add(catClass);
+        button.dataset.box = boxNumber; // 1-based position within this section (used by search to scroll/flash a specific cart)
 
         const progress = document.createElement('div');
         progress.classList.add('progress');

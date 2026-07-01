@@ -38,6 +38,10 @@
         // anchor time stays in the past forever once it's passed). Cleared
         // whenever the schedule actually changes (new items, new anchor time).
         firedForThisSchedule: false,
+        // Panel shown or hidden. The panel may stay open even when EMPTY (to set
+        // up upcoming breaks) and is toggled from the topbar; it can only be
+        // hidden while empty — never while it holds carts (no surprise audio).
+        visible: false,
     };
     let idSeq = 1, groupSeq = 1, progressRaf = null;
 
@@ -52,6 +56,7 @@
                 anchorTime: state.anchorTime.toISOString(),
                 anchorMode: state.anchorMode,
                 mode: state.mode,
+                visible: state.visible,   // keep an empty-but-open panel open across reloads
                 items: state.items.map((it) => ({
                     groupId: it.groupId, name: it.name, file: it.file,
                     start: it.start, end: it.end, volume: it.volume, color: it.color, runtime: it.runtime,
@@ -82,7 +87,9 @@
             });
             const maxGroupId = data.items.reduce((m, d) => (d.groupId != null ? Math.max(m, d.groupId) : m), 0);
             groupSeq = Math.max(groupSeq, maxGroupId + 1);
-            if (state.items.length > 0) show();
+            // Restore visibility: shown if it holds carts, or if it was left open
+            // empty (planning an upcoming break) before the reload.
+            setVisible(state.items.length > 0 || data.visible === true);
             // A RESTORED schedule that's already stale (elapsed while the tab was
             // closed/idle, with an empty queue so there's nothing to protect)
             // starts fresh, rather than silently blocking the next add forever.
@@ -187,47 +194,33 @@
     }
 
     // ---- remove -----------------------------------------------------------
-    // The panel can never show an empty, dangling queue: either it has at
-    // least one item, or it's gone. Reset clears the schedule back to a fresh
-    // default and drops the persisted state, so the NEXT queue starts clean.
+    // Emptying the queue no longer auto-hides the panel — it can stay open and
+    // empty to set up an upcoming break. Reset just restores a fresh default
+    // schedule; the panel is hidden only via the topbar toggle or Clear & hide.
     function resetSchedule() {
         state.anchorTime = nextFullHour();
         state.anchorMode = 'start';
         state.mode = 'auto';
         state.firedForThisSchedule = false;
-        try { localStorage.removeItem(AUTO_STORE); } catch (e) { /* ignore */ }
     }
     function removeAt(from, to) {
         if (state.locked || state.running) return;
         state.items.slice(from, to + 1).forEach(it => { try { it.audio.pause(); } catch (e) {} });
         state.items.splice(from, to - from + 1);
-        if (state.items.length === 0) {
-            // Removed the last item by hand: the panel disappears immediately.
-            resetSchedule();
-            render();
-            el('automationPanel').classList.remove('active');
-            return;
-        }
+        if (state.items.length === 0) resetSchedule();   // stays open + empty
         saveState();
         render();
     }
     // Removed automatically ~1s after a cart finishes playing (see playNext).
     // Keeping the list shrinking as it plays is what keeps auto-scroll smooth
-    // and leaves an empty list once the whole batch is done.
+    // and leaves an empty (but still open) list once the whole batch is done.
     function removeItemById(id) {
         const i = state.items.findIndex((it) => it.id === id);
         if (i < 0) return;
         try { state.items[i].audio.pause(); } catch (e) {}
         state.items.splice(i, 1);
         if (state.playingIndex > i) state.playingIndex--;
-        if (state.items.length === 0) {
-            // The batch just finished: hold on the empty list for a beat so the
-            // operator can register it's done, then the panel goes away.
-            resetSchedule();
-            render();
-            setTimeout(() => el('automationPanel').classList.remove('active'), 1000);
-            return;
-        }
+        if (state.items.length === 0) resetSchedule();   // batch done -> empty, but stays open
         saveState();
         render();
         centerCurrent();
@@ -502,16 +495,36 @@
     }
 
     // ---- show / clear -----------------------------------------------------
-    function show() { el('automationPanel').classList.add('active'); }
+    function updateAutoChip() {
+        const chip = el('chip-auto');
+        if (chip) chip.classList.toggle('is-active', state.visible);
+    }
+    function setVisible(v) {
+        state.visible = v;
+        el('automationPanel').classList.toggle('active', v);
+        updateAutoChip();
+        saveState();
+    }
+    function show() { setVisible(true); }
+    // Topbar toggle. Can only HIDE while the queue is empty — never with carts
+    // loaded (no surprise audio from a panel you can't see).
+    function toggleVisible() {
+        if (state.visible) {
+            if (state.items.length > 0) { toast('Clear the playlist before hiding it'); return; }
+            setVisible(false);
+        } else {
+            if (state.items.length === 0) resetSchedule(); // open fresh for planning
+            render();
+            setVisible(true);
+        }
+    }
     function clearAndHide() {
         if (state.running) return;
         state.items.forEach(it => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
         state.items = [];
         resetSchedule();
         render();
-        // Brief pause on the now-empty list — just long enough to register that
-        // it's cleared — before the panel closes.
-        setTimeout(() => el('automationPanel').classList.remove('active'), 700);
+        setVisible(false); // empty now, so hiding is allowed
     }
 
     function syncLock() {
@@ -810,6 +823,7 @@
         window.addEventListener('resize', fitTimes);
         loadState();
         render();
+        updateAutoChip();
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 
@@ -819,5 +833,7 @@
         isActive: () => state.items.length > 0,
         isRunning: () => state.running,
         stop: forceStop, // used by the shell's "Stop all"
+        toggle: toggleVisible, // topbar playlist button
+        isVisible: () => state.visible,
     };
 })();

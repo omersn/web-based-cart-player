@@ -102,6 +102,16 @@ $backtimerStyles   = ($smallbacktimer === '1')
         /* Empty slot: dashed, near-invisible tile. */
         .button.empty { background: var(--empty-fill); border: 1px dashed var(--empty-border); cursor: not-allowed; }
 
+        /* Flash a cart when jumped to from the search results. A sustained
+           "breathing" cyan ring — stays visible the whole time (never fully
+           fades between beats) so it keeps holding the eye while the grid
+           finishes laying out. */
+        @keyframes searchFlash {
+            0%, 100% { box-shadow: 0 0 0 2px rgba(52, 195, 212, 0.6), 0 0 14px 4px rgba(52, 195, 212, 0.28); }
+            50%      { box-shadow: 0 0 0 5px rgba(52, 195, 212, 1), 0 0 30px 10px rgba(52, 195, 212, 0.65); }
+        }
+        .button.search-flash { animation: searchFlash 0.9s ease-in-out 6; z-index: 3; }
+
         .button .progress { position: absolute; top: 0; left: 0; height: 100%; width: 0; background-color: rgba(255, 255, 255, 0.2); z-index: 1; transition: width 0.1s linear; display: none; pointer-events: none; }
         .button span.title { position: relative; z-index: 2; }
         .duration {
