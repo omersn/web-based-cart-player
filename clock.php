@@ -9,9 +9,11 @@
     <style>
         /*
          * Broadcast clock: a conic-gradient ring that fills as the current hour
-         * elapses, live HH:MM in the middle, and a ring of 60 dots around it
-         * that light up green second by second (after Bodet-style broadcast/
-         * railway clocks) — a broadcast clock is only useful with real seconds.
+         * elapses, live HH:MM in the middle, a ring of 60 dots around it that
+         * light up green second by second (every 5th in red, like the 5-second
+         * graduations on a real dial), and 4 green quarter-hour marks on the
+         * hour ring itself (after Bodet-style broadcast/railway clocks) — a
+         * broadcast clock is only useful with real seconds.
          * Original implementation — built for this "studio" redesign, not
          * derived from the old dot-circle clock this file used to hold.
          */
@@ -75,6 +77,21 @@
             transition: background-color 0.15s ease, box-shadow 0.15s ease;
         }
         .sec-ring .tick.lit { background: #35c46f; box-shadow: 0 0 5px rgba(53, 196, 111, 0.85); }
+        /* Every 5th second gets a red marker, like a dial's 5-second graduations. */
+        .sec-ring .tick.marker { background: rgba(240, 69, 63, 0.4); }
+        .sec-ring .tick.marker.lit { background: #f0453f; box-shadow: 0 0 5px rgba(240, 69, 63, 0.85); }
+        /* 4 green quarter-hour marks (00/15/30/45) sitting on the hour ring
+           itself — same rotate + transform-origin trick as the second dots. */
+        .hour-marks { position: absolute; z-index: 1; width: 0; height: 0; top: 50%; left: 50%; }
+        .hour-marks .hour-mark {
+            position: absolute;
+            top: -105px; left: -1.5px;
+            width: 3px; height: 16px;
+            border-radius: 2px;
+            background: #35c46f;
+            transform-origin: 1.5px 105px;
+            transform: rotate(calc(var(--i) * 90deg));
+        }
         .readout {
             position: relative;
             z-index: 3;
@@ -88,11 +105,13 @@
         body.dock .ring::after { width: 116px; height: 116px; }
         body.dock .sec-ring { --sec-radius: 46px; }
         body.dock .sec-ring .tick { width: 4px; height: 4px; margin-left: -2px; }
+        body.dock .hour-marks .hour-mark { top: -75px; left: -1px; width: 2px; height: 10px; transform-origin: 1px 75px; }
         body.dock .readout .hm { font-size: 30px; }
     </style>
 </head>
 <body class="<?= isset($_GET['dock']) ? 'dock' : '' ?>">
     <div class="ring" id="ring">
+        <div class="hour-marks" id="hourMarks"></div>
         <div class="sec-ring" id="secRing"></div>
         <div class="readout">
             <div class="hm" id="hm">00:00</div>
@@ -103,14 +122,22 @@
         const ring = document.getElementById('ring');
         const hm = document.getElementById('hm');
         const secRing = document.getElementById('secRing');
+        const hourMarks = document.getElementById('hourMarks');
 
         const ticks = [];
         for (let i = 0; i < 60; i++) {
             const tick = document.createElement('span');
-            tick.className = 'tick';
+            tick.className = 'tick' + (i % 5 === 0 ? ' marker' : '');
             tick.style.setProperty('--i', i);
             secRing.appendChild(tick);
             ticks.push(tick);
+        }
+        // Static quarter-hour marks (00/15/30/45) — fixed reference points, no updates needed.
+        for (let i = 0; i < 4; i++) {
+            const mark = document.createElement('span');
+            mark.className = 'hour-mark';
+            mark.style.setProperty('--i', i);
+            hourMarks.appendChild(mark);
         }
 
         function update() {

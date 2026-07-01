@@ -94,11 +94,12 @@
     // lets you edit down to the minute.)
     function fmtClockSec(d) { return `${fmtClock(d)}:${String(d.getSeconds()).padStart(2, '0')}`; }
     function fmtDur(sec) { sec = Math.max(0, Math.round(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; }
-    // Countdown that grows an hours field when the start is more than an hour away.
+    // Always shows H:MM:SS (even "0:MM:SS") — symmetric with the HH:MM:SS
+    // header/Ends-at readouts rather than dropping the hour when it's zero.
     function fmtCountdown(sec) {
         sec = Math.max(0, Math.round(sec));
         const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
-        return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+        return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     }
     function totalRuntime() { return state.items.reduce((a, it) => a + it.runtime, 0); }
     function actualStart() { return state.anchorMode === 'end' ? new Date(state.anchorTime.getTime() - totalRuntime() * 1000) : state.anchorTime; }
@@ -384,7 +385,10 @@
             e.stopPropagation();
             minList.hidden = true;
             hourList.hidden = !hourList.hidden;
-            if (!hourList.hidden) { refreshPickerLive(); centerSelectedCombo(hourList); }
+            // Open scrolled to the CURRENT real-world hour (where you are right
+            // now), not centred on the armed/selected hour (often "next hour",
+            // which could be a different, less useful starting point).
+            if (!hourList.hidden) { refreshPickerLive(); scrollToCurrentHour(hourList); }
         });
 
         minList.innerHTML = '';
@@ -412,6 +416,11 @@
     function centerSelectedCombo(list) {
         const sel = list.querySelector('button.sel');
         if (sel) sel.scrollIntoView({ block: 'center' });
+    }
+    function scrollToCurrentHour(list) {
+        const curH = new Date().getHours();
+        const opt = [...list.children].find((o) => parseInt(o.dataset.h, 10) === curH);
+        if (opt) opt.scrollIntoView({ block: 'start' });
     }
     // Marks the next top-of-the-hour option (always — so it's the visible
     // default reference point even once something else is picked) and grays
@@ -517,6 +526,10 @@
         node.dataset.from = block.from;
         node.draggable = !(state.locked || state.running);
         node.addEventListener('dragstart', (e) => {
+            // Native drag should only ever start from the primary (left)
+            // button — guards against a right-click (which shouldn't drag at
+            // all) being misread as a drag start on some browser/OS combos.
+            if (e.button !== 0) { e.preventDefault(); return; }
             dragBlock = block; dropBlocks = blocks();
             e.dataTransfer.effectAllowed = 'move';
             try { e.dataTransfer.setData('text/plain', ''); } catch (x) {}
@@ -527,6 +540,10 @@
             dropGhost.classList.add('auto-ghost');
             dropGhost.removeAttribute('draggable');
             delete dropGhost.dataset.from;
+            // Insert the ghost in the SAME spot right away (synchronously) so
+            // there's no gap/jitter between the original vanishing and the
+            // ghost appearing — dragover then repositions it as the mouse moves.
+            node.after(dropGhost);
             // Hide the original a tick later — hiding it synchronously here
             // risks the browser cancelling the drag before it captures its
             // native drag-image snapshot.
@@ -602,7 +619,8 @@
         el('autoHeaderIcon').innerHTML = state.anchorMode === 'end' ? ICON.end : ICON.start;
         el('autoHeader').classList.toggle('end-mode', state.anchorMode === 'end');
         el('autoTimeLabel').textContent = state.anchorMode === 'end' ? 'To' : 'From';
-        el('autoTime').textContent = fmtClockSec(state.anchorTime);
+        // autoTime itself is set inside updateTimes() (below), since it needs
+        // to fall back to "—:—" for a stale/elapsed schedule.
         el('autoPopStart').classList.toggle('active', state.anchorMode === 'start');
         el('autoPopEnd').classList.toggle('active', state.anchorMode === 'end');
         syncPicker();
@@ -623,8 +641,17 @@
         updateTimes();
     }
 
+    // A schedule counts as "stale" once it's elapsed without firing and won't
+    // fire this tick either (already in MANUAL, or AUTO already fired once for
+    // it) — e.g. the operator never pressed play. Rather than show a bogus
+    // long countdown (or worse, look armed for ~24h because it quietly rolled
+    // to "tomorrow"), the header just goes blank and hands off to MANUAL.
+    function scheduleIsStale() {
+        return !state.running && secsToStart() < 0 && (state.mode === 'manual' || state.firedForThisSchedule);
+    }
     function updateTimes() {
         const startsBlock = el('autoStartsBlock');
+        el('autoTime').textContent = scheduleIsStale() ? '—:—' : fmtClockSec(state.anchorTime);
         el('autoEndAt').textContent = fmtClockSec(actualEnd());
         if (state.running) {
             startsBlock.classList.remove('imminent');
@@ -645,6 +672,11 @@
         if (state.items.length === 0) return;
         syncLock();
         if (state.running) { el('autoTotal').textContent = fmtDur(remainingRuntime()); }
+
+        // A stale schedule (elapsed, already fired once, still sitting there)
+        // hands off to the operator instead of quietly staying "armed".
+        if (scheduleIsStale() && state.mode !== 'manual') { state.mode = 'manual'; saveState(); }
+
         updateTimes();
         // firedForThisSchedule guards against re-triggering the instant the
         // batch finishes: the anchor time is a fixed point in the past by then,
@@ -687,6 +719,11 @@
         el('autoStopBtn').addEventListener('click', forceStop);
         el('autoStopAutoBtn').addEventListener('click', forceStop);
         el('autoClearBtn').addEventListener('click', clearAndHide);
+        // No context menu inside the panel — there's nothing for it to do here,
+        // and a stray native menu is the likeliest way a right-click could end
+        // up interacting with a queue row (e.g. interrupting an accidental
+        // right-click-triggered drag) instead of just being a no-op.
+        el('automationPanel').addEventListener('contextmenu', (e) => e.preventDefault());
         document.addEventListener('click', (e) => {
             if (!el('autoPop').hidden && !e.target.closest('#autoPop') && !e.target.closest('#autoHeader')) togglePop(false);
         });
