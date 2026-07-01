@@ -72,7 +72,10 @@ body {
     overflow-x: auto;
     overflow-y: hidden;
 }
-.main-content { position: relative; flex: 1 1 auto; min-height: 0; min-width: 1180px; }
+/* Stage: horizontal split of the board (+ dock) and the automation panel. */
+.stage { display: flex; flex: 1 1 auto; min-height: 0; min-width: 1180px; }
+.stage-left { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0; }
+.main-content { position: relative; flex: 1 1 auto; min-height: 0; min-width: 0; }
 
 /* ---- Floating "Station ID window" (draggable) ---------------------------- */
 .floating-container-0001,
@@ -124,7 +127,7 @@ body {
     flex: 0 0 auto;
     gap: 1px;
     height: 200px;
-    min-width: 1180px;
+    min-width: 0;
     background: var(--hairline);   /* shows through the 1px gap as a divider */
     border-top: 1px solid var(--hairline);
 }
@@ -210,6 +213,70 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 }
 .countdown-bar.show { transform: translateY(0); }
 .countdown-bar .countdown-value { font-weight: 700; font-size: 34px; letter-spacing: 0.06em; }
+
+/* ---- Automation Playlist panel -------------------------------------- */
+.automation-panel {
+    display: none;              /* .active -> flex */
+    flex: 0 0 33%; min-width: 360px;
+    flex-direction: column; min-height: 0;
+    background: var(--bg-panel);
+    border-left: 1px solid var(--hairline);
+}
+.automation-panel.active { display: flex; }
+
+.auto-head {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 14px 16px; border-bottom: 1px solid var(--hairline);
+}
+.auto-time-label { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; color: var(--text-tertiary); text-transform: uppercase; }
+.auto-time {
+    display: block; border: none; background: none; cursor: pointer; padding: 0; margin-top: 2px;
+    font-family: 'JetBrains Mono', monospace; font-size: 42px; font-weight: 700; color: var(--text-strong); line-height: 1;
+}
+.auto-time:hover { color: var(--cyan-text); }
+.auto-anchor {
+    width: 46px; height: 46px; border-radius: 10px; border: 1px solid var(--hairline);
+    background: var(--raised); color: var(--text-secondary); cursor: pointer; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 24px;
+}
+.auto-anchor:hover { background: var(--raised-hover); color: var(--text-primary); }
+.auto-anchor.end-mode { color: var(--amber); border-color: rgba(224, 165, 43, 0.4); }
+
+.auto-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.auto-item {
+    display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px;
+    background: var(--raised); border: 1px solid var(--hairline); cursor: grab;
+}
+.auto-item.dragging { opacity: 0.4; }
+.auto-item.playing { border-color: rgba(240, 69, 63, 0.6); background: rgba(240, 69, 63, 0.12); }
+.auto-item .auto-swatch { width: 10px; height: 32px; border-radius: 3px; flex-shrink: 0; }
+.auto-item .auto-name { flex: 1 1 auto; min-width: 0; font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auto-item .auto-runtime { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text-secondary); flex-shrink: 0; }
+.auto-item .auto-remove { border: none; background: none; color: var(--text-tertiary); cursor: pointer; font-size: 16px; padding: 2px; flex-shrink: 0; display: flex; }
+.auto-item .auto-remove:hover { color: #f0453f; }
+
+.auto-total { flex: 0 0 auto; display: flex; justify-content: space-between; padding: 8px 16px; font-size: 12px; color: var(--text-secondary); border-top: 1px solid var(--hairline); }
+.auto-total span:last-child { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--text-primary); }
+
+.auto-countdown { flex: 0 0 auto; text-align: center; padding: 12px 16px; border-top: 1px solid var(--hairline); }
+.auto-countdown-label { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-tertiary); }
+.auto-countdown-value { font-family: 'JetBrains Mono', monospace; font-size: 40px; font-weight: 700; color: var(--text-strong); line-height: 1.15; }
+.auto-countdown.imminent .auto-countdown-value { color: #f0453f; }
+
+.auto-controls { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 16px; border-top: 1px solid var(--hairline); }
+.auto-mode-btn {
+    height: 48px; border: none; border-radius: 10px; cursor: pointer; color: #fff;
+    background: linear-gradient(180deg, #33b06a, #2a9e5f);
+    font-family: 'Assistant', Arial, sans-serif; font-weight: 800; font-size: 16px; letter-spacing: 0.05em;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.auto-mode-btn.manual { background: var(--red-grad); }
+.auto-setauto-btn { height: 34px; border: 1px solid var(--hairline); border-radius: 8px; cursor: pointer; background: var(--raised); color: var(--text-secondary); font-weight: 700; font-size: 12px; letter-spacing: 0.04em; }
+.auto-setauto-btn:hover { background: var(--raised-hover); color: var(--text-primary); }
+.auto-clear-btn { height: 38px; border: 1px solid var(--hairline); border-radius: 8px; cursor: pointer; background: none; color: var(--text-tertiary); font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.auto-clear-btn:hover { color: #f0453f; border-color: rgba(240, 69, 63, 0.4); }
+/* Locked (within 5s of start, or while running): dim the editing affordances. */
+.automation-panel.locked .auto-list, .automation-panel.locked .auto-time, .automation-panel.locked .auto-anchor { pointer-events: none; opacity: 0.55; }
 
 /* Header "deck" pill (Clock / Station IDs source selector) */
 .window-select-wrap { position: relative; display: inline-flex; align-items: center; }

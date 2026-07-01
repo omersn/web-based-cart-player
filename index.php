@@ -159,28 +159,63 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     <iframe id="keepAliveFrame" src="keep-alive.php" frameborder="0" scrolling="no" aria-hidden="true"
             style="position: fixed; bottom: 0; right: 0; width: 2px; height: 2px; z-index: 0; opacity: 0; pointer-events: none;"></iframe>
 
-    <!-- Main content area: flexes to fill the space between the topbar and the
-         ticker (both normal flow now, not position:fixed — see player.css). -->
-    <div class="main-content">
-        <iframe width="100%" height="100%" id="cartgrid" name="cartgrid"
-                src="grid.php?from=10&to=75&pagination=0&fit=1&mainbar=1&timestamp=<?= time() ?>"
-                frameborder="0" scrolling="no" allowfullscreen></iframe>
-    </div>
+    <!-- Stage: the board (+ bottom dock) on the left, the Automation Playlist
+         panel on the right (33%, shown only while automation is active). -->
+    <div class="stage">
+        <div class="stage-left">
+            <!-- Main content area: flexes to fill the space between the topbar
+                 and the ticker (normal flow, not position:fixed — see player.css). -->
+            <div class="main-content">
+                <iframe width="100%" height="100%" id="cartgrid" name="cartgrid"
+                        src="grid.php?from=10&to=75&pagination=0&fit=1&mainbar=1&timestamp=<?= time() ?>"
+                        frameborder="0" scrolling="no" allowfullscreen></iframe>
+            </div>
 
-    <!-- Bottom dock: the clock and/or Station-ID views can be docked here. The
-         layout adapts to what's docked (see renderDock in the script below). -->
-    <div class="dock-bar" id="dockBar">
-        <div class="dock-pane dock-clock" id="dockClock" style="display:none;">
-            <button class="dock-undock" onclick="undock('clock')" title="Pop back out"><i class="ph ph-arrow-line-up"></i></button>
-            <iframe class="dock-clock-time" id="dockClockTime" scrolling="no"></iframe>
-            <iframe class="dock-clock-count" id="dockClockCount" scrolling="no"></iframe>
+            <!-- Bottom dock: the clock and/or Station-ID views can be docked here.
+                 The layout adapts to what's docked (see renderDock below). -->
+            <div class="dock-bar" id="dockBar">
+                <div class="dock-pane dock-clock" id="dockClock" style="display:none;">
+                    <button class="dock-undock" onclick="undock('clock')" title="Pop back out"><i class="ph ph-arrow-line-up"></i></button>
+                    <iframe class="dock-clock-time" id="dockClockTime" scrolling="no"></iframe>
+                    <iframe class="dock-clock-count" id="dockClockCount" scrolling="no"></iframe>
+                </div>
+                <div class="dock-pane dock-ids" id="dockIds" style="display:none;">
+                    <button class="dock-undock" onclick="undock('ids')" title="Pop back out"><i class="ph ph-arrow-line-up"></i></button>
+                    <button class="dock-nav" onclick="dockIdsNav(-1)" title="Previous section"><i class="ph ph-caret-left"></i></button>
+                    <iframe class="dock-ids-frame" id="dockIdsFrame" scrolling="no"></iframe>
+                    <button class="dock-nav" onclick="dockIdsNav(1)" title="Next section"><i class="ph ph-caret-right"></i></button>
+                </div>
+            </div>
         </div>
-        <div class="dock-pane dock-ids" id="dockIds" style="display:none;">
-            <button class="dock-undock" onclick="undock('ids')" title="Pop back out"><i class="ph ph-arrow-line-up"></i></button>
-            <button class="dock-nav" onclick="dockIdsNav(-1)" title="Previous section"><i class="ph ph-caret-left"></i></button>
-            <iframe class="dock-ids-frame" id="dockIdsFrame" scrolling="no"></iframe>
-            <button class="dock-nav" onclick="dockIdsNav(1)" title="Next section"><i class="ph ph-caret-right"></i></button>
-        </div>
+
+        <!-- Automation Playlist: scheduled auto-playback queue. Hidden until an
+             item is sent here (right-click a cart); managed by automation.js. -->
+        <aside class="automation-panel" id="automationPanel">
+            <div class="auto-head">
+                <div class="auto-time-block">
+                    <div class="auto-time-label" id="autoTimeLabel">From</div>
+                    <button class="auto-time" id="autoTime" title="Set the time">--:--</button>
+                </div>
+                <button class="auto-anchor" id="autoAnchor" title="Start at / end at the top of the hour">
+                    <i class="ph ph-arrow-circle-right"></i>
+                </button>
+            </div>
+
+            <div class="auto-list" id="autoList"></div>
+
+            <div class="auto-total"><span>Total</span><span id="autoTotal">0:00</span></div>
+
+            <div class="auto-countdown" id="autoCountdownBox">
+                <div class="auto-countdown-label" id="autoCountdownLabel">Starts in</div>
+                <div class="auto-countdown-value" id="autoCountdown">--:--</div>
+            </div>
+
+            <div class="auto-controls">
+                <button class="auto-mode-btn" id="autoModeBtn">AUTO START</button>
+                <button class="auto-setauto-btn" id="autoSetAutoBtn" hidden>SET AUTO START</button>
+                <button class="auto-clear-btn" id="autoClearBtn"><i class="ph ph-trash"></i> Clear &amp; hide</button>
+            </div>
+        </aside>
     </div>
 
     <!-- AGPL: offer the Corresponding Source to network users (section 13). -->
@@ -470,15 +505,31 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         // layout can't be disturbed mid-jingle. (Stop all still works — it stops
         // playback, which clears the lock.)
         const framePlaying = new Map();
+        // Layout is locked while any cart is on air OR the automation playlist is
+        // active (queued/scheduled/running) — the board is still playable, but
+        // the layout can't be rearranged.
+        function recomputeLock() {
+            const anyPlaying = [...framePlaying.values()].some((n) => n > 0);
+            const autoActive = !!(window.Automation && window.Automation.isActive());
+            const locked = anyPlaying || autoActive;
+            if (locked !== layoutLocked) {
+                layoutLocked = locked;
+                document.body.classList.toggle('layout-locked', layoutLocked);
+            }
+        }
+        setInterval(recomputeLock, 300); // catches automation activate/clear
         window.addEventListener('message', (event) => {
             const d = event.data;
             if (!d || d.source !== 'cartwall') return;
-            framePlaying.set(event.source, d.playing | 0);
-            const anyPlaying = [...framePlaying.values()].some((n) => n > 0);
-            if (anyPlaying !== layoutLocked) {
-                layoutLocked = anyPlaying;
-                document.body.classList.toggle('layout-locked', layoutLocked);
+
+            // Right-click on a cart -> send it to the automation playlist.
+            if (d.cmd === 'automation-add') {
+                if (window.Automation) window.Automation.addItem(d.item);
+                return;
             }
+
+            framePlaying.set(event.source, d.playing | 0);
+            recomputeLock();
 
             // Big countdown bar over the ticker — driven by the MAIN board only.
             // It stays up while ANY board cart is playing (d.playing > 0).
@@ -583,5 +634,6 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             });
         }
     </script>
+    <script src="assets/js/automation.js"></script>
 </body>
 </html>

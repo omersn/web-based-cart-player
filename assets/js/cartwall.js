@@ -210,9 +210,10 @@
         const isChained = chainedAt(boxNumber);
         const buttonClass = isChained ? 'buttonext' : 'button';
 
-        const [name, audioPath, startPoint, colorCode, endPoint] = line.split('|').map(part => part.trim());
+        const [name, audioPath, startPoint, colorCode, endPoint, volumePoint] = line.split('|').map(part => part.trim());
         const startAt = parseFloat(startPoint) || 0;
         const endAt = parseFloat(endPoint) || null;
+        const volume = (volumePoint !== undefined && volumePoint !== '') ? parseFloat(volumePoint) : 1;
         const catClass = categoryClass[colorCode] || 'cat-1';
 
         const button = document.createElement('button');
@@ -261,6 +262,8 @@
         button._audio = audio;
         button._endAt = endAt;       // hard stop point, for the shared countdown
         button._startAt = startAt;   // start point, for chain-total durations
+        // Full cart record, used when right-clicking to send it to automation.
+        button._cart = { name, file: audioFilename, start: startAt, end: endAt, color: colorCode, volume };
 
         // --- The preload hack: prime each clip so its first real play is instant.
         audio.addEventListener('canplaythrough', () => {
@@ -557,46 +560,26 @@
             });
         }
 
+        // Right-click a cart -> send it straight to the automation playlist (in
+        // the parent shell). Replaces the old "play at top of hour" menu, which
+        // is disabled now that the automation panel owns scheduled playback.
         document.addEventListener('contextmenu', (event) => {
             const button = event.target.closest('.button, .buttonext');
-            if (!button) {
-                contextMenu.style.display = 'none';
-                return;
-            }
+            contextMenu.style.display = 'none';
+            if (!button || button.classList.contains('empty') || !button._cart) return;
             event.preventDefault();
-            selectedButton = button;
-
-            if (timerActiveButton && timerActiveButton !== button) {
-                playAtButton.disabled = true;
-                playAtButton.style.opacity = 0.5;
-                playAtButton.textContent = 'Another timer is active';
-            } else {
-                playAtButton.disabled = false;
-                playAtButton.style.opacity = 1;
-                const nextHour = (new Date().getHours() + 1) % 24;
-                playAtButton.textContent = `Play automatically at ${nextHour.toString().padStart(2, '0')}:00`;
+            const a = button._audio;
+            const c = button._cart;
+            const end = (c.end != null ? c.end : (a ? a.duration : 0)) || 0;
+            let runtime = Math.max(0, end - (c.start || 0));
+            if (!runtime) {
+                const dEl = button.querySelector('.duration');
+                if (dEl) { const [m, s] = dEl.textContent.split(':').map(Number); runtime = (m * 60 + s) || 0; }
             }
-
-            contextMenu.style.left = `${event.pageX}px`;
-            contextMenu.style.top = `${event.pageY}px`;
-            contextMenu.style.display = 'block';
-
-            if (activeTimers.has(button)) {
-                playAtButton.disabled = true;
-                playAtButton.style.opacity = 0.5;
-                playAtButton.textContent = 'Timer active';
-            }
-
-            // "Cancel all timers" is offered on every right-click; only enabled
-            // when at least one timer is scheduled.
-            if (cancelTimersButton) {
-                const has = activeTimers.size > 0;
-                cancelTimersButton.disabled = !has;
-                cancelTimersButton.style.opacity = has ? 1 : 0.5;
-                cancelTimersButton.textContent = has ? 'Cancel all timers' : 'No active timers';
-            }
-
-            document.addEventListener('click', () => { contextMenu.style.display = 'none'; }, { once: true });
+            try {
+                window.parent.postMessage({ source: 'cartwall', cmd: 'automation-add',
+                    item: { name: c.name, file: c.file, start: c.start, end: c.end, color: c.color, volume: c.volume, runtime } }, '*');
+            } catch (e) { /* no parent */ }
         });
 
         playAtButton.addEventListener('click', () => {
