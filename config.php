@@ -75,13 +75,16 @@ const DJ_FROM = 10;
 const DJ_TO   = 35;
 
 /**
- * Button colour palette: colour code "1".."5" -> hex. Shared by the cart
- * wall, the admin/DJ lists and the colour picker.
+ * Button colour palette: colour code "1".."5" -> hex. Used by the admin/DJ
+ * lists and the colour picker for their swatches. Kept in lock-step with the
+ * board's studio palette (the --cat-* CSS custom properties in
+ * assets/css/player.css, mirrored in assets/js/automation.js) so the colour you
+ * pick in admin is exactly the colour the cart renders on the wall.
  */
 const COLOR_MAP = [
-    '1' => '#007bff', // Blue
-    '2' => '#4dbf49', // Green
-    '3' => '#d15ccf', // Purple
-    '4' => '#d19724', // Orange
-    '5' => '#5eccd6', // Cyan
+    '1' => '#2f6fd6', // Blue
+    '2' => '#2f9e5f', // Green
+    '3' => '#b0479e', // Purple
+    '4' => '#c98a2b', // Orange
+    '5' => '#2aa7bf', // Cyan
 ];
