@@ -8,11 +8,11 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
     <style>
         /*
-         * Countdown ring: a conic-gradient arc that fills red as the current
-         * hour elapses, with the live HH:MM in the middle and the remaining
-         * time to the top of the hour underneath. Original implementation —
-         * built for this "studio" redesign, not derived from the old
-         * dot-circle clock this file used to hold.
+         * Broadcast clock: a conic-gradient ring that fills as the current
+         * hour elapses, with the live HH:MM in the middle and live :SS ticking
+         * underneath — a broadcast clock is only useful with real seconds.
+         * Original implementation — built for this "studio" redesign, not
+         * derived from the old dot-circle clock this file used to hold.
          */
         body {
             background-color: #0a0c10;
@@ -54,38 +54,34 @@
             direction: ltr;
         }
         .readout .hm { font-size: 44px; font-weight: 700; color: #f2f5f8; line-height: 1; }
-        .readout .countdown { font-size: 16px; font-weight: 600; color: #ff5b54; margin-top: 6px; }
+        .readout .sec { font-size: 16px; font-weight: 600; color: #ff5b54; margin-top: 6px; }
 
         /* Compact sizing when docked (?dock=1) so the ring fits the short dock. */
         body.dock .ring { width: 150px; height: 150px; }
         body.dock .ring::after { width: 116px; height: 116px; }
         body.dock .readout .hm { font-size: 30px; }
-        body.dock .readout .countdown { font-size: 12px; margin-top: 4px; }
+        body.dock .readout .sec { font-size: 12px; margin-top: 4px; }
     </style>
 </head>
 <body class="<?= isset($_GET['dock']) ? 'dock' : '' ?>">
     <div class="ring" id="ring">
         <div class="readout">
             <div class="hm" id="hm">00:00</div>
-            <div class="countdown" id="countdown">0:00</div>
+            <div class="sec" id="sec">:00</div>
         </div>
     </div>
 
     <script>
         const ring = document.getElementById('ring');
         const hm = document.getElementById('hm');
-        const countdown = document.getElementById('countdown');
+        const sec = document.getElementById('sec');
 
         function update() {
             const now = new Date();
             const secondsIntoHour = now.getMinutes() * 60 + now.getSeconds();
-            const secondsRemaining = 3600 - secondsIntoHour;
 
             hm.textContent = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-            const minutes = Math.floor(secondsRemaining / 60);
-            const seconds = secondsRemaining % 60;
-            countdown.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;
+            sec.textContent = `:${String(now.getSeconds()).padStart(2, '0')}`;
 
             const deg = (secondsIntoHour / 3600) * 360;
             ring.style.setProperty('--deg', `${deg}deg`);

@@ -230,18 +230,19 @@ body.layout-locked .title-bar-0002 { cursor: default; }
    important control, like a section header. */
 .auto-header-wrap { flex: 0 0 auto; position: relative; border-bottom: 1px solid var(--hairline); }
 .auto-header {
-    width: 100%; display: grid; grid-template-columns: 40px 76px 1fr 20px; align-items: center; column-gap: 10px;
+    width: 100%; display: grid; grid-template-columns: 40px 100px 1fr 20px; align-items: center; column-gap: 10px;
     padding: 16px; border: none; background: rgba(255, 255, 255, 0.045); cursor: pointer; text-align: left;
     color: var(--text-strong); font-family: 'JetBrains Mono', monospace;
 }
 .auto-header:hover { background: var(--raised); }
 .auto-header-icon { color: var(--text-secondary); display: flex; }
 .auto-header.end-mode .auto-header-icon { color: var(--amber); }
-.auto-header-label { font-size: 20px; font-weight: 700; color: var(--text-tertiary); text-align: right; white-space: nowrap; }
-.auto-header-time { font-size: 40px; font-weight: 800; line-height: 1; white-space: nowrap; }
+/* Label and time share one font size (both read as part of the same statement). */
+.auto-header-label { font-size: 34px; font-weight: 700; color: var(--text-tertiary); text-align: right; white-space: nowrap; }
+.auto-header-time { font-size: 34px; font-weight: 800; line-height: 1; white-space: nowrap; }
 .auto-header-caret { color: var(--text-tertiary); font-size: 18px; }
-/* Big, bold, industrial time picker — dropdowns (hours / 15-min blocks) plus a
-   typed field for a precise minute. */
+/* Big, bold, industrial time picker — custom combo dropdowns (not the native OS
+   picker) for hour / 15-min blocks, plus a typed field for a precise minute. */
 .auto-pop {
     position: absolute; top: calc(100% - 1px); left: 8px; right: 8px; z-index: 30;
     background: #171b21; border: 1px solid var(--hairline); border-radius: 12px;
@@ -254,21 +255,41 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .auto-pop-modes button { flex: 1; height: 48px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--raised); color: var(--text-secondary); font-weight: 800; font-size: 15px; letter-spacing: 0.06em; cursor: pointer; }
 .auto-pop-modes button.active { background: var(--cyan-tint); border-color: var(--cyan-border); color: var(--cyan-text); }
 .auto-pop-selects { display: flex; align-items: center; justify-content: center; gap: 8px; }
-.auto-pop-select {
-    flex: 1; height: 64px; border: 1px solid var(--hairline); border-radius: 10px;
+/* Custom combo: a button showing the current value, opening our OWN styled
+   list (not the OS's) — lets us colour the next-hour entry directly instead
+   of a text badge, and grey out/disable past times cleanly. */
+.auto-combo { position: relative; flex: 1; }
+.auto-combo-btn {
+    width: 100%; height: 64px; border: 1px solid var(--hairline); border-radius: 10px;
     background: var(--raised); color: var(--text-strong); font-family: 'JetBrains Mono', monospace;
-    font-size: 28px; font-weight: 700; text-align: center; text-align-last: center; cursor: pointer; padding: 0 6px;
+    font-size: 28px; font-weight: 700; text-align: center; cursor: pointer;
 }
-.auto-pop-select:focus { outline: none; border-color: var(--cyan-border); }
-.auto-pop-select option:disabled { color: rgba(255, 255, 255, 0.22); }
+.auto-combo-btn:hover { background: var(--raised-hover); }
+.auto-combo-list {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 40;
+    max-height: 220px; overflow-y: auto; background: #1c2129; border: 1px solid var(--hairline);
+    border-radius: 10px; box-shadow: 0 14px 32px rgba(0,0,0,0.5); padding: 4px;
+    scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.16) transparent;
+}
+.auto-combo-list[hidden] { display: none; }
+.auto-combo-list button {
+    display: block; width: 100%; height: 38px; border: none; border-radius: 6px; margin: 1px 0;
+    background: none; color: var(--text-primary); font-family: 'JetBrains Mono', monospace;
+    font-size: 17px; font-weight: 700; cursor: pointer;
+}
+.auto-combo-list button:hover:not(:disabled) { background: var(--raised-hover); }
+.auto-combo-list button.sel { outline: 1px solid var(--cyan-border); }
+.auto-combo-list button.next-hour { background: rgba(52, 195, 212, 0.16); color: var(--cyan-text); }
+.auto-combo-list button:disabled { color: rgba(255, 255, 255, 0.2); cursor: not-allowed; }
 .auto-pop-colon { font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 800; color: var(--text-tertiary); }
 .auto-pop-caption { font-size: 11px; text-align: center; color: var(--text-tertiary); }
 .auto-pop-typed { width: 100%; height: 46px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--raised); color: var(--text-strong); text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; box-sizing: border-box; }
 .auto-pop-typed:focus { outline: none; border-color: var(--cyan-border); }
 .auto-pop-ok { width: 100%; height: 52px; margin-top: 2px; border: none; border-radius: 10px; cursor: pointer; background: var(--cyan-tint); color: var(--cyan-text); border: 1px solid var(--cyan-border); font-weight: 800; font-size: 18px; letter-spacing: 0.1em; }
 .auto-pop-ok:hover { background: rgba(52, 195, 212, 0.24); }
-/* Drop indicator line during reorder */
-.auto-drop-line { height: 3px; margin: 1px 2px; border-radius: 2px; background: var(--chain, #34c3d4); box-shadow: 0 0 8px rgba(52,195,212,0.7); }
+/* Ghost drag preview: a translucent clone of the dragged item shown at the
+   insertion point — reads as a real reorder rather than a bare guide line. */
+.auto-ghost { opacity: 0.45; pointer-events: none; outline: 2px dashed rgba(255, 255, 255, 0.5); outline-offset: -2px; }
 
 /* Queue list — dark-themed scrollbar */
 .auto-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.16) transparent; }

@@ -206,9 +206,15 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                         <button data-anchor="end" id="autoPopEnd">END AT</button>
                     </div>
                     <div class="auto-pop-selects">
-                        <select class="auto-pop-select" id="autoPopHourSelect" aria-label="Hour"></select>
+                        <div class="auto-combo" id="autoHourCombo">
+                            <button type="button" class="auto-combo-btn" id="autoHourComboBtn">00</button>
+                            <div class="auto-combo-list" id="autoHourComboList" hidden></div>
+                        </div>
                         <span class="auto-pop-colon">:</span>
-                        <select class="auto-pop-select" id="autoPopMinSelect" aria-label="Minute"></select>
+                        <div class="auto-combo" id="autoMinCombo">
+                            <button type="button" class="auto-combo-btn" id="autoMinComboBtn">00</button>
+                            <div class="auto-combo-list" id="autoMinComboList" hidden></div>
+                        </div>
                     </div>
                     <div class="auto-pop-caption">Or type a precise time</div>
                     <input type="text" id="autoTimeTyped" class="auto-pop-typed" inputmode="numeric" placeholder="HH:MM" maxlength="5" autocomplete="off">

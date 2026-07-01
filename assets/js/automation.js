@@ -180,10 +180,27 @@
     }
 
     // ---- remove -----------------------------------------------------------
+    // The panel can never show an empty, dangling queue: either it has at
+    // least one item, or it's gone. Reset clears the schedule back to a fresh
+    // default and drops the persisted state, so the NEXT queue starts clean.
+    function resetSchedule() {
+        state.anchorTime = nextFullHour();
+        state.anchorMode = 'start';
+        state.mode = 'auto';
+        state.firedForThisSchedule = false;
+        try { localStorage.removeItem(AUTO_STORE); } catch (e) { /* ignore */ }
+    }
     function removeAt(from, to) {
         if (state.locked || state.running) return;
         state.items.slice(from, to + 1).forEach(it => { try { it.audio.pause(); } catch (e) {} });
         state.items.splice(from, to - from + 1);
+        if (state.items.length === 0) {
+            // Removed the last item by hand: the panel disappears immediately.
+            resetSchedule();
+            render();
+            el('automationPanel').classList.remove('active');
+            return;
+        }
         saveState();
         render();
     }
@@ -196,6 +213,14 @@
         try { state.items[i].audio.pause(); } catch (e) {}
         state.items.splice(i, 1);
         if (state.playingIndex > i) state.playingIndex--;
+        if (state.items.length === 0) {
+            // The batch just finished: hold on the empty list for a beat so the
+            // operator can register it's done, then the panel goes away.
+            resetSchedule();
+            render();
+            setTimeout(() => el('automationPanel').classList.remove('active'), 1000);
+            return;
+        }
         saveState();
         render();
         centerCurrent();
@@ -243,6 +268,11 @@
         state.running = false; state.playingIndex = -1;
         state.items.forEach(it => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
         stopProgress();
+        // The tick loop skips syncLock() entirely once the queue is empty (see
+        // below), so if playback finishes and drains to 0 items before the tick
+        // runs again, state.locked would otherwise stay frozen at "true" forever
+        // — bricking automation until a hard reload. Recompute right now.
+        syncLock();
     }
     // Stop reachable from either mode (the dedicated AUTO-mode Stop button, the
     // MANUAL transport's Stop, or the shell's "Stop all"). Interrupting like
@@ -325,59 +355,82 @@
         state.firedForThisSchedule = false; // new schedule -> arm AUTO again
         saveState(); render();
     }
-    function buildPickerSelects() {
-        const hourSel = el('autoPopHourSelect');
-        hourSel.innerHTML = '';
+    // Custom-built combo widgets (not native <select>s) — full control over
+    // colouring the next-hour option and greying out past times, without the
+    // OS's own picker chrome/appearance leaking through.
+    function buildPickerCombos() {
+        const hourBtn = el('autoHourComboBtn');
+        const hourList = el('autoHourComboList');
+        const minBtn = el('autoMinComboBtn');
+        const minList = el('autoMinComboList');
+
+        hourList.innerHTML = '';
         for (let h = 0; h < 24; h++) {
-            const opt = document.createElement('option');
-            opt.value = String(h); opt.textContent = String(h).padStart(2, '0');
-            hourSel.appendChild(opt);
+            const opt = document.createElement('button');
+            opt.type = 'button'; opt.textContent = String(h).padStart(2, '0'); opt.dataset.h = String(h);
+            opt.addEventListener('click', (e) => {
+                e.stopPropagation();
+                setAnchorHM(h, null);
+                hourList.hidden = true;
+                refreshPickerLive();
+            });
+            hourList.appendChild(opt);
         }
-        hourSel.addEventListener('change', () => {
-            setAnchorHM(parseInt(hourSel.value, 10), null);
-            refreshPickerLive();
+        hourBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            minList.hidden = true;
+            hourList.hidden = !hourList.hidden;
+            if (!hourList.hidden) refreshPickerLive();
         });
 
-        const minSel = el('autoPopMinSelect');
-        minSel.innerHTML = '';
+        minList.innerHTML = '';
         for (let m = 0; m < 60; m += 15) {
-            const opt = document.createElement('option');
-            opt.value = String(m); opt.textContent = String(m).padStart(2, '0');
-            minSel.appendChild(opt);
+            const opt = document.createElement('button');
+            opt.type = 'button'; opt.textContent = String(m).padStart(2, '0'); opt.dataset.m = String(m);
+            opt.addEventListener('click', (e) => {
+                e.stopPropagation();
+                setAnchorHM(null, m);
+                minList.hidden = true;
+            });
+            minList.appendChild(opt);
         }
-        minSel.addEventListener('change', () => setAnchorHM(null, parseInt(minSel.value, 10)));
+        minBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            hourList.hidden = true;
+            minList.hidden = !minList.hidden;
+            if (!minList.hidden) refreshPickerLive();
+        });
+
+        document.addEventListener('click', () => { hourList.hidden = true; minList.hidden = true; });
     }
     // Marks the next top-of-the-hour option (always — so it's the visible
     // default reference point even once something else is picked) and grays
-    // out/disables times already in the past today. Re-run every time the
-    // popover opens, since "now" keeps moving.
+    // out/disables times already in the past today. Re-run every time either
+    // combo list opens, since "now" keeps moving.
     function refreshPickerLive() {
         const now = new Date();
         const curH = now.getHours(), curM = now.getMinutes();
         const nextH = nextFullHour().getHours();
+        const selHour = state.anchorTime.getHours();
+        const selMin = state.anchorTime.getMinutes();
 
-        const hourSel = el('autoPopHourSelect');
-        [...hourSel.options].forEach((opt) => {
-            const h = parseInt(opt.value, 10);
+        [...el('autoHourComboList').children].forEach((opt) => {
+            const h = parseInt(opt.dataset.h, 10);
             opt.disabled = h < curH;
-            opt.textContent = String(h).padStart(2, '0') + (h === nextH ? ' — next hour' : '');
-            opt.style.fontWeight = h === nextH ? '800' : '400';
-            opt.style.background = h === nextH ? 'rgba(52, 195, 212, 0.16)' : '';
+            opt.classList.toggle('next-hour', h === nextH);
+            opt.classList.toggle('sel', h === selHour);
         });
-
-        const minSel = el('autoPopMinSelect');
-        const selHour = parseInt(hourSel.value, 10);
-        [...minSel.options].forEach((opt) => {
-            const m = parseInt(opt.value, 10);
+        [...el('autoMinComboList').children].forEach((opt) => {
+            const m = parseInt(opt.dataset.m, 10);
             opt.disabled = selHour === curH && m <= curM;
-            opt.style.fontWeight = m === 0 ? '800' : '400';
-            opt.style.background = m === 0 ? 'rgba(52, 195, 212, 0.16)' : '';
+            opt.classList.toggle('next-hour', m === 0);
+            opt.classList.toggle('sel', m === selMin);
         });
     }
     function syncPicker() {
         const hh = state.anchorTime.getHours(), mm = state.anchorTime.getMinutes();
-        el('autoPopHourSelect').value = String(hh);
-        el('autoPopMinSelect').value = (mm % 15 === 0) ? String(mm) : ''; // non-15 values: typed field is authoritative
+        el('autoHourComboBtn').textContent = String(hh).padStart(2, '0');
+        el('autoMinComboBtn').textContent = String(mm).padStart(2, '0'); // shows the exact minute, even off the 15-step grid
         const typed = el('autoTimeTyped');
         if (document.activeElement !== typed) typed.value = fmtClock(state.anchorTime);
     }
@@ -407,8 +460,7 @@
         if (state.running) return;
         state.items.forEach(it => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
         state.items = [];
-        state.firedForThisSchedule = false;
-        try { localStorage.removeItem(AUTO_STORE); } catch (e) { /* ignore */ }
+        resetSchedule();
         render();
         // Brief pause on the now-empty list — just long enough to register that
         // it's cleared — before the panel closes.
@@ -424,12 +476,13 @@
     // ---- drag & drop reorder (block-aware, container-delegated) -----------
     // Delegating dragover/drop to the LIST CONTAINER (rather than each row) is
     // what lets a drop register in the empty space below the last item — and
-    // using the exact same "insertion index" for both the guide line and the
+    // using the exact same "insertion index" for both the ghost preview and the
     // actual move keeps the two perfectly in sync.
-    let dragBlock = null, dropLine = null, dropBlocks = [];
-    function removeDropLine() { if (dropLine && dropLine.parentNode) dropLine.parentNode.removeChild(dropLine); dropLine = null; }
+    let dragBlock = null, dropGhost = null, dropBlocks = [];
+    function removeDropGhost() { if (dropGhost && dropGhost.parentNode) dropGhost.parentNode.removeChild(dropGhost); dropGhost = null; }
     // Insertion index (a position BETWEEN blocks, 0..dropBlocks.length) for a
-    // given pointer Y, based on the midpoint of each rendered block's node.
+    // given pointer Y, based on the midpoint of each rendered block's node
+    // (the ghost preview itself is excluded — it carries no data-from).
     function insertionIndexAt(list, clientY) {
         const nodes = [...list.children].filter((n) => n.dataset.from !== undefined);
         for (let i = 0; i < nodes.length; i++) {
@@ -457,24 +510,30 @@
             dragBlock = block; dropBlocks = blocks();
             node.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move';
             try { e.dataTransfer.setData('text/plain', ''); } catch (x) {}
+            // A translucent clone of what's being dragged, previewed at the
+            // insertion point — reads more like a real reorder than a bare line.
+            dropGhost = node.cloneNode(true);
+            dropGhost.classList.remove('dragging');
+            dropGhost.classList.add('auto-ghost');
+            dropGhost.removeAttribute('draggable');
+            delete dropGhost.dataset.from;
         });
-        node.addEventListener('dragend', () => { node.classList.remove('dragging'); removeDropLine(); dragBlock = null; });
+        node.addEventListener('dragend', () => { node.classList.remove('dragging'); removeDropGhost(); dragBlock = null; });
     }
     function initListDragDrop() {
         const list = el('autoList');
         list.addEventListener('dragover', (e) => {
-            if (!dragBlock) return;
+            if (!dragBlock || !dropGhost) return;
             e.preventDefault();
             const idx = insertionIndexAt(list, e.clientY);
-            if (!dropLine) { dropLine = document.createElement('div'); dropLine.className = 'auto-drop-line'; }
             const nodes = [...list.children].filter((n) => n.dataset.from !== undefined);
-            if (idx >= nodes.length) list.appendChild(dropLine); else nodes[idx].before(dropLine);
+            if (idx >= nodes.length) list.appendChild(dropGhost); else nodes[idx].before(dropGhost);
         });
         list.addEventListener('drop', (e) => {
             if (!dragBlock) return;
             e.preventDefault();
             const idx = insertionIndexAt(list, e.clientY);
-            removeDropLine();
+            removeDropGhost();
             reorderBlock(dragBlock, idx);
         });
     }
@@ -583,15 +642,15 @@
     }, 250);
 
     // ---- toast ------------------------------------------------------------
-    // Fixed to the viewport (not nested inside the panel) so a rejection is
-    // never silently swallowed by a still-hidden panel — a right-click that
-    // gets refused always shows SOMETHING on screen.
+    // Fixed to the viewport, right next to the time selector (not nested
+    // inside the panel — so a rejection is never silently swallowed by a
+    // still-hidden panel — and not centred on the whole screen either).
     let toastTimer = null;
     function toast(msg) {
         let t = el('autoToast');
         if (!t) {
             t = document.createElement('div'); t.id = 'autoToast';
-            t.style.cssText = 'position:fixed; left:50%; bottom:120px; transform:translateX(-50%); z-index:20000; background:rgba(240,69,63,0.96); color:#fff; padding:10px 18px; border-radius:8px; font-size:13px; font-weight:700; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,0.4); transition:opacity .2s; max-width:80vw;';
+            t.style.cssText = 'position:fixed; top:82px; right:16px; z-index:20000; background:rgba(240,69,63,0.96); color:#fff; padding:10px 16px; border-radius:8px; font-size:13px; font-weight:700; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,0.4); transition:opacity .2s; max-width:380px;';
             document.body.appendChild(t);
         }
         t.textContent = msg; t.style.opacity = '1';
@@ -601,7 +660,7 @@
 
     // ---- wire up ----------------------------------------------------------
     function init() {
-        buildPickerSelects();
+        buildPickerCombos();
         initListDragDrop();
         el('autoHeader').addEventListener('click', () => togglePop());
         el('autoPopStart').addEventListener('click', () => setAnchor('start'));
@@ -616,6 +675,10 @@
         el('autoClearBtn').addEventListener('click', clearAndHide);
         document.addEventListener('click', (e) => {
             if (!el('autoPop').hidden && !e.target.closest('#autoPop') && !e.target.closest('#autoHeader')) togglePop(false);
+        });
+        // Enter, anywhere inside the open picker, closes it (same as OK).
+        el('autoPop').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); togglePop(false); }
         });
         loadState();
         render();
