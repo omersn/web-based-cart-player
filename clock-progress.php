@@ -4,129 +4,127 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hourly Countdown</title>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700&family=Assistant:wght@700&display=swap" rel="stylesheet">
+    <title>Time to Top of Hour</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet">
     <style>
+        /*
+         * "Time to top of hour" read-out: a big MM:SS countdown to :00, over a
+         * slim bar that fills as the hour elapses (quarter ticks for reference),
+         * turning urgent-red in the final stretch. Original implementation for
+         * this player's studio redesign — shares the palette/type of clock.php
+         * but is its own, purpose-built widget (no shared/derived layout code).
+         */
+        :root {
+            --bg: #0a0c10;
+            --dim: #566072;
+            --red: #f0453f;
+            --track: rgba(255, 255, 255, 0.08);
+        }
+        * { box-sizing: border-box; margin: 0; }
         body {
-            background-color: #0a0c10;
-            margin: 0;
+            background: var(--bg);
+            height: 100vh;
             display: flex;
             flex-direction: column;
-            justify-content: center;
             align-items: center;
-            height: 100vh;
-            font-family: 'Assistant', Arial, sans-serif;
-            color: #ff5b54;
-        }
-
-        .title {
-            font-size: 6vmin;
-            font-weight: bold;
-            margin: 0;
-            color: #9aa4b2;
-        }
-
-        .countdown {
+            justify-content: center;
+            gap: 3.2vmin;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 10vmin; /* Larger countdown */
-            font-weight: bold;
-            margin: 0;
+            color: #e8edf3;
+            padding: 4vmin;
         }
+        .label {
+            font-size: 3vmin;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: var(--dim);
+            font-weight: 700;
+        }
+        .count {
+            font-size: 17vmin;
+            font-weight: 800;
+            line-height: 0.9;
+            font-variant-numeric: tabular-nums;
+            transition: color 0.3s ease;
+        }
+        /* Final 2 minutes: the read-out and the fill glow red, and the last
+           60 seconds pulse once per second — the "clear the deck" cue. */
+        body.warn .count { color: var(--red); }
+        body.urgent .count { animation: pulse 1s steps(1, end) infinite; }
+        @keyframes pulse { 50% { opacity: 0.35; } }
 
-        .progress-container {
+        .track {
             position: relative;
-            width: 80%; /* Responsive width for progress bar */
-            height: 2vmin; /* Height of the progress bar */
-            background-color: rgba(255, 255, 255, 0.07); /* Faint inactive bar */
-            margin: 2vmin 0;
-            border-radius: 1vmin;
+            width: 74vmin;
+            max-width: 88%;
+            height: 1.6vmin;
+            min-height: 6px;
+            background: var(--track);
+            border-radius: 999px;
+            overflow: hidden;
         }
-
-        .progress-bar {
+        .fill {
             position: absolute;
-            top: 0;
-            left: 0;
-            height: 100%;
-            background-color: #f0453f;
-            border-radius: 1vmin;
-            width: 0%; /* Dynamic width for progress */
-            transition: width 0.1s linear; /* Smooth animation */
+            inset: 0 auto 0 0;
+            width: 0;
+            background: linear-gradient(90deg, #7a8699, #aeb8c6);
+            border-radius: 999px;
+            transition: width 0.9s linear, background-color 0.3s ease;
+        }
+        body.warn .fill { background: linear-gradient(90deg, #b5322e, var(--red)); }
+        /* Quarter-hour reference ticks sitting on top of the track. */
+        .ticks { position: absolute; inset: 0; }
+        .ticks i {
+            position: absolute;
+            top: 0; bottom: 0;
+            width: 2px;
+            margin-left: -1px;
+            background: rgba(10, 12, 16, 0.85);
         }
 
-        .seconds-dots {
-            display: flex;
-            justify-content: space-between;
-            width: 80%; /* Same width as the progress bar */
-            margin-top: 1vmin;
-        }
-
-        .seconds-dots .dot {
-            width: 0.5vmin; /* Small dot size */
-            height: 0.5vmin;
-            background-color: #330000; /* Very dark red for inactive dots */
-            border-radius: 50%;
-        }
-
-        .seconds-dots .dot.active {
-            background-color: red; /* Bright red for active seconds dots */
-        }
+        body.dock { gap: 1.4vmin; padding: 2vmin; }
+        body.dock .label { font-size: 12px; letter-spacing: 0.2em; }
+        body.dock .count { font-size: 44px; }
+        body.dock .track { height: 8px; }
     </style>
 </head>
-<body>
-    <div class="title">Time to end of hour</div>
-    <div class="countdown" id="countdown">-00:00</div>
-
-    <!-- Progress bar container -->
-    <div class="progress-container">
-        <div class="progress-bar" id="progress-bar"></div>
-    </div>
-
-    <!-- Small dots for seconds -->
-    <div class="seconds-dots" id="seconds-dots">
-        <!-- Dots will be dynamically added here -->
+<body class="<?= isset($_GET['dock']) ? 'dock' : '' ?>">
+    <div class="label">To top of hour</div>
+    <div class="count" id="count">--:--</div>
+    <div class="track">
+        <div class="fill" id="fill"></div>
+        <div class="ticks" id="ticks"></div>
     </div>
 
     <script>
-        const countdownDisplay = document.getElementById("countdown");
-        const progressBar = document.getElementById("progress-bar");
-        const secondsDotsContainer = document.getElementById("seconds-dots");
-        const totalSecondsInAnHour = 3600; // Total seconds in an hour
+        const HOUR = 3600;
+        const countEl = document.getElementById('count');
+        const fillEl = document.getElementById('fill');
 
-        // Create 60 smaller dots for seconds
-        for (let i = 0; i < 60; i++) {
-            const dot = document.createElement("div");
-            dot.classList.add("dot");
-            secondsDotsContainer.appendChild(dot);
+        // Quarter-hour ticks at 25/50/75% (00 and 60 are the bar's own ends).
+        const ticks = document.getElementById('ticks');
+        for (const pct of [25, 50, 75]) {
+            const t = document.createElement('i');
+            t.style.left = pct + '%';
+            ticks.appendChild(t);
         }
-        const dots = document.querySelectorAll(".seconds-dots .dot");
 
-        function updateClock() {
+        function pad(n) { return String(n).padStart(2, '0'); }
+
+        function tick() {
             const now = new Date();
+            const elapsed = now.getMinutes() * 60 + now.getSeconds();
+            const remaining = HOUR - elapsed;
 
-            // Countdown to the end of the hour
-            const secondsElapsed = now.getMinutes() * 60 + now.getSeconds();
-            const secondsRemaining = totalSecondsInAnHour - secondsElapsed;
-            const countdownMinutes = Math.floor(secondsRemaining / 60).toString().padStart(2, "0");
-            const countdownSeconds = (secondsRemaining % 60).toString().padStart(2, "0");
-            countdownDisplay.textContent = `-${countdownMinutes}:${countdownSeconds}`;
+            countEl.textContent = `-${pad(Math.floor(remaining / 60))}:${pad(remaining % 60)}`;
+            fillEl.style.width = (elapsed / HOUR) * 100 + '%';
 
-            // Update progress bar
-            const percentageElapsed = (secondsElapsed / totalSecondsInAnHour) * 100;
-            progressBar.style.width = `${percentageElapsed}%`;
-
-            // Update small seconds dots
-            dots.forEach((dot, index) => {
-                if (index <= now.getSeconds()) {
-                    dot.classList.add("active");
-                } else {
-                    dot.classList.remove("active");
-                }
-            });
+            document.body.classList.toggle('warn', remaining <= 120);
+            document.body.classList.toggle('urgent', remaining <= 60);
         }
 
-        // Start the clock
-        setInterval(updateClock, 1000);
-        updateClock(); // Initialize the display
+        tick();
+        setInterval(tick, 1000);
     </script>
 </body>
 </html>
