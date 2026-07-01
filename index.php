@@ -200,10 +200,14 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 </button>
                 <div class="auto-pop" id="autoPop" hidden>
                     <div class="auto-pop-modes">
-                        <button data-anchor="start" id="autoPopStart">Start at hour</button>
-                        <button data-anchor="end" id="autoPopEnd">End at hour</button>
+                        <button data-anchor="start" id="autoPopStart">START AT</button>
+                        <button data-anchor="end" id="autoPopEnd">END AT</button>
                     </div>
-                    <label class="auto-pop-time">Time <input type="time" id="autoTimeInput"></label>
+                    <input type="text" id="autoTimeTyped" class="auto-pop-typed" inputmode="numeric" placeholder="HH:MM" maxlength="5" autocomplete="off">
+                    <div class="auto-pop-grid-label">Hour</div>
+                    <div class="auto-pop-hours" id="autoPopHours"></div>
+                    <div class="auto-pop-grid-label">Minute</div>
+                    <div class="auto-pop-mins" id="autoPopMins"></div>
                 </div>
             </div>
 
@@ -211,29 +215,33 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
 
             <div class="auto-total"><span id="autoTotalLabel">Total</span><span id="autoTotal">0:00</span></div>
 
-            <!-- Split start/end readout -->
-            <div class="auto-times">
-                <div class="auto-times-block" id="autoStartsBlock">
-                    <div class="auto-times-label">Starts in</div>
-                    <div class="auto-times-value" id="autoCountdown">-0:00</div>
-                </div>
-                <div class="auto-times-block">
-                    <div class="auto-times-label">Ends at</div>
-                    <div class="auto-times-value" id="autoEndAt">--:--</div>
-                </div>
-            </div>
-
-            <!-- Playback control area -->
+            <!-- Playback control area: mode switch always; AUTO shows the clocks,
+                 MANUAL shows the transport controls. -->
             <div class="auto-controls">
                 <div class="auto-mode-switch" id="autoModeSwitch">
                     <button data-mode="auto" id="autoModeAuto" class="active">AUTO</button>
                     <button data-mode="manual" id="autoModeManual">MANUAL</button>
                 </div>
-                <div class="auto-armed" id="autoArmed">AUTO START</div>
-                <div class="auto-transport">
-                    <button class="auto-play" id="autoPlayBtn" disabled title="Play / pause"><i class="ph-fill ph-play"></i></button>
-                    <button class="auto-stop" id="autoStopBtn" disabled title="Stop"><i class="ph-fill ph-stop"></i></button>
+
+                <div class="auto-auto-area" id="autoAutoArea">
+                    <div class="auto-times">
+                        <div class="auto-times-block" id="autoStartsBlock">
+                            <div class="auto-times-label">Starts in</div>
+                            <div class="auto-times-value" id="autoCountdown">-0:00</div>
+                        </div>
+                        <div class="auto-times-block">
+                            <div class="auto-times-label">Ends at</div>
+                            <div class="auto-times-value" id="autoEndAt">--:--</div>
+                        </div>
+                    </div>
+                    <div class="auto-armed" id="autoArmed">AUTO START</div>
                 </div>
+
+                <div class="auto-transport" id="autoTransport" hidden>
+                    <button class="auto-play" id="autoPlayBtn" title="Play / pause"><i class="ph-fill ph-play"></i></button>
+                    <button class="auto-stop" id="autoStopBtn" title="Stop"><i class="ph-fill ph-stop"></i></button>
+                </div>
+
                 <button class="auto-clear-btn" id="autoClearBtn"><i class="ph ph-trash"></i> Clear &amp; hide</button>
             </div>
         </aside>

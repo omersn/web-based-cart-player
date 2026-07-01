@@ -38,6 +38,12 @@
     function nextFullHour() { const d = new Date(); d.setHours(d.getHours() + 1, 0, 0, 0); return d; }
     function fmtClock(d) { return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
     function fmtDur(sec) { sec = Math.max(0, Math.round(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; }
+    // Countdown that grows an hours field when the start is more than an hour away.
+    function fmtCountdown(sec) {
+        sec = Math.max(0, Math.round(sec));
+        const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+        return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+    }
     function totalRuntime() { return state.items.reduce((a, it) => a + it.runtime, 0); }
     function actualStart() { return state.anchorMode === 'end' ? new Date(state.anchorTime.getTime() - totalRuntime() * 1000) : state.anchorTime; }
     function actualEnd() { return state.anchorMode === 'end' ? state.anchorTime : new Date(state.anchorTime.getTime() + totalRuntime() * 1000); }
@@ -186,7 +192,7 @@
     }
 
     // ---- modes / transport -----------------------------------------------
-    function setMode(m) { if (state.running) return; state.mode = m; render(); }
+    function setMode(m) { state.mode = m; render(); } // allowed while running (escape to manual for Stop)
     function onPlayPause() {
         if (state.mode !== 'manual') return;
         if (!state.running) beginPlayback(0);
@@ -194,21 +200,52 @@
     }
     function onStop() { if (state.mode === 'manual') stopAll(); }
 
-    // ---- header popover / anchor / time ----------------------------------
+    // ---- header popover / anchor / big time picker -----------------------
     function togglePop(force) {
         const pop = el('autoPop');
         const openNow = force != null ? force : pop.hidden;
         if (openNow && (state.locked || state.running)) return;
         pop.hidden = !openNow;
-        if (openNow) el('autoTimeInput').value = fmtClock(state.anchorTime);
+        if (openNow) syncPicker();
     }
     function setAnchor(mode) { state.anchorMode = mode; render(); }
-    function setTime(hhmm) {
-        const [h, m] = hhmm.split(':').map(Number);
-        if (Number.isNaN(h)) return;
-        const d = new Date(); d.setHours(h, m, 0, 0);
-        if (d.getTime() < Date.now() + 60000) d.setDate(d.getDate() + 1);
+    function setAnchorHM(h, m) {
+        const cur = state.anchorTime;
+        const hh = h != null ? h : cur.getHours();
+        const mm = m != null ? m : cur.getMinutes();
+        const d = new Date(); d.setHours(hh, mm, 0, 0);
+        if (d.getTime() < Date.now() + 60000) d.setDate(d.getDate() + 1); // next occurrence
         state.anchorTime = d; render();
+    }
+    function buildPickerGrids() {
+        const hours = el('autoPopHours'); hours.innerHTML = '';
+        for (let h = 0; h < 24; h++) {
+            const b = document.createElement('button');
+            b.textContent = String(h).padStart(2, '0'); b.dataset.h = h;
+            b.addEventListener('click', () => setAnchorHM(h, null));
+            hours.appendChild(b);
+        }
+        const mins = el('autoPopMins'); mins.innerHTML = '';
+        for (let m = 0; m < 60; m += 5) {
+            const b = document.createElement('button');
+            b.textContent = String(m).padStart(2, '0'); b.dataset.m = m;
+            b.addEventListener('click', () => setAnchorHM(null, m));
+            mins.appendChild(b);
+        }
+    }
+    function syncPicker() {
+        const hh = state.anchorTime.getHours(), mm = state.anchorTime.getMinutes();
+        el('autoPopHours').querySelectorAll('button').forEach(b => b.classList.toggle('sel', +b.dataset.h === hh));
+        el('autoPopMins').querySelectorAll('button').forEach(b => b.classList.toggle('sel', +b.dataset.m === mm));
+        const typed = el('autoTimeTyped');
+        if (document.activeElement !== typed) typed.value = fmtClock(state.anchorTime);
+    }
+    function onTyped(v) {
+        const parts = v.match(/^(\d{1,2}):?(\d{0,2})$/);
+        if (!parts) return;
+        const h = Math.min(23, parseInt(parts[1], 10) || 0);
+        const m = parts[2] ? Math.min(59, parseInt(parts[2], 10)) : 0;
+        setAnchorHM(h, m);
     }
 
     // ---- show / clear -----------------------------------------------------
@@ -228,21 +265,35 @@
     }
 
     // ---- drag & drop reorder (block-aware) --------------------------------
-    let dragBlock = null;
+    let dragBlock = null, dropLine = null;
+    function removeDropLine() { if (dropLine && dropLine.parentNode) dropLine.parentNode.removeChild(dropLine); }
+    function reorderBlock(src, target, after) {
+        const srcCount = src.to - src.from + 1;
+        let insertAt = after ? target.to + 1 : target.from;
+        const moved = state.items.splice(src.from, srcCount);
+        if (src.from < insertAt) insertAt -= srcCount;
+        state.items.splice(insertAt, 0, ...moved);
+        render();
+    }
     function attachDrag(node, block) {
         node.draggable = !(state.locked || state.running);
-        node.addEventListener('dragstart', (e) => { dragBlock = block; node.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
-        node.addEventListener('dragend', () => { node.classList.remove('dragging'); dragBlock = null; });
-        node.addEventListener('dragover', (e) => { e.preventDefault(); });
+        node.addEventListener('dragstart', (e) => { dragBlock = block; node.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', ''); } catch (x) {} });
+        node.addEventListener('dragend', () => { node.classList.remove('dragging'); removeDropLine(); dragBlock = null; });
+        node.addEventListener('dragover', (e) => {
+            if (!dragBlock || dragBlock === block) return;
+            e.preventDefault();
+            const rect = node.getBoundingClientRect();
+            const after = (e.clientY - rect.top) > rect.height / 2;
+            if (!dropLine) { dropLine = document.createElement('div'); dropLine.className = 'auto-drop-line'; }
+            if (after) node.after(dropLine); else node.before(dropLine);
+        });
         node.addEventListener('drop', (e) => {
             e.preventDefault();
-            if (!dragBlock || dragBlock === block) return;
-            const moved = state.items.splice(dragBlock.from, dragBlock.to - dragBlock.from + 1);
-            // recompute target insertion index after removal
-            let target = block.from;
-            if (dragBlock.from < block.from) target -= moved.length;
-            state.items.splice(target, 0, ...moved);
-            render();
+            const valid = dragBlock && dragBlock !== block;
+            const rect = node.getBoundingClientRect();
+            const after = (e.clientY - rect.top) > rect.height / 2;
+            removeDropLine();
+            if (valid) reorderBlock(dragBlock, block, after);
         });
     }
 
@@ -297,14 +348,15 @@
         el('autoTime').textContent = fmtClock(state.anchorTime);
         el('autoPopStart').classList.toggle('active', state.anchorMode === 'start');
         el('autoPopEnd').classList.toggle('active', state.anchorMode === 'end');
+        syncPicker();
 
-        // mode switch + transport
+        // AUTO shows the clocks; MANUAL shows the transport controls.
         el('autoModeAuto').classList.toggle('active', state.mode === 'auto');
         el('autoModeManual').classList.toggle('active', state.mode === 'manual');
-        el('autoArmed').hidden = state.mode !== 'auto';
         const manual = state.mode === 'manual';
-        el('autoPlayBtn').disabled = !manual;
-        el('autoStopBtn').disabled = !manual;
+        el('autoAutoArea').hidden = manual;
+        el('autoTransport').hidden = !manual;
+        el('autoArmed').hidden = state.running; // the clocks show LIVE while playing
         const playing = state.running && state.items[state.playingIndex] && !state.items[state.playingIndex].audio.paused;
         el('autoPlayBtn').innerHTML = playing ? '<i class="ph-fill ph-pause"></i>' : '<i class="ph-fill ph-play"></i>';
 
@@ -324,7 +376,7 @@
         startsBlock.classList.remove('live');
         startsBlock.querySelector('.auto-times-label').textContent = 'Starts in';
         const secs = secsToStart();
-        el('autoCountdown').textContent = '-' + fmtDur(secs);
+        el('autoCountdown').textContent = '-' + fmtCountdown(secs);
         startsBlock.classList.toggle('imminent', secs <= 30);
     }
 
@@ -353,10 +405,11 @@
 
     // ---- wire up ----------------------------------------------------------
     function init() {
+        buildPickerGrids();
         el('autoHeader').addEventListener('click', () => togglePop());
         el('autoPopStart').addEventListener('click', () => setAnchor('start'));
         el('autoPopEnd').addEventListener('click', () => setAnchor('end'));
-        el('autoTimeInput').addEventListener('change', (e) => setTime(e.target.value));
+        el('autoTimeTyped').addEventListener('input', (e) => onTyped(e.target.value));
         el('autoModeAuto').addEventListener('click', () => setMode('auto'));
         el('autoModeManual').addEventListener('click', () => setMode('manual'));
         el('autoPlayBtn').addEventListener('click', onPlayPause);
