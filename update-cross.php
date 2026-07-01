@@ -72,7 +72,7 @@ $currentDelay       = $crossData[$number]['delay'] ?? 0;
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>End point selector</title>
     <link rel="stylesheet" href="assets/css/admin.css">
-    <script src="https://unpkg.com/wavesurfer.js"></script>
+    <script src="assets/vendor/wavesurfer.min.js"></script>
 </head>
 <body>
     <div class="container">

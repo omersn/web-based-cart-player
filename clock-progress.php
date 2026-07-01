@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Time to Top of Hour</title>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet">
+    <link href="assets/fonts/fonts.css" rel="stylesheet">
     <style>
         /*
          * "Time to top of hour" read-out: a big MM:SS countdown to :00, over a

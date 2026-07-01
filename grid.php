@@ -41,7 +41,7 @@ $backtimerStyles   = ($smallbacktimer === '1')
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cart Wall</title>
-    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+    <link href="assets/fonts/fonts.css" rel="stylesheet">
     <style>
         :root {
             --bg-app: #0b0d11;

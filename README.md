@@ -125,6 +125,22 @@ sure `data/` and `uploads/` are writable. There is no build step and no database
 **Before going live:** change the credentials in `config.php` (and ideally switch to hashed
 passwords), and restrict access to the admin endpoints.
 
+### Runs fully offline (no internet / LAN-only)
+
+Every third-party asset is **self-hosted** under `assets/` — nothing is loaded from a CDN or
+Google Fonts at runtime — so the player works on an isolated network with no internet access
+(the intended studio / kiosk deployment). Bundled, pinned:
+
+| Asset | Version | Where | License |
+|-------|---------|-------|---------|
+| Assistant + JetBrains Mono (woff2) | — | `assets/fonts/` | SIL OFL 1.1 |
+| Phosphor Icons (regular + fill) | 2.1.1 | `assets/vendor/phosphor/` | MIT |
+| wavesurfer.js (waveform trimmers) | 6.6.4 | `assets/vendor/` | BSD-3-Clause |
+| Chart.js (usage graph) | 4.4.1 | `assets/vendor/` | MIT |
+
+To refresh a bundled asset, re-download the pinned version into the same path — no reference
+changes needed.
+
 ---
 
 ## Project structure

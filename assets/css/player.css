@@ -5,9 +5,11 @@
  * for the original token spec this file implements (English/LTR variant).
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap');
-@import url('https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/regular/style.css');
-@import url('https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/fill/style.css');
+/* All assets self-hosted so the player runs on an isolated LAN with no internet
+   (fonts -> assets/fonts, Phosphor icons -> assets/vendor/phosphor). */
+@import url('../fonts/fonts.css');
+@import url('../vendor/phosphor/regular/style.css');
+@import url('../vendor/phosphor/fill/style.css');
 
 :root {
     /* Surfaces & neutrals */

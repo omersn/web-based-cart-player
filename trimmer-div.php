@@ -36,7 +36,7 @@ if (!$fileExists) {
     <title>Trimmer</title>
     <link rel="stylesheet" href="assets/css/admin.css">
     <link rel="stylesheet" href="assets/css/trimmer.css">
-    <script src="https://unpkg.com/wavesurfer.js"></script>
+    <script src="assets/vendor/wavesurfer.min.js"></script>
 </head>
 <body>
     <div class="container">
