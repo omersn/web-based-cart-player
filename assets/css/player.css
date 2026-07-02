@@ -228,6 +228,60 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 }
 .automation-panel.active { display: flex; }
 
+/* Daily commercial-breaks strip: a compact scrollable LIST pinned above the
+   time header, separated by its own bar. Rows are deliberately light (black
+   text on white) so the plan reads like a paper traffic log against the dark
+   panel. The NEXT upcoming break is highlighted, and the list keeps
+   re-centring on it (a few seconds after any manual scroll it jumps back). */
+.breaks-strip {
+    flex: 0 0 auto;
+    display: flex; flex-direction: column;
+    padding: 5px 6px;
+    background: rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid var(--hairline);    /* the separating bar */
+}
+/* The chip list is a FIXED-height scroller under the (always-present) tabs —
+   switching tabs never resizes the strip, so nothing below it jumps. */
+.breaks-list {
+    height: 118px;                    /* ~4.5 rows, then scroll */
+    overflow-y: auto; overflow-x: hidden;
+}
+.break-chip {
+    display: flex; width: 100%; align-items: center; column-gap: 7px;
+    padding: 3px 8px; margin-bottom: 3px; border-radius: 5px;
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    background: #ccd2d9; color: #111;  /* soft gray "paper" — pops, without white glare */
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.2;
+    cursor: pointer; white-space: nowrap;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.break-chip:hover { background: #dbe6ea; }
+.break-chip svg { width: 20px; height: 12px; display: block; opacity: 0.75; flex: 0 0 auto; }
+.break-chip > i { font-size: 13px; color: #333; flex: 0 0 auto; }  /* manual hand icon */
+.break-chip .bc-time { font-weight: 800; color: #111; flex: 0 0 auto; }
+.break-chip .bc-len  { color: #4d565e; flex: 0 0 auto; }
+.break-chip .bc-name {
+    font-family: 'Assistant', sans-serif; font-weight: 600; font-size: 11px; color: #111;
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left;
+}
+/* Already aired today: muted and clearly "done" (still clickable to reuse). */
+.break-chip.passed { background: #6f757c; border-color: rgba(0, 0, 0, 0.2); opacity: 0.75; }
+.break-chip.passed .bc-time, .break-chip.passed .bc-name { color: #2c3136; }
+.break-chip.passed .bc-len { color: #3a4046; }
+.break-chip.passed svg { opacity: 0.45; }
+/* The next upcoming break: highlighted so the DJ always knows what's coming. */
+.break-chip.next { border: 2px solid #0e8ea0; background: #cfeef3; padding: 2px 7px; }
+.break-chip.next .bc-time { color: #0b6b79; }
+/* Approach states: gentle pulse inside 5 minutes, urgent red inside 1. */
+@keyframes breakSoon { 0%, 100% { box-shadow: 0 0 0 0 rgba(52, 195, 212, 0); } 50% { box-shadow: 0 0 0 3px rgba(52, 195, 212, 0.45); } }
+@keyframes breakUrgent { 0%, 100% { box-shadow: 0 0 0 0 rgba(240, 69, 63, 0); } 50% { box-shadow: 0 0 0 3px rgba(240, 69, 63, 0.6); } }
+.break-chip.next.soon { animation: breakSoon 1.6s ease-in-out infinite; }
+.break-chip.next.urgent {
+    animation: breakUrgent 0.8s ease-in-out infinite;
+    border-color: #d3312c; background: #fde7e6;
+}
+.break-chip.next.urgent .bc-time { color: #d3312c; }
+
 /* Big clickable time header + popover. Icon/label/time/caret sit in fixed grid
    columns (label right-aligned) so switching From <-> To never shifts the
    time's on-screen position. A permanent tint marks this as the panel's most
@@ -237,7 +291,7 @@ body.layout-locked .title-bar-0002 { cursor: default; }
    label is a fixed-width box, so nothing shifts when From <-> To flips. */
 .auto-header {
     position: relative;
-    display: flex; align-items: center; justify-content: center; column-gap: 10px;
+    display: flex; align-items: center; justify-content: center; column-gap: 12px;
     padding: 16px; background: rgba(255, 255, 255, 0.045);
     color: var(--text-strong); font-family: 'JetBrains Mono', monospace;
 }
@@ -245,8 +299,10 @@ body.layout-locked .title-bar-0002 { cursor: default; }
    in one click. Carries the From/To label right next to its icon, so the two
    read as one control (both go amber together in To mode). */
 .auto-anchor-toggle {
-    display: flex; align-items: center; column-gap: 9px;
-    border: none; background: none; cursor: pointer; padding: 6px 10px; border-radius: 8px;
+    /* Symmetric 12px on both sides of the clock icon (label -> icon matches
+       icon -> time via the header's column-gap), so it reads centred. */
+    display: flex; align-items: center; column-gap: 12px;
+    border: none; background: none; cursor: pointer; padding: 6px 0 6px 10px; border-radius: 8px;
     color: var(--text-secondary); flex: 0 0 auto;
 }
 .auto-anchor-toggle:hover { background: var(--raised); color: var(--text-primary); }
@@ -259,7 +315,9 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 /* The time-setting button: opens the picker. */
 .auto-header-main {
     display: flex; align-items: center; column-gap: 8px;
-    border: none; background: none; cursor: pointer; padding: 6px 8px; border-radius: 8px;
+    /* No left padding: keeps the clock icon truly equidistant between the
+       From/To label and the time (12px on each side). */
+    border: none; background: none; cursor: pointer; padding: 6px 8px 6px 0; border-radius: 8px;
     color: var(--text-strong); font-family: 'JetBrains Mono', monospace; flex: 0 0 auto;
 }
 .auto-header-main:hover { background: var(--raised); }
@@ -355,7 +413,7 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 }
 .auto-group-trash:hover { color: #f0453f; }
 
-.auto-total { flex: 0 0 auto; display: flex; justify-content: space-between; padding: 8px 16px; font-size: 12px; color: var(--text-secondary); border-top: 1px solid var(--hairline); transition: background-color 0.15s ease, color 0.15s ease; }
+.auto-total { flex: 0 0 auto; display: flex; justify-content: space-between; padding: 5px 14px; font-size: 12px; color: var(--text-secondary); border-top: 1px solid var(--hairline); transition: background-color 0.15s ease, color 0.15s ease; }
 .auto-total span:last-child { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--text-primary); }
 /* While playing, "Remaining" reads like the on-air countdown bars elsewhere. */
 .auto-total.running { background: var(--red-grad); color: #fff; }
@@ -363,11 +421,13 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 
 /* AUTO area (clocks) and MANUAL area (transport) swap in the same slot without
    shifting the layout — both share a fixed min-height. */
-.auto-auto-area { display: flex; flex-direction: column; gap: 8px; min-height: 122px; justify-content: center; }
+/* Same min-height as .auto-transport, so flipping AUTO <-> MANUAL never
+   moves the total line, the mode switch, or the queue items. */
+.auto-auto-area { display: flex; flex-direction: column; gap: 8px; min-height: 84px; justify-content: center; }
 .auto-auto-area[hidden] { display: none; }
 /* Split start / end readout — a brighter tile so the eye lands here fast. */
 .auto-times { display: flex; border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; background: rgba(255, 255, 255, 0.06); }
-.auto-times-block { flex: 1; text-align: center; padding: 12px 6px; min-width: 0; }
+.auto-times-block { flex: 1; text-align: center; padding: 4px 6px; min-width: 0; }
 .auto-times-block + .auto-times-block { border-left: 1px solid var(--hairline); }
 .auto-times-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-tertiary); }
 /* font-size is set by fitTimes() in automation.js so both read-outs share one
@@ -379,25 +439,25 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 @keyframes nowBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 /* Stop button reachable from AUTO mode while it's actually playing, without
    switching to MANUAL. */
-.auto-stop-auto { height: 46px; border: none; border-radius: 10px; cursor: pointer; background: var(--red-grad); color: #fff; font-weight: 800; font-size: 15px; letter-spacing: 0.08em; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.auto-stop-auto { height: 38px; border: none; border-radius: 9px; cursor: pointer; background: var(--red-grad); color: #fff; font-weight: 800; font-size: 14px; letter-spacing: 0.08em; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .auto-stop-auto[hidden] { display: none; }
 
 /* Playback control area */
-.auto-controls { flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 16px; border-top: 1px solid var(--hairline); }
-.auto-mode-switch { display: flex; border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; }
-.auto-mode-switch button { flex: 1; height: 40px; border: none; background: none; color: var(--text-secondary); font-weight: 800; font-size: 13px; letter-spacing: 0.1em; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; }
+.auto-controls { flex: 0 0 auto; display: flex; flex-direction: column; gap: 5px; padding: 5px 12px 6px; border-top: 1px solid var(--hairline); }
+.auto-mode-switch { display: flex; border: 1px solid var(--hairline); border-radius: 9px; overflow: hidden; }
+.auto-mode-switch button { flex: 1; height: 30px; border: none; background: none; color: var(--text-secondary); font-weight: 800; font-size: 12px; letter-spacing: 0.1em; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; }
 .auto-mode-switch button.active { background: var(--cyan-tint); color: var(--cyan-text); }
 /* Small blinking dot marking AUTO as armed — replaces the old "AUTO START" label. */
 .auto-armed-dot { width: 8px; height: 8px; border-radius: 50%; background: #f0453f; opacity: 0; }
 .auto-mode-switch button.active .auto-armed-dot { opacity: 1; animation: autoDotBlink 1.1s steps(1) infinite; }
 @keyframes autoDotBlink { 50% { opacity: 0.15; } }
-.auto-transport { display: flex; gap: 8px; min-height: 122px; align-items: stretch; }
+.auto-transport { display: flex; gap: 8px; min-height: 84px; align-items: stretch; }
 .auto-transport[hidden] { display: none; }
 .auto-transport button { flex: 1; border-radius: 10px; border: 1px solid var(--hairline); background: var(--raised); color: var(--text-secondary); font-size: 30px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .auto-transport button:disabled { opacity: 0.3; cursor: not-allowed; }
 .auto-transport .auto-play { background: linear-gradient(180deg, #33b06a, #2a9e5f); color: #fff; border: none; }
 .auto-transport .auto-stop:not(:disabled) { color: #f0453f; }
-.auto-clear-btn { height: 38px; border: 1px solid var(--hairline); border-radius: 8px; cursor: pointer; background: none; color: var(--text-tertiary); font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.auto-clear-btn { height: 30px; border: 1px solid var(--hairline); border-radius: 8px; cursor: pointer; background: none; color: var(--text-tertiary); font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; }
 .auto-clear-btn:hover { color: #f0453f; border-color: rgba(240, 69, 63, 0.4); }
 
 /* Locked (within the lead time of start, or while running): freeze the time
@@ -773,3 +833,412 @@ body.layout-locked .title-bar-0002 { cursor: default; }
     70% { box-shadow: 0 0 0 7px rgba(53, 196, 111, 0); }
     100% { box-shadow: 0 0 0 0 rgba(53, 196, 111, 0); }
 }
+
+/* ---- Break planner overlay (admin) ----------------------------------- */
+/* Padded sheet over the whole GUI. LEFT: pages>carts tree. RIGHT: breaks
+   list ABOVE the playlist editor (the borrowed automation panel), separated
+   by a bar. Above the floating windows + log popups, below the start gate. */
+.planner-overlay {
+    position: fixed; inset: 0; z-index: 7000;
+    background: rgba(4, 6, 9, 0.72);
+    padding: 26px;
+}
+.planner-frame {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; min-height: 0;
+    background: var(--bg-panel);
+    border: 1px solid var(--hairline); border-radius: 12px;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7);
+    overflow: hidden;
+}
+.planner-head {
+    flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 18px;
+    background: linear-gradient(180deg, #4a545f, #39424d);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+}
+.planner-head h2 {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 16px; font-weight: 800; letter-spacing: 0.04em;
+    color: var(--text-strong); text-transform: uppercase;
+}
+.planner-head h2 i { color: var(--cyan); font-size: 20px; }
+.planner-head-actions { display: flex; align-items: center; gap: 10px; }
+/* Save feedback: slides in next to the button; green when the save landed. */
+.planner-msg { font-size: 12.5px; color: #f0453f; opacity: 0; transition: opacity 0.2s ease; }
+.planner-msg.ok { color: var(--green-text); }
+.planner-msg.show { opacity: 1; }
+.planner-save {
+    display: flex; align-items: center; gap: 7px;
+    padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer;
+    background: var(--cyan); color: #06222a; font-weight: 800; font-size: 13px;
+    font-family: 'Assistant', sans-serif;
+}
+.planner-save:hover { filter: brightness(1.1); }
+.planner-cancel {
+    padding: 8px 16px; border: 1px solid var(--hairline); border-radius: 8px; cursor: pointer;
+    background: var(--raised); color: var(--text-secondary);
+    font-family: 'Assistant', sans-serif; font-weight: 700; font-size: 13px;
+}
+.planner-cancel:hover { background: var(--raised-hover); color: var(--text-primary); }
+.planner-body { flex: 1 1 auto; display: flex; min-height: 0; }
+
+/* LEFT: the pages>carts tree. A classic Windows-Explorer look — dark text on
+   a soft gray "paper" panel, [+]/[−] box expanders, dotted indent guides.
+   ID-window sections (the DJ's bread and butter) come first, pre-expanded and
+   tinted. A search bar + favourites filter sit pinned on top. */
+.planner-tree {
+    flex: 0 0 330px; min-width: 0;
+    display: flex; flex-direction: column;
+    border-right: 1px solid var(--hairline);
+    background: #b7bec6; color: #111;
+}
+.ptree-toolbar {
+    flex: 0 0 auto;
+    display: flex; gap: 6px; align-items: center;
+    padding: 8px; border-bottom: 1px solid #98a0a9;
+    background: #aab2bb;
+}
+.ptree-search {
+    flex: 1 1 auto; min-width: 0;
+    border: 1px solid #9aa2ab; border-radius: 6px; outline: none;
+    padding: 5px 9px;
+    background: #eef1f4; color: #111;
+    font-family: 'Assistant', sans-serif; font-size: 12.5px;
+}
+.ptree-search:focus { border-color: #0e8ea0; }
+.ptree-fav-filter {
+    flex: 0 0 auto; width: 28px; height: 28px;
+    border: 1px solid #9aa2ab; border-radius: 6px; cursor: pointer;
+    background: #eef1f4; color: #6b7482;
+    display: flex; align-items: center; justify-content: center; font-size: 14px;
+}
+.ptree-fav-filter:hover { color: #111; }
+.ptree-fav-filter.active { background: #f4c542; border-color: #c69a17; color: #5a4300; }
+.ptree-scroller { flex: 1 1 auto; overflow-y: auto; padding: 8px 6px; }
+.ptree-head {
+    width: 100%;
+    display: flex; align-items: center; gap: 7px;
+    padding: 4px 6px; border: none; border-radius: 3px; cursor: pointer;
+    background: none; color: #111;
+    font-family: 'Assistant', sans-serif; font-size: 12.5px; font-weight: 700; text-align: left;
+}
+.ptree-head:hover { background: #c9d5da; }
+.ptree-head span:not(.ptree-exp) { flex: 1 1 auto; }
+.ptree-head em { font-style: normal; color: #5c646d; font-size: 11px; }
+/* ID-window sections: tinted so they read as "the special ones". */
+.ptree-section.ids .ptree-head { background: #a5c8ce; }
+.ptree-section.ids .ptree-head:hover { background: #98bfc7; }
+.ptree-section.ids .ptree-list { border-left-color: #6fa7b0; }
+/* [+]/[−] expander box, straight out of a Windows navigation tree. */
+.ptree-exp {
+    flex: 0 0 auto; width: 14px; height: 14px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid #7d848d; background: #eef1f4; border-radius: 2px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1; color: #333;
+}
+.ptree-section.collapsed .ptree-list { display: none; }
+.ptree-list { margin-left: 12px; border-left: 1px dotted #8d949c; padding: 2px 0 2px 7px; }
+.ptree-cart {
+    display: flex; align-items: center; gap: 7px;
+    padding: 2px 6px; border-radius: 3px;
+    font-size: 12px; color: #111;
+}
+.ptree-cart:hover { background: #c9d5da; }
+.ptree-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 3px; }
+.ptree-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ptree-len { flex: 0 0 auto; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #5c646d; }
+/* Favourite star: always visible (unlike play/add, which show on hover). */
+.ptree-star {
+    flex: 0 0 auto; width: 21px; height: 21px; border: none; border-radius: 4px; cursor: pointer;
+    background: transparent; color: #8a919a;
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+}
+.ptree-star:hover { color: #b58900; }
+.ptree-star.faved { color: #d9a400; }
+.ptree-btn {
+    flex: 0 0 auto; width: 21px; height: 21px; border: 1px solid #9aa2ab; border-radius: 4px; cursor: pointer;
+    background: #d3d8dd; color: #333;
+    display: flex; align-items: center; justify-content: center; font-size: 11px;
+    opacity: 0; transition: opacity 0.12s ease;
+}
+.ptree-cart:hover .ptree-btn { opacity: 1; }
+.ptree-btn:hover { background: #c3c9cf; color: #000; }
+.ptree-add:hover { background: var(--cyan); border-color: var(--cyan); color: #06222a; }
+
+/* RIGHT: breaks list above the editor, separated by a bar. */
+.planner-right { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+/* Paper for planning, studio-dark for audio: the breaks pane joins the tree's
+   light family (rows float on it like cards on a desk), while the editor keeps
+   the player's own dark panel — what you build here looks exactly like what
+   the DJ sees on air. A solid mid-gray bar marks the edge between the two. */
+.planner-breaks {
+    flex: 0 0 auto; max-height: 44%;
+    overflow-y: auto; padding: 10px 12px;
+    background: #aab2bb;
+    border-bottom: 3px solid #7d848d;           /* the separating bar */
+}
+.planner-editor { background: #2e3742; }
+.planner-editor .automation-panel { background: #2e3742; }
+/* Rows wear the same bright "paper" gray as the player's strip chips, so a
+   break looks identical where it's planned and where it's played. */
+.pbreak {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 8px; margin-bottom: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.3); border-radius: 7px;
+    background: #ccd2d9; color: #111; cursor: pointer;
+}
+.pbreak:hover { background: #dbe6ea; }
+/* The break being edited: unmistakable — solid cyan, dark text. */
+.pbreak.selected { border-color: var(--cyan); background: var(--cyan); }
+.pbreak.selected .pbreak-name-text,
+.pbreak.selected .pbreak-meta { color: #05262c; }
+.pbreak.selected .pbreak-anchor { background: rgba(0, 0, 0, 0.25); color: #04333c; }
+.pbreak.selected .pbreak-time { background: #05262c; border-color: #05262c; }
+.pbreak.selected .pbreak-edit, .pbreak.selected .pbreak-del { color: #04333c; }
+.pbreak-time {
+    flex: 0 0 auto;
+    background: #1c232b; color: var(--text-strong);
+    border: 1px solid #1c232b; border-radius: 5px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700;
+    padding: 2px 5px; color-scheme: dark; cursor: pointer;
+}
+.pbreak-anchor {
+    /* Fixed width: "From" and "To" differ in length, and without this the
+       buttons after it drift out of column alignment on narrow screens. */
+    flex: 0 0 84px; width: 84px;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    border: none; border-radius: 5px; cursor: pointer; padding: 3px 0;
+    background: rgba(0, 0, 0, 0.14); color: #333;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
+}
+.pbreak-anchor:hover { color: #000; background: rgba(0, 0, 0, 0.24); }
+.pbreak-anchor svg { display: block; width: 22px; height: 13px; }
+/* Name shows as plain text; the pencil swaps it for an input (rename). */
+.pbreak-name-text {
+    flex: 1 1 auto; min-width: 0;
+    color: #111; font-family: 'Assistant', sans-serif;
+    font-size: 12.5px; font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pbreak-name {
+    flex: 1 1 auto; min-width: 0;
+    background: #fff; border: 1px solid #0e8ea0; border-radius: 4px;
+    outline: none; padding: 1px 5px;
+    color: #111; font-family: 'Assistant', sans-serif;
+    font-size: 12.5px; font-weight: 600;
+}
+.pbreak-edit {
+    flex: 0 0 auto; width: 22px; height: 22px; border: none; border-radius: 5px; cursor: pointer;
+    background: transparent; color: #5c646d;
+    display: flex; align-items: center; justify-content: center; font-size: 12px;
+}
+.pbreak-edit:hover { background: rgba(0, 0, 0, 0.12); color: #000; }
+.pbreak-meta { flex: 0 0 auto; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #4d565e; white-space: nowrap; }
+.pbreak-del {
+    flex: 0 0 auto; width: 22px; height: 22px; border: none; border-radius: 5px; cursor: pointer;
+    background: transparent; color: #5c646d;
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+}
+.pbreak-del:hover { background: rgba(240, 69, 63, 0.9); color: #fff; }
+.pbreak-add {
+    display: flex; align-items: center; gap: 7px;
+    padding: 7px 12px; border: 1px dashed #7d848d; border-radius: 8px; cursor: pointer;
+    background: transparent; color: #3f474f;
+    font-family: 'Assistant', sans-serif; font-size: 13px; font-weight: 600;
+}
+.pbreak-add:hover { border-color: #0e8ea0; color: #0b6b79; }
+/* Category wrapper headers in the planner list (Scheduled / Manual / Disabled). */
+.pbreak-group-head {
+    padding: 6px 4px 3px;
+    font-size: 10px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+    color: #3f474f;
+}
+/* MANUAL break: the time is kept but inert — grayed out, not editable, so
+   flipping back to From/To restores it untouched. */
+.pbreak.manual .pbreak-time { opacity: 0.3; pointer-events: none; }
+.pbreak.selected.manual .pbreak-time { opacity: 0.45; }
+/* Disabled (parked) breaks: dimmed all over; the power button re-enables. */
+.pbreak.off { opacity: 0.55; }
+.pbreak-power {
+    flex: 0 0 auto; width: 22px; height: 22px; border: none; border-radius: 5px; cursor: pointer;
+    background: transparent; color: var(--text-tertiary);
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+}
+.pbreak-power:hover { background: rgba(255, 255, 255, 0.14); color: var(--text-primary); }
+.pbreak.selected .pbreak-power { color: #04333c; }
+/* Duplicate-time conflict: unmissable red ring until resolved. */
+.pbreak.conflict { border-color: #f0453f; box-shadow: 0 0 0 1px #f0453f; }
+.pbreak.conflict .pbreak-time { border-color: #f0453f; color: #ff8a86; }
+
+/* The borrowed automation panel, re-fitted as the planner's editor: fill the
+   pane, drop the side-panel sizing, and hide the chrome that has no meaning
+   here (schedule header, strip, mode switch, clocks, clear&hide). What's left
+   is the list (with its drag-&-drop + per-item preview), the total, and a
+   SMALL play/stop pair — not the player's big live transport. */
+.planner-editor { flex: 1 1 auto; display: flex; min-height: 0; }
+.planner-editor .automation-panel { flex: 1 1 auto; max-width: none; min-width: 0; border-left: none; }
+.automation-panel.planner-mode .breaks-strip,
+.automation-panel.planner-mode .auto-header-wrap,
+.automation-panel.planner-mode .auto-mode-switch,
+.automation-panel.planner-mode .auto-auto-area,
+.automation-panel.planner-mode .auto-clear-btn { display: none; }
+.automation-panel.planner-mode .auto-transport { min-height: 0; justify-content: center; }
+.automation-panel.planner-mode .auto-transport button {
+    flex: 0 0 auto; width: 44px; height: 28px; font-size: 14px; border-radius: 6px;
+}
+/* Per-item preview play (planner mode only): a small button on each row. */
+.auto-item .auto-item-play {
+    border: none; border-radius: 5px; cursor: pointer; flex-shrink: 0;
+    width: 21px; height: 21px; padding: 0;
+    background: rgba(0, 0, 0, 0.3); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 10px;
+}
+.auto-item .auto-item-play:hover { background: rgba(0, 0, 0, 0.55); }
+
+/* Themed scrollbars for the planner panes + the breaks strip/queue lists.
+   (.ptree-scroller is the tree's scrolling body, under the pinned toolbar.) */
+.breaks-list, .auto-list, .ptree-scroller, .planner-breaks {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(52, 195, 212, 0.55) transparent;
+}
+.breaks-list::-webkit-scrollbar, .auto-list::-webkit-scrollbar,
+.ptree-scroller::-webkit-scrollbar, .planner-breaks::-webkit-scrollbar { width: 8px; }
+.breaks-list::-webkit-scrollbar-track, .auto-list::-webkit-scrollbar-track,
+.ptree-scroller::-webkit-scrollbar-track, .planner-breaks::-webkit-scrollbar-track { background: transparent; }
+.breaks-list::-webkit-scrollbar-thumb, .auto-list::-webkit-scrollbar-thumb,
+.ptree-scroller::-webkit-scrollbar-thumb, .planner-breaks::-webkit-scrollbar-thumb {
+    background: rgba(52, 195, 212, 0.45); border-radius: 4px;
+}
+.breaks-list::-webkit-scrollbar-thumb:hover, .auto-list::-webkit-scrollbar-thumb:hover,
+.ptree-scroller::-webkit-scrollbar-thumb:hover, .planner-breaks::-webkit-scrollbar-thumb:hover {
+    background: rgba(52, 195, 212, 0.75);
+}
+
+/* Mode toggle (clock = scheduled / hand = manual) — sits next to the power
+   button; the hand state gets an amber cast so manual rows read at a glance. */
+.pbreak-mode {
+    flex: 0 0 auto; width: 22px; height: 22px; border: none; border-radius: 5px; cursor: pointer;
+    background: transparent; color: #5c646d;
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+}
+.pbreak-mode:hover { background: rgba(0, 0, 0, 0.12); color: #000; }
+.pbreak.manual .pbreak-mode { color: var(--amber); }
+.pbreak.selected .pbreak-mode { color: #04333c; }
+/* Manual rows: the From/To toggle grays out with the time (values kept). */
+.pbreak.manual .pbreak-anchor { opacity: 0.3; pointer-events: none; }
+.pbreak.selected.manual .pbreak-anchor { opacity: 0.45; }
+/* Power button signals its state: green = on, red = parked (on light gray
+   the full tones read better than the old faint alphas). */
+.pbreak-power { color: #2f9e5f; }
+.pbreak-power:hover { color: #1d7a44; }
+.pbreak.off .pbreak-power { color: #d3312c; }
+.pbreak.off .pbreak-power:hover { color: #a91f1b; }
+.pbreak.selected .pbreak-power { color: #0c5c33; }
+.pbreak.selected.off .pbreak-power { color: #8c1512; }  /* parked (red) wins even when selected */
+
+/* Styled discard-confirmation dialog (replaces the native confirm()). */
+.planner-frame { position: relative; }
+.planner-confirm {
+    position: absolute; inset: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(4, 6, 9, 0.6);
+}
+.planner-confirm[hidden] { display: none; }
+.planner-confirm-box {
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    padding: 26px 34px;
+    background: var(--bg-panel);
+    border: 1px solid var(--hairline); border-radius: 12px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+}
+.planner-confirm-box > i { font-size: 34px; color: var(--amber); }
+.planner-confirm-box p { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.planner-confirm-actions { display: flex; gap: 10px; }
+.pc-discard {
+    padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer;
+    background: var(--red-grad); color: #fff;
+    font-family: 'Assistant', sans-serif; font-weight: 700; font-size: 13px;
+}
+.pc-discard:hover { filter: brightness(1.1); }
+.pc-keep {
+    padding: 8px 16px; border: 1px solid var(--hairline); border-radius: 8px; cursor: pointer;
+    background: var(--raised); color: var(--text-primary);
+    font-family: 'Assistant', sans-serif; font-weight: 700; font-size: 13px;
+}
+.pc-keep:hover { background: var(--raised-hover); }
+
+/* ---- Round-3 QA additions --------------------------------------------- */
+/* Strip tabs (SCHEDULED | MANUAL) — only rendered when both kinds exist. */
+.breaks-tabs { display: flex; gap: 4px; margin-bottom: 4px; }
+.breaks-tab {
+    flex: 1; padding: 3px 0; border: 1px solid var(--hairline); border-radius: 5px; cursor: pointer;
+    background: transparent; color: var(--text-tertiary);
+    font-size: 9px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+    font-family: 'Assistant', sans-serif;
+}
+.breaks-tab:hover { color: var(--text-primary); }
+.breaks-tab.active { background: var(--cyan-tint); color: var(--cyan-text); border-color: var(--cyan-border); }
+
+/* Residual yellow on the chip whose batch is sitting in the queue. */
+.break-chip.loaded { border-color: #c69a17; background: #f3e3b2; }
+.break-chip.loaded .bc-time { color: #6b5200; }
+.break-chip.next.loaded { border-color: #c69a17; box-shadow: 0 0 0 1px #0e8ea0; } /* loaded wins, next keeps a cyan ring */
+
+/* Manual chips: the hand is a green OUTLINE icon. */
+.break-chip.manual > i { color: #1e8a4e; }
+
+/* "What did I just load" box above the queue; yellow-tinted to match the chip. */
+.auto-loaded-name {
+    flex: 0 0 auto;
+    padding: 4px 12px;
+    background: rgba(217, 164, 0, 0.13);
+    border-bottom: 1px solid var(--hairline);
+    color: #e8c15a; font-size: 12px; font-weight: 700; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.auto-loaded-name[hidden] { display: none; }
+
+/* Hand mode (panel in MANUAL): green outline hand replaces From/To, the time
+   reads —:— and the whole header is inert until AUTO comes back. */
+.auto-header.hand-mode { pointer-events: none; }
+.auto-header.hand-mode .auto-header-icon i { font-size: 22px; color: var(--green-dot); display: block; }
+.auto-header.hand-mode .auto-header-time { color: var(--text-tertiary); }
+/* Centre the [hand][—:—] pair: the empty From/To label and the caret must
+   not reserve any width, and the toggle's asymmetric padding goes too. */
+.auto-header.hand-mode .auto-header-label { display: none; }
+.auto-header.hand-mode .auto-header-caret { display: none; }
+.auto-header.hand-mode .auto-anchor-toggle { padding: 6px 0; }
+
+/* Planner: green outline hand on manual rows' mode button (was amber). */
+.pbreak.manual .pbreak-mode { color: #35c46f; }
+.pbreak.selected.manual .pbreak-mode { color: #0c5c33; }
+
+/* Copy button — same quiet family as pencil/trash. */
+.pbreak-copy {
+    flex: 0 0 auto; width: 22px; height: 22px; border: none; border-radius: 5px; cursor: pointer;
+    background: transparent; color: #5c646d;
+    display: flex; align-items: center; justify-content: center; font-size: 12px;
+}
+.pbreak-copy:hover { background: rgba(0, 0, 0, 0.12); color: #000; }
+.pbreak.selected .pbreak-copy { color: #04333c; }
+
+/* Draft duplicate row: dashed outline + OK/Cancel; red ring (via .conflict)
+   until a scheduled draft gets a free time. */
+/* A draft is NEW (blue), not broken: it only turns red (via .conflict) when a
+   save is attempted while it's still unsettled. */
+.pbreak.pdraft { border: 1px dashed #2b6de0; box-shadow: 0 0 0 1px rgba(43, 109, 224, 0.4); background: #c2d2ee; cursor: default; }
+.pbreak.pdraft.conflict { border-color: #d3312c; box-shadow: 0 0 0 1px #d3312c; background: #e8c6c4; }
+.pdraft-ok {
+    flex: 0 0 auto; padding: 3px 12px; border: none; border-radius: 6px; cursor: pointer;
+    background: var(--cyan); color: #06222a;
+    font-family: 'Assistant', sans-serif; font-weight: 800; font-size: 12px;
+}
+.pdraft-ok:disabled { opacity: 0.35; cursor: not-allowed; }
+.pdraft-cancel {
+    flex: 0 0 auto; padding: 3px 10px; border: 1px solid var(--hairline); border-radius: 6px; cursor: pointer;
+    background: transparent; color: var(--text-secondary);
+    font-family: 'Assistant', sans-serif; font-weight: 700; font-size: 12px;
+}
+.pdraft-cancel:hover { color: var(--text-primary); background: var(--raised); }

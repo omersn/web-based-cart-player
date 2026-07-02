@@ -141,6 +141,10 @@ if (!$fileExists) {
             xhr.send(`file=${file}&start=${startTime}`);
             xhr.onload = () => {
                 if (xhr.status === 200) {
+                    // Break-plan cross-check from the server: this cart appears
+                    // in planned breaks whose lengths just changed.
+                    const warn = (xhr.responseText || '').split('|WARN:')[1];
+                    if (warn) alert(warn);
                     window.location.href = 'admin.php';
                 } else {
                     alert('Failed to save trim.');

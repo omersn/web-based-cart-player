@@ -21,24 +21,30 @@ $labels     = load_section_labels();
 $statusFile = data_path('status.txt');
 $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : '';
 
-// Real (non-placeholder) carts, with their 0-based index, for the live search.
-// The index maps to a board section by the same from/to ranges the section
-// selectors use, so a result can show its page and jump there.
-$searchCarts = [];
+// Real (non-placeholder) carts, with their 0-based index. One island feeds
+// both the live search AND the planner/breaks strip (which references carts
+// by 1-based carts.txt line = i + 1). The index maps to a board section by
+// the same from/to ranges the section selectors use, so a result can show
+// its page and jump there.
+$allCarts = [];
 foreach (load_carts() as $i => $line) {
     $p    = explode('|', $line);
     $name = trim($p[0] ?? '');
     $file = trim($p[1] ?? '');
     if ($name === '' || $name === '-' || $file === '' || $file === '0.mp3') continue;
-    $searchCarts[] = [
-        'i'     => $i,
-        'name'  => $name,
-        'file'  => $file,
-        'start' => (float) ($p[2] ?? 0),
-        'color' => trim($p[3] ?? '1'),
-        'end'   => (isset($p[4]) && $p[4] !== '') ? (float) $p[4] : null,
+    $allCarts[] = [
+        'i'      => $i,
+        'name'   => $name,
+        'file'   => $file,
+        'start'  => (float) ($p[2] ?? 0),
+        'color'  => trim($p[3] ?? '1'),
+        'end'    => (isset($p[4]) && $p[4] !== '') ? (float) $p[4] : null,
+        'volume' => (isset($p[5]) && $p[5] !== '') ? (float) $p[5] : 1,
     ];
 }
+
+// The daily commercial-breaks plan (planner-editable, admin-gated on save).
+$breaks = load_breaks();
 
 // Split "Demo Radio Station" -> "DEMO RADIO" / "STATION" for the two-line brand mark.
 $nameWords = preg_split('/\s+/', trim(STATION_NAME));
@@ -125,6 +131,12 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 <button type="button" class="icon-btn" id="chip-auto" onclick="window.Automation && window.Automation.toggle();" title="Automation playlist">
                     <i class="ph ph-playlist"></i><span class="status-dot amber"></span>
                 </button>
+                <?php if (is_admin()): ?>
+                <!-- Break planner (admin): edits the daily plan the strip shows. -->
+                <button type="button" class="icon-btn" id="chip-planner" title="Break planner">
+                    <i class="ph ph-calendar-check"></i>
+                </button>
+                <?php endif; ?>
                 <?php if (SHOW_UTILITY_CHIPS): ?>
                 <span class="icon-sep"></span>
                 <!-- One-shot actions. Temporarily hidden via SHOW_UTILITY_CHIPS
@@ -233,6 +245,12 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         <!-- Automation Playlist: scheduled auto-playback queue. Hidden until an
              item is sent here (right-click a cart); managed by automation.js. -->
         <aside class="automation-panel" id="automationPanel">
+            <!-- Daily commercial-breaks strip (from the planner): one chip per
+                 planned break — [from/to] HH:MM · length · name. The NEXT
+                 upcoming break stays highlighted/centred and pulses as air time
+                 approaches; clicking a chip loads that break into the queue
+                 below (it does NOT auto-load). Hidden when no breaks exist. -->
+            <div class="breaks-strip" id="breaksStrip" hidden></div>
             <!-- Time header, centred as one unit. The o-> toggle carries the
                  From/To label (one click flips start-at <-> end-at); the time
                  opens the picker. A fixed-width label keeps the time from
@@ -265,6 +283,10 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                     <button class="auto-pop-ok" id="autoPopOk">OK</button>
                 </div>
             </div>
+
+            <!-- Which break is sitting in the queue right now (from the strip);
+                 gains "(modified)" when content/time diverge, clears on empty. -->
+            <div class="auto-loaded-name" id="autoLoadedName" hidden></div>
 
             <div class="auto-list" id="autoList"></div>
 
@@ -360,9 +382,63 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         <div class="log-popup-body" id="heartbeatLogBody"></div>
     </div>
 
+    <?php if (is_admin()): ?>
+    <!-- Break planner overlay (admin). LEFT: pages>carts tree (preview + add).
+         RIGHT: the breaks list above the playlist editor — the editor is the
+         automation panel itself, moved in here (and back) by planner.js. -->
+    <div class="planner-overlay" id="plannerOverlay" hidden>
+        <div class="planner-frame">
+            <header class="planner-head">
+                <h2><i class="ph ph-calendar-check"></i> Break planner</h2>
+                <div class="planner-head-actions">
+                    <span class="planner-msg" id="plannerMsg"></span>
+                    <button type="button" class="planner-save" id="plannerSave"><i class="ph ph-floppy-disk"></i> Save &amp; Close</button>
+                    <button type="button" class="planner-cancel" id="plannerCancel" title="Discard changes (Esc)">Cancel</button>
+                </div>
+            </header>
+            <!-- Styled discard-confirmation (replaces the native confirm()). -->
+            <div class="planner-confirm" id="plannerConfirm" hidden>
+                <div class="planner-confirm-box">
+                    <i class="ph ph-warning-circle"></i>
+                    <p>Discard unsaved changes to the break plan?</p>
+                    <div class="planner-confirm-actions">
+                        <button type="button" id="plannerConfirmDiscard" class="pc-discard">Discard changes</button>
+                        <button type="button" id="plannerConfirmKeep" class="pc-keep">Keep editing</button>
+                    </div>
+                </div>
+            </div>
+            <div class="planner-body">
+                <div class="planner-tree" id="plannerTree">
+                    <div class="ptree-toolbar">
+                        <input type="text" class="ptree-search" id="ptreeSearch" placeholder="Search carts&hellip;" autocomplete="off">
+                        <button type="button" class="ptree-fav-filter" id="ptreeFavFilter" title="Show favourites only"><i class="ph ph-star"></i></button>
+                    </div>
+                    <div class="ptree-scroller" id="ptreeScroller"></div>
+                </div>
+                <div class="planner-right">
+                    <div class="planner-breaks" id="plannerBreaks"></div>
+                    <div class="planner-editor" id="plannerEditor"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <script>
-        // Real carts (name/file/trim/colour + 0-based index) for the live search.
-        window.SEARCH_CARTS = <?= json_encode($searchCarts, JSON_UNESCAPED_UNICODE) ?>;
+        // Real carts (name/file/trim/colour/volume + 0-based index). Shared by
+        // the live search and the planner/breaks strip; a break references a
+        // cart by its 1-based carts.txt line, i.e. the entry with i === id - 1.
+        window.CARTS = <?= json_encode($allCarts, JSON_UNESCAPED_UNICODE) ?>;
+
+        // Daily commercial-breaks plan ({time, anchor, name, items[]}, sorted
+        // by time). Edited by the planner overlay; saved via save-breaks.php.
+        window.BREAKS = <?= json_encode($breaks, JSON_UNESCAPED_UNICODE) ?>;
+
+        // Gates the planner UI client-side (the save endpoint re-checks).
+        window.IS_ADMIN = <?= is_admin() ? 'true' : 'false' ?>;
+
+        // Planner favourites: starred cart ids, station-wide (data/favorites.txt).
+        window.FAVORITES = <?= json_encode(load_favorites()) ?>;
 
         // --- Start gate + loading overlay + first-load preload kick.
         // Browsers block audio autoplay until a user gesture, and the preload
@@ -542,14 +618,14 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             floatingContainer.style.height = `${h}px`;
         });
 
-        // --- Live search (Spotlight-style). Filters window.SEARCH_CARTS on every
+        // --- Live search (Spotlight-style). Filters window.CARTS on every
         // keystroke; each result shows its board section (breadcrumb, click to
         // jump there) and a preview button. ⌘K / Ctrl+K focuses it.
         (() => {
             const CAT = { '1': '#2f6fd6', '2': '#2f9e5f', '3': '#b0479e', '4': '#c98a2b', '5': '#2aa7bf' };
             const input = document.getElementById('searchInput');
             const box = document.getElementById('searchResults');
-            const carts = window.SEARCH_CARTS || [];
+            const carts = window.CARTS || [];
             let sel = -1, rows = [];
             let preview = null, previewBtn = null;
 
@@ -944,5 +1020,6 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         }
     </script>
     <script src="assets/js/automation.js"></script>
+    <?php if (is_admin()): ?><script src="assets/js/planner.js"></script><?php endif; ?>
 </body>
 </html>

@@ -15,21 +15,31 @@ $end  = (float) $_POST['end'];
 
 $carts        = load_carts();
 $updatedCarts = [];
-$found        = false;
+$matchedIds   = []; // 1-based carts.txt lines using this file (for the break-plan warning)
 
-foreach ($carts as $entry) {
+foreach ($carts as $i => $entry) {
     list($name, $cartFilename, $start, $color, $endpoint) = array_pad(explode('|', $entry), 5, null);
     if ($cartFilename === $file) {
-        $found          = true;
+        $matchedIds[]   = $i + 1;
         $updatedCarts[] = "$name|$cartFilename|$start|$color|$end";
     } else {
         $updatedCarts[] = $entry;
     }
 }
 
-if (!$found) {
+if (!$matchedIds) {
     die('File not found in carts.');
 }
 
 save_carts($updatedCarts);
-echo 'Success';
+
+// Break-plan cross-check: a new end point changes this cart's runtime, and
+// with it the length of every planned break that references the cart. The
+// trimmer UI surfaces this as an alert before returning to the admin.
+$warn = breaks_referencing($matchedIds);
+if ($warn) {
+    $list = implode(', ', array_map(fn ($b) => "{$b['name']} ({$b['time']})", $warn));
+    echo "Success|WARN:This cart is used in the break plan: $list. The new trim changes those break lengths.";
+} else {
+    echo 'Success';
+}

@@ -44,6 +44,16 @@
         visible: false,
     };
     let idSeq = 1, groupSeq = 1, progressRaf = null;
+    // Planner mode: the panel is temporarily borrowed by the admin's break
+    // planner as its playlist editor. The DJ's live queue is pinned to
+    // localStorage on entry and restored from it on exit; while in planner
+    // mode nothing is persisted and the schedule guards are off.
+    let plannerMode = false;
+    // Full ORIGINAL definition of every chain in the queue (groupId -> plain
+    // item list), captured when the chain is added. Items are removed one by
+    // one as they play, so a tab closed mid-chain persists only the chain's
+    // tail — on restore, loadState uses this to bring back the WHOLE chain.
+    const groupDefs = {};
 
     // ---- persistence (localStorage) ---------------------------------------
     // Reload restores the queue, its order/colours/names, and the schedule.
@@ -51,7 +61,13 @@
     // the scheduled time has already passed, AUTO mode will fire right away.
     const AUTO_STORE = 'cartPlayerAutomation';
     function saveState() {
+        if (plannerMode) return; // planner edits must never leak into the live queue
         try {
+            // Only chain definitions still referenced by the queue are kept.
+            const liveGroups = {};
+            state.items.forEach((it) => {
+                if (it.groupId != null && groupDefs[it.groupId]) liveGroups[it.groupId] = groupDefs[it.groupId];
+            });
             localStorage.setItem(AUTO_STORE, JSON.stringify({
                 anchorTime: state.anchorTime.toISOString(),
                 anchorMode: state.anchorMode,
@@ -60,7 +76,9 @@
                 items: state.items.map((it) => ({
                     groupId: it.groupId, name: it.name, file: it.file,
                     start: it.start, end: it.end, volume: it.volume, color: it.color, runtime: it.runtime,
+                    cartId: it.cartId || null,
                 })),
+                groups: liveGroups, // full chain definitions (see loadState)
             }));
         } catch (e) { /* ignore (storage disabled/full) */ }
     }
@@ -74,18 +92,40 @@
             state.mode = data.mode === 'manual' ? 'manual' : 'auto';
             const t = new Date(data.anchorTime);
             state.anchorTime = Number.isNaN(t.getTime()) ? nextFullHour() : t;
+            // Items are removed one by one as they play, so a queue saved
+            // mid-chain holds only the chain's TAIL. Where the full chain
+            // definition was saved alongside (groups), swap the partial run
+            // back for the complete chain — a chain either plays whole or is
+            // restored whole, never resumes from its middle.
+            const groups = (data.groups && typeof data.groups === 'object') ? data.groups : {};
+            const savedPerGroup = {};
+            data.items.forEach((d) => { if (d.groupId != null) savedPerGroup[d.groupId] = (savedPerGroup[d.groupId] || 0) + 1; });
+            const restore = [];
+            const expandedGroups = new Set();
             data.items.forEach((d) => {
+                const g = d.groupId;
+                if (g != null && Array.isArray(groups[g]) && savedPerGroup[g] < groups[g].length) {
+                    if (expandedGroups.has(g)) return; // whole chain inserted at its first member
+                    expandedGroups.add(g);
+                    groups[g].forEach((full) => restore.push({ ...full, groupId: g }));
+                } else {
+                    restore.push(d);
+                }
+            });
+            restore.forEach((d) => {
                 const audio = new Audio(`uploads/${d.file}`);
                 audio.preload = 'auto';
                 const item = {
                     id: idSeq++, groupId: d.groupId, name: d.name, file: d.file,
                     start: d.start, end: d.end, volume: d.volume, color: d.color, runtime: d.runtime,
+                    cartId: d.cartId || null,
                     audio, played: false,
                 };
                 primeAudio(item);
                 state.items.push(item);
             });
-            const maxGroupId = data.items.reduce((m, d) => (d.groupId != null ? Math.max(m, d.groupId) : m), 0);
+            Object.entries(groups).forEach(([g, def]) => { groupDefs[g] = def; }); // keep for future saves
+            const maxGroupId = restore.reduce((m, d) => (d.groupId != null ? Math.max(m, Number(d.groupId)) : m), 0);
             groupSeq = Math.max(groupSeq, maxGroupId + 1);
             // Restore visibility: shown if it holds carts, or if it was left open
             // empty (planning an upcoming break) before the reload.
@@ -99,6 +139,19 @@
             if (state.items.length === 0 && secsToStart() <= LOCK_LEAD) {
                 state.anchorTime = nextFullHour();
                 state.anchorMode = 'start';
+            }
+            // Restored ITEMS whose air time has already passed must NEVER
+            // auto-play at startup (e.g. opening in the morning with last
+            // night's leftovers still queued: without this, the tick would see
+            // AUTO + time-elapsed + not-fired and start them on the spot).
+            // Marking the schedule as already-fired and handing off to MANUAL
+            // keeps the queue visible for the operator to reuse or clear —
+            // the same stale-schedule semantics the tick applies mid-session.
+            // A restored FUTURE schedule stays armed: that's the persistence
+            // working as intended (reload minutes before a planned break).
+            if (state.items.length > 0 && secsToStart() <= 0) {
+                state.firedForThisSchedule = true;
+                state.mode = 'manual';
             }
         } catch (e) { /* ignore corrupt storage */ }
     }
@@ -140,11 +193,17 @@
         if (!Array.isArray(list) || list.length === 0) return;
         const sumNew = list.reduce((a, d) => a + (Number(d.runtime) || 0), 0);
         if (state.locked || state.running) return toast('Playlist locked');
-        if (secsToStart() <= LOCK_LEAD) return toast('Too close to start');
-        if (sumNew > secsToStart() + FIT_BUFFER) return toast("Won't fit before start");
+        // Schedule guards don't apply in the planner: it edits any break —
+        // including ones whose air time has already passed today. The hour cap
+        // stays on (a break longer than an hour is a mistake in any mode).
+        if (!plannerMode) {
+            if (secsToStart() <= LOCK_LEAD) return toast('Too close to start');
+            if (sumNew > secsToStart() + FIT_BUFFER) return toast("Won't fit before start");
+        }
         if (totalRuntime() + sumNew > HOUR) return toast('Would overrun the hour');
 
         const gid = grouped && list.length > 1 ? groupSeq++ : null;
+        if (gid != null) groupDefs[gid] = []; // capture the chain's full definition
         list.forEach((d) => {
             const audio = new Audio(`uploads/${d.file}`);
             audio.preload = 'auto';
@@ -154,8 +213,15 @@
                 end: (d.end != null && d.end !== '') ? Number(d.end) : null,
                 volume: (d.volume != null && d.volume !== '') ? Number(d.volume) : 1,
                 color: String(d.color || '1'), runtime: Math.max(0, Number(d.runtime) || 0),
+                cartId: d.cartId || null, // 1-based carts.txt line, when known (planner adds)
                 audio, played: false,
             };
+            if (gid != null) {
+                groupDefs[gid].push({
+                    name: item.name, file: item.file, start: item.start, end: item.end,
+                    volume: item.volume, color: item.color, runtime: item.runtime, cartId: item.cartId,
+                });
+            }
             primeAudio(item);
             state.items.push(item);
         });
@@ -504,13 +570,20 @@
         el('automationPanel').classList.toggle('active', v);
         updateAutoChip();
         saveState();
+        // The strip only has real geometry once the panel is shown — re-centre
+        // its "next" chip now that offsetWidth/clientWidth are meaningful.
+        if (v) centerNextChip();
     }
     function show() { setVisible(true); }
     // Topbar toggle. Can only HIDE while the queue is empty — never with carts
-    // loaded (no surprise audio from a panel you can't see).
+    // loaded (no surprise audio from a panel you can't see). The warning toast
+    // carries the shortcut: one click clears AND hides.
     function toggleVisible() {
         if (state.visible) {
-            if (state.items.length > 0) { toast('Clear the playlist before hiding it'); return; }
+            if (state.items.length > 0) {
+                if (state.running) return toast('Playlist locked');
+                return toast('Playlist is not empty', 'Clear & hide', clearAndHide);
+            }
             setVisible(false);
         } else {
             if (state.items.length === 0) resetSchedule(); // open fresh for planning
@@ -518,13 +591,25 @@
             setVisible(true);
         }
     }
-    function clearAndHide() {
+    function clearQueue() {
         if (state.running) return;
         state.items.forEach(it => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
         state.items = [];
         resetSchedule();
+        saveState();
         render();
+    }
+    function clearAndHide() {
+        if (state.running) return;
+        clearQueue();
         setVisible(false); // empty now, so hiding is allowed
+    }
+    // The bottom button is two-stage: with carts queued it reads CLEAR (empties
+    // the list, panel stays open); once empty it reads HIDE. Never both at once
+    // — clearing is deliberate, hiding an emptied panel is a separate decision.
+    function clearOrHide() {
+        if (state.items.length > 0) clearQueue();
+        else setVisible(false);
     }
 
     function syncLock() {
@@ -619,6 +704,7 @@
 
     // ---- render -----------------------------------------------------------
     function render() {
+        stopRowPreview(); // rows (and their play-button refs) are about to be rebuilt
         const list = el('autoList');
         list.innerHTML = '';
         blocks().forEach((block) => {
@@ -629,12 +715,15 @@
                 row.style.setProperty('--item-color', CAT[it.color] || CAT['1']);
                 row.innerHTML =
                     `<span class="auto-progress"></span>` +
+                    (plannerMode ? `<button class="auto-item-play" title="Preview"><i class="ph-fill ph-play"></i></button>` : '') +
                     `<span class="auto-name"></span>` +
                     `<span class="auto-runtime">${fmtDur(it.runtime)}</span>` +
                     (block.groupId == null ? `<button class="auto-remove" title="Remove"><i class="ph ph-trash"></i></button>` : '');
                 row.querySelector('.auto-name').textContent = it.name;
                 const rm = row.querySelector('.auto-remove');
                 if (rm) rm.addEventListener('click', (e) => { e.stopPropagation(); removeAt(block.from, block.to); });
+                const pv = row.querySelector('.auto-item-play');
+                if (pv) pv.addEventListener('click', (e) => { e.stopPropagation(); toggleRowPreview(it, pv); });
                 return row;
             };
             if (block.groupId == null) {
@@ -663,13 +752,14 @@
         el('autoTotal').textContent = fmtDur(remainingRuntime());
         el('autoTotalRow').classList.toggle('running', state.running);
 
-        // header
-        el('autoHeaderIcon').innerHTML = state.anchorMode === 'end' ? ICON.end : ICON.start;
-        el('autoHeaderRow').classList.toggle('end-mode', state.anchorMode === 'end');
-        // MANUAL: mute the schedule header (it isn't actively counting down) but
-        // keep it clickable — see the .sched-muted rule (opacity only).
-        el('autoHeaderRow').classList.toggle('sched-muted', state.mode === 'manual');
-        el('autoTimeLabel').textContent = state.anchorMode === 'end' ? 'To' : 'From';
+        // header. MANUAL = "hand mode": the From/To assembly is replaced by a
+        // green hand, the time reads —:— (see updateTimes) and the whole header
+        // is disabled — there's no schedule to edit until AUTO comes back.
+        const hand = state.mode === 'manual';
+        el('autoHeaderRow').classList.toggle('hand-mode', hand);
+        el('autoHeaderIcon').innerHTML = hand ? '<i class="ph ph-hand-palm"></i>' : (state.anchorMode === 'end' ? ICON.end : ICON.start);
+        el('autoHeaderRow').classList.toggle('end-mode', !hand && state.anchorMode === 'end');
+        el('autoTimeLabel').textContent = hand ? '' : (state.anchorMode === 'end' ? 'To' : 'From');
         // autoTime itself is set inside updateTimes() (below), since it needs
         // to fall back to "—:—" for a stale/elapsed schedule.
         syncPicker();
@@ -687,7 +777,33 @@
         const playing = state.running && state.items[state.playingIndex] && !state.items[state.playingIndex].audio.paused;
         el('autoPlayBtn').innerHTML = playing ? '<i class="ph-fill ph-pause"></i>' : '<i class="ph-fill ph-play"></i>';
 
+        // Two-stage bottom button: CLEAR while carts are queued, HIDE once empty.
+        el('autoClearBtn').innerHTML = state.items.length > 0
+            ? '<i class="ph ph-trash"></i> Clear'
+            : '<i class="ph ph-eye-slash"></i> Hide';
+
         updateTimes();
+        updateLoadedName();
+    }
+
+    // The "what did I just load?" box above the queue: shows the loaded
+    // break's name, gains "(modified)" once content or time diverge from what
+    // was loaded, and clears (with the chip's residual yellow) once the queue
+    // empties. Frozen while ON AIR — items disappearing as they play would
+    // otherwise read as "(modified)" noise.
+    function updateLoadedName() {
+        const box = el('autoLoadedName');
+        if (!box) return;
+        if (!plannerMode && loadedBreak && state.items.length === 0) {
+            loadedBreak = null;
+            renderStrip(); // drop the yellow mark too
+        }
+        if (!loadedBreak || plannerMode) { box.hidden = true; return; }
+        const modified = !state.running &&
+            (queueSig() !== loadedBreak.sig ||
+             (loadedBreak.schedSig != null && scheduleSig() !== loadedBreak.schedSig));
+        box.textContent = loadedBreak.name + (modified ? ' (modified)' : '');
+        box.hidden = false;
     }
 
     // A schedule counts as "stale" once it's elapsed without firing and won't
@@ -700,7 +816,8 @@
     }
     function updateTimes() {
         const startsBlock = el('autoStartsBlock');
-        el('autoTime').textContent = scheduleIsStale() ? '—:—' : fmtClockSec(state.anchorTime);
+        // Hand mode (MANUAL): no time target at all.
+        el('autoTime').textContent = (state.mode === 'manual' || scheduleIsStale()) ? '—:—' : fmtClockSec(state.anchorTime);
         el('autoEndAt').textContent = fmtClockSec(actualEnd());
         if (state.running) {
             startsBlock.classList.remove('imminent');
@@ -729,7 +846,7 @@
         const key = a.textContent + '|' + b.textContent + '|' + blockA.clientWidth;
         if (key === lastFitKey) return;
         lastFitKey = key;
-        const BASE = 32, MIN = 13;
+        const BASE = 26, MIN = 13; // compact clocks — the strip above needs the room
         a.style.fontSize = b.style.fontSize = BASE + 'px';
         let scale = 1;
         [[a, blockA], [b, blockB]].forEach(([v, block]) => {
@@ -744,6 +861,7 @@
     // ---- tick -------------------------------------------------------------
     setInterval(() => {
         syncLock();
+        updateStrip();   // advance/pulse the breaks strip's "next" chip
         if (state.running) { el('autoTotal').textContent = fmtDur(remainingRuntime()); }
 
         if (state.items.length === 0) {
@@ -799,16 +917,316 @@
     // sits underneath/behind it once faded (this is what made the header's
     // time area unclickable — the old fixed-position toast never went away).
     let toastTimer = null;
-    function toast(msg) {
+    // Optional action: toast(msg, label, fn) renders a button inside the toast
+    // (e.g. "Load anyway" on a passed break) and stays up longer. The toast
+    // container keeps pointer-events:none; only the button itself is live.
+    function toast(msg, actionLabel, actionFn) {
         let t = el('autoToast');
         if (!t) {
             t = document.createElement('div'); t.id = 'autoToast';
-            t.style.cssText = 'position:absolute; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; background:rgba(240,69,63,0.96); color:#fff; padding:10px 16px; font-size:13px; font-weight:700; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,0.4); transition:opacity .2s; pointer-events:none;';
+            t.style.cssText = 'position:absolute; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; gap:10px; background:rgba(240,69,63,0.96); color:#fff; padding:10px 16px; font-size:13px; font-weight:700; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,0.4); transition:opacity .2s; pointer-events:none;';
             el('autoHeader').parentElement.appendChild(t);
         }
-        t.textContent = msg; t.style.opacity = '1';
-        clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.style.opacity = '0'; }, 1800);
+        t.textContent = msg;
+        if (actionLabel && actionFn) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = actionLabel;
+            btn.style.cssText = 'pointer-events:auto; border:none; border-radius:6px; padding:4px 10px; cursor:pointer; background:#fff; color:#b3221d; font-weight:800; font-size:12px; font-family:inherit; flex-shrink:0;';
+            btn.addEventListener('click', () => { clearTimeout(toastTimer); t.style.opacity = '0'; actionFn(); });
+            t.appendChild(btn);
+        }
+        t.style.opacity = '1';
+        clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.style.opacity = '0'; }, actionLabel ? 5000 : 1800);
         return false;
+    }
+
+    // ---- commercial-breaks strip -------------------------------------------
+    // Renders window.BREAKS (the planner's daily plan) as a chip rail pinned
+    // above the time header. Break items are REFERENCES into window.CARTS
+    // (1-based carts.txt lines), resolved fresh at render/load time — so a
+    // re-trim in the admin changes a break's length everywhere at once.
+    // Clicking a chip loads that break into the queue below (schedule + items
+    // + arm AUTO); a break never loads itself.
+    const durCache = {};   // file -> duration secs (only needed when a cart has no end trim)
+    function resolveCart(id) {
+        return (window.CARTS || []).find((c) => c.i === id - 1) || null;
+    }
+    function cartRuntime(c) {
+        if (!c) return 0;
+        let end = c.end;
+        if (end == null) {
+            end = durCache[c.file];
+            if (end === undefined) loadDuration(c.file); // async; strip re-renders when known
+            if (end == null) return 0;
+        }
+        return Math.max(0, end - (c.start || 0));
+    }
+    function loadDuration(file) {
+        durCache[file] = null;   // marks "in flight" so we only fetch once
+        const a = new Audio(`uploads/${file}`);
+        a.preload = 'metadata';
+        a.addEventListener('loadedmetadata', () => { durCache[file] = a.duration || 0; renderStrip(); });
+    }
+    function breakLength(b) { return b.items.reduce((s, id) => s + cartRuntime(resolveCart(id)), 0); }
+    // Seconds from now to the break's HH:MM today; negative once it has passed.
+    function secsToBreak(b) {
+        const [hh, mm] = b.time.split(':').map(Number);
+        const t = new Date(); t.setHours(hh, mm, 0, 0);
+        return (t.getTime() - Date.now()) / 1000;
+    }
+    // The strip shows only ENABLED breaks, split into SCHEDULED (time-driven)
+    // and MANUAL (DJ fires them by hand — holiday batches etc.). The category
+    // wrapper headers appear only when BOTH kinds exist.
+    function stripScheduled() { return (window.BREAKS || []).filter((b) => b.enabled !== false && !b.manual); }
+    function stripManual() { return (window.BREAKS || []).filter((b) => b.enabled !== false && b.manual); }
+    // "Next" = first scheduled break still ahead of the wall clock. Once the
+    // whole day has passed, wrap to the first (it's tomorrow's first break).
+    function nextBreakIndex() {
+        const list = stripScheduled();
+        if (!list.length) return -1;
+        const i = list.findIndex((b) => secsToBreak(b) > 0);
+        return i < 0 ? 0 : i;
+    }
+    let stripNext = -1;      // index (into stripScheduled) rendered as "next"
+    let stripTab = 'sched';  // active tab when both categories exist
+    // What the queue was loaded FROM: lets the strip keep a residual yellow
+    // mark on that chip and the panel show the batch's name (+ "(modified)"
+    // once content or time diverge). Cleared when the queue empties.
+    let loadedBreak = null;  // { key, name, sig, schedSig|null }
+    const breakKey = (b) => `${b.time}|${b.name}`;
+    const itemsSig = (list) => list.map((d) => `${d.file}@${d.start}-${d.end}`).join(',');
+    function queueSig() { return itemsSig(state.items); }
+    function scheduleSig() { return `${fmtClock(state.anchorTime)}|${state.anchorMode}`; }
+    function renderStrip() {
+        const strip = el('breaksStrip');
+        if (!strip) return;
+        const sched = stripScheduled(), man = stripManual();
+        // Feature unused (or everything parked/disabled): zero footprint.
+        strip.hidden = sched.length + man.length === 0;
+        strip.innerHTML = '';
+        if (strip.hidden) return;
+        stripNext = nextBreakIndex();
+        // Tabs are ALWAYS there (an empty tab just shows an empty list), and
+        // the list below them is a fixed-height scroller — switching tabs
+        // never resizes the panel or makes the header jump.
+        const tabs = document.createElement('div');
+        tabs.className = 'breaks-tabs';
+        [['sched', 'Scheduled'], ['manual', 'Manual']].forEach(([key, label]) => {
+            const tb = document.createElement('button');
+            tb.type = 'button';
+            tb.className = 'breaks-tab' + (stripTab === key ? ' active' : '');
+            tb.textContent = label;
+            tb.addEventListener('click', () => { stripTab = key; renderStrip(); });
+            tabs.appendChild(tb);
+        });
+        strip.appendChild(tabs);
+        const list = document.createElement('div');
+        list.className = 'breaks-list';
+        strip.appendChild(list);
+        const showSched = stripTab === 'sched';
+        (showSched ? sched : man).forEach((b, i) => {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            if (showSched) {
+                // Passed breaks gray out — unless "next" wrapped around to it
+                // (then it's tomorrow's break, not a stale one).
+                const passed = secsToBreak(b) <= 0 && i !== stripNext;
+                chip.className = 'break-chip' + (i === stripNext ? ' next' : '') + (passed ? ' passed' : '');
+                chip.title = `${b.name || 'Break'} — click to load into the playlist`;
+                chip.innerHTML =
+                    (b.anchor === 'end' ? ICON.end : ICON.start) +
+                    `<span class="bc-time">${b.time}</span>` +
+                    `<span class="bc-len">${fmtDur(breakLength(b))}</span>` +
+                    `<span class="bc-name"></span>`;
+            } else {
+                chip.className = 'break-chip manual';
+                chip.title = `${b.name || 'Break'} — click to load, then press play`;
+                chip.innerHTML =
+                    `<i class="ph ph-hand-palm"></i>` +
+                    `<span class="bc-len">${fmtDur(breakLength(b))}</span>` +
+                    `<span class="bc-name"></span>`;
+            }
+            chip.querySelector('.bc-name').textContent = b.name || 'Break';
+            if (loadedBreak && breakKey(b) === loadedBreak.key) chip.classList.add('loaded');
+            chip.addEventListener('click', () => loadBreak(b));
+            list.appendChild(chip);
+        });
+        centerNextChip();
+        updateStripUrgency();
+    }
+    // The list keeps the NEXT break centred — but only while nothing is
+    // loaded: once a chip carries the yellow "loaded" mark, the view stays
+    // put so the DJ never loses sight of what they picked. The DJ can also
+    // scroll freely; a few seconds after the last manual scroll (and with
+    // nothing loaded) the list drifts back to centre the blinking one.
+    let stripUserScrollAt = 0, stripSuppressUntil = 0;
+    function centerNextChip() {
+        if (loadedBreak) return;
+        const list = el('breaksStrip') && el('breaksStrip').querySelector('.breaks-list');
+        const chip = list && list.querySelector('.break-chip.next');
+        if (!chip || !list.clientHeight) return; // hidden panel: nothing to centre yet
+        const target = Math.max(0, chip.offsetTop - list.offsetTop - (list.clientHeight - chip.offsetHeight) / 2);
+        if (Math.abs(list.scrollTop - target) < 2) return; // already centred
+        stripSuppressUntil = Date.now() + 300; // our own scroll isn't "user scroll"
+        list.scrollTop = target;
+    }
+    // Every tick: advance "next" as breaks pass (the SELECTOR moves on its own;
+    // the playlist itself is never auto-loaded), pulse when close to air, and
+    // drift back to centre once the DJ stops scrolling.
+    function updateStrip() {
+        if (!(window.BREAKS || []).length) return;
+        if (nextBreakIndex() !== stripNext) { renderStrip(); return; }
+        updateStripUrgency();
+        if (Date.now() - stripUserScrollAt > 4000) centerNextChip();
+    }
+    function updateStripUrgency() {
+        const strip = el('breaksStrip');
+        const chip = strip && strip.querySelector('.break-chip.next');
+        const b = stripScheduled()[stripNext];
+        if (!chip || !b) return;
+        const secs = secsToBreak(b);
+        chip.classList.toggle('soon', secs > 60 && secs <= 300);
+        chip.classList.toggle('urgent', secs > 0 && secs <= 60);
+    }
+    // Load a planned break into the queue: resolve its cart references, set its
+    // schedule, and hand the items to addItems — whose guards all still apply
+    // (locked, too close to start, won't fit, would overrun the hour). Any idle
+    // queue content is REPLACED: loading a break means preparing that break.
+    function resolveBreakItems(b) {
+        return b.items.map(resolveCart).filter(Boolean).map((c) => ({
+            name: c.name, file: c.file, start: c.start, end: c.end,
+            volume: c.volume, color: c.color, runtime: cartRuntime(c),
+        }));
+    }
+    // Record what was just loaded (for the yellow chip + the name box), but
+    // only if the whole batch actually made it in — a refused addItems leaves
+    // the queue unchanged and must not claim the break was loaded.
+    function markLoaded(b, items, manual) {
+        if (queueSig() !== itemsSig(items)) return;
+        loadedBreak = {
+            key: breakKey(b),
+            name: b.name || 'Break',
+            sig: queueSig(),
+            schedSig: manual ? null : scheduleSig(),
+        };
+        renderStrip();
+        updateLoadedName();
+    }
+    // Load a batch with NO schedule: panel to MANUAL, transport ready for the
+    // DJ. Used by manual breaks — and by "Load anyway" on a passed one.
+    function loadAsManual(b, items) {
+        state.items.forEach((it) => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
+        state.items = [];
+        state.anchorTime = nextFullHour(); // inert placeholder, keeps guards sane
+        state.anchorMode = 'start';
+        state.mode = 'manual';
+        state.firedForThisSchedule = false;
+        addItems(items, false);
+        markLoaded(b, items, true);
+    }
+    function loadBreak(b) {
+        if (plannerMode) return; // the planner edits breaks; it never arms them
+        if (state.locked || state.running) return toast('Playlist locked');
+        const items = resolveBreakItems(b);
+        if (!items.length) return toast('Break has no valid carts');
+        // MANUAL break: no time trigger, ever.
+        if (b.manual) return loadAsManual(b, items);
+        const [hh, mm] = b.time.split(':').map(Number);
+        const t = new Date(); t.setHours(hh, mm, 0, 0);
+        // Fit-check BEFORE touching the queue, so a refused load changes nothing.
+        const sumNew = items.reduce((a, d) => a + d.runtime, 0);
+        const startAt = b.anchor === 'end' ? t.getTime() - sumNew * 1000 : t.getTime();
+        if ((startAt - Date.now()) / 1000 <= LOCK_LEAD) {
+            // Passed — but someone recording tomorrow's show may still want the
+            // batch: the override loads it without a schedule, in MANUAL mode.
+            return toast('Break time already passed', 'Load anyway', () => loadAsManual(b, items));
+        }
+        state.items.forEach((it) => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
+        state.items = [];
+        state.anchorTime = t;
+        state.anchorMode = b.anchor === 'end' ? 'end' : 'start';
+        state.mode = 'auto';
+        state.firedForThisSchedule = false;
+        addItems(items, false);   // guards + show() + save + render live inside
+        markLoaded(b, items, false);
+    }
+
+    // ---- planner mode -------------------------------------------------------
+    // The admin's break planner borrows this panel as its playlist editor
+    // (the DOM node is moved into the overlay by planner.js). Entering pins
+    // the DJ's live queue to localStorage and empties the panel; leaving
+    // restores it from that same snapshot via loadState(). While in planner
+    // mode: nothing persists (saveState is a no-op), the schedule guards are
+    // off (see addItems), and the panel is forced MANUAL so the transport is
+    // the preview control.
+    function setPlannerMode(on) {
+        if (!!on === plannerMode) return true;
+        const panel = el('automationPanel');
+        if (on) {
+            if (state.running) { toast('Stop playback first'); return false; }
+            saveState();          // pin the live queue NOW…
+            plannerMode = true;   // …then freeze persistence
+            state.items.forEach((it) => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
+            state.items = [];
+            state.mode = 'manual';
+            panel.classList.add('planner-mode', 'active');
+            render();
+        } else {
+            state.items.forEach((it) => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
+            state.items = [];
+            plannerMode = false;
+            resetSchedule();      // defaults; loadState() overwrites from the pin
+            loadState();          // restore the live queue, schedule + visibility
+            panel.classList.remove('planner-mode');
+            panel.classList.toggle('active', state.visible);
+            render();
+            updateAutoChip();
+        }
+        return true;
+    }
+    // Per-item preview (planner mode): each queue row gets a small play button
+    // that auditions just that item (trim-aware), one at a time. Uses the
+    // item's own (already primed) audio element; never touches playback state.
+    let rowPreview = null; // { item, btn, onTime }
+    function stopRowPreview() {
+        if (!rowPreview) return;
+        const { item, btn, onTime } = rowPreview;
+        rowPreview = null;
+        item.audio.removeEventListener('timeupdate', onTime);
+        try { item.audio.pause(); item.audio.currentTime = item.start; } catch (e) {}
+        if (btn.isConnected) btn.innerHTML = '<i class="ph-fill ph-play"></i>';
+    }
+    function toggleRowPreview(it, btn) {
+        if (rowPreview && rowPreview.item === it) { stopRowPreview(); return; }
+        stopRowPreview();
+        const a = it.audio;
+        try { a.currentTime = it.start; } catch (e) {}
+        a.volume = it.volume != null ? it.volume : 1;
+        const onTime = () => { if (a.currentTime >= itemEnd(it)) stopRowPreview(); };
+        a.addEventListener('timeupdate', onTime);
+        a.addEventListener('ended', stopRowPreview, { once: true });
+        rowPreview = { item: it, btn, onTime };
+        btn.innerHTML = '<i class="ph-fill ph-stop"></i>';
+        a.play().catch(stopRowPreview);
+    }
+
+    // Replace the editor's content (planner selects a break). No schedule
+    // involved — the break's air time is edited in the planner's list, not here.
+    function loadPlaylist(list) {
+        stopRowPreview();
+        state.items.forEach((it) => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
+        state.items = [];
+        state.playingIndex = -1;
+        if (Array.isArray(list) && list.length) addItems(list, false);
+        else render();
+    }
+    /** Current queue as plain data (incl. cartId where known) for the planner. */
+    function getItems() {
+        return state.items.map((it) => ({
+            cartId: it.cartId || null, name: it.name, file: it.file,
+            start: it.start, end: it.end, volume: it.volume, color: it.color, runtime: it.runtime,
+        }));
     }
 
     // ---- wire up ----------------------------------------------------------
@@ -823,7 +1241,7 @@
         el('autoPlayBtn').addEventListener('click', onPlayPause);
         el('autoStopBtn').addEventListener('click', forceStop);
         el('autoStopAutoBtn').addEventListener('click', forceStop);
-        el('autoClearBtn').addEventListener('click', clearAndHide);
+        el('autoClearBtn').addEventListener('click', clearOrHide);
         // No context menu inside the panel — there's nothing for it to do here,
         // and a stray native menu is the likeliest way a right-click could end
         // up interacting with a queue row (e.g. interrupting an accidental
@@ -838,9 +1256,17 @@
         });
         // Re-fit the two time read-outs when the panel width changes.
         window.addEventListener('resize', fitTimes);
+        // Track manual scrolling in the breaks strip: the auto-recentre backs
+        // off for a few seconds, then jumps back to the blinking break.
+        // (Capture phase: the scrolling element is the inner .breaks-list,
+        // which is rebuilt on every render — scroll events don't bubble.)
+        el('breaksStrip').addEventListener('scroll', () => {
+            if (Date.now() > stripSuppressUntil) stripUserScrollAt = Date.now();
+        }, true);
         loadState();
         render();
         updateAutoChip();
+        renderStrip();
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 
@@ -852,5 +1278,13 @@
         stop: forceStop, // used by the shell's "Stop all"
         toggle: toggleVisible, // topbar playlist button
         isVisible: () => state.visible,
+        loadBreak, // breaks-strip chips load a break through here
+        refreshBreaks: renderStrip, // planner calls this after saving a new plan
+        // Planner-editor API (see "planner mode" above):
+        setPlannerMode,
+        loadPlaylist,
+        getItems,
+        clear: () => loadPlaylist([]),
+        isPlannerMode: () => plannerMode,
     };
 })();

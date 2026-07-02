@@ -138,9 +138,13 @@ if (!$fileExists) {
             xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
             xhr.send(`file=${file}&start=${startTime}`);
             xhr.onload = () => {
-                if (xhr.status === 200 && window.parent && typeof window.parent.hideParentDiv === 'function') {
-                    window.parent.hideParentDiv();
-                } else if (xhr.status !== 200) {
+                if (xhr.status === 200) {
+                    // Break-plan cross-check from the server: this cart appears
+                    // in planned breaks whose lengths just changed.
+                    const warn = (xhr.responseText || '').split('|WARN:')[1];
+                    if (warn) alert(warn);
+                    if (window.parent && typeof window.parent.hideParentDiv === 'function') window.parent.hideParentDiv();
+                } else {
                     alert('Failed to save trim.');
                 }
             };
