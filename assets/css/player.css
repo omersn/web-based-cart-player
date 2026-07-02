@@ -121,9 +121,10 @@ body {
 
 /* ---- Bottom dock ----------------------------------------------------- */
 /* A flex row between the board and the ticker; when a view is docked the board
-   (flex:1) shrinks to make room and re-fits its carts. Kept deliberately bare —
-   no headers, no padding — so the docked carts get the full height and stay big
-   and easy to hit on a live show. Panes butt together with a hairline gap. */
+   (flex:1) shrinks to make room and re-fits its carts. Each pane is a thin
+   header (a page/view dropdown + the undock button) over the content, so the
+   docked carts still get almost the full height. Panes butt together with a
+   hairline gap. */
 .dock-bar {
     display: none;
     flex: 0 0 auto;
@@ -135,30 +136,38 @@ body {
 }
 .dock-pane {
     position: relative;
-    display: flex; min-width: 0;
+    display: flex; flex-direction: column; min-width: 0;
     background: var(--bg-app);
     overflow: hidden;
 }
-.dock-pane iframe { border: none; height: 100%; flex: 1 1 0; min-width: 0; }
-/* Undock lives as a small, unobtrusive corner overlay (no header bar). */
-.dock-undock {
-    position: absolute; top: 4px; right: 4px; z-index: 6;
-    width: 20px; height: 20px; border-radius: 5px; border: none; cursor: pointer;
-    background: rgba(0, 0, 0, 0.45); color: var(--text-secondary);
-    display: flex; align-items: center; justify-content: center; font-size: 12px;
-    opacity: 0.5; transition: opacity 0.15s ease, background-color 0.15s ease;
+.dock-pane iframe { border: none; width: 100%; flex: 1 1 auto; min-height: 0; }
+/* Thin header: a page/view dropdown on the left, undock on the right — replaces
+   the old floating label + corner-overlay undock button (which "didn't look
+   too good" over the Station-ID grid, and gave the docked clock no way to
+   switch views at all). */
+.dock-header {
+    flex: 0 0 24px; min-width: 0;
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    padding: 0 4px 0 10px;
+    background: var(--raised); border-bottom: 1px solid var(--hairline);
 }
-.dock-pane:hover .dock-undock { opacity: 1; }
-.dock-undock:hover { background: rgba(0, 0, 0, 0.75); color: #fff; }
-
-/* < > section nav for the docked Station-ID grid (no dropdown once docked). */
-.dock-nav {
-    flex: 0 0 44px; align-self: stretch; border: none; cursor: pointer;
-    background: var(--raised); color: var(--text-secondary);
-    display: flex; align-items: center; justify-content: center; font-size: 22px;
+.dock-header-select-wrap { position: relative; flex: 1 1 auto; min-width: 0; display: flex; align-items: center; }
+.dock-header-select {
+    appearance: none; -webkit-appearance: none; width: 100%;
+    background: transparent; border: none; outline: none; cursor: pointer;
+    padding: 2px 14px 2px 0;
+    color: var(--text-secondary); font-family: 'Assistant', sans-serif; font-size: 11px; font-weight: 700;
+    letter-spacing: 0.02em; text-overflow: ellipsis;
+}
+.dock-header-select:hover { color: var(--text-primary); }
+.dock-header-select-wrap i { position: absolute; right: 2px; font-size: 9px; color: var(--text-tertiary); pointer-events: none; }
+.dock-undock {
+    flex: 0 0 auto; width: 18px; height: 18px; border-radius: 5px; border: none; cursor: pointer;
+    background: transparent; color: var(--text-tertiary);
+    display: flex; align-items: center; justify-content: center; font-size: 11px;
     transition: background-color 0.15s ease, color 0.15s ease;
 }
-.dock-nav:hover { background: var(--raised-hover); color: var(--text-primary); }
+.dock-undock:hover { background: var(--raised-hover); color: var(--text-primary); }
 
 /* Widths per mode (set on .dock-bar by renderWindows): */
 .dock-bar.clock-only .dock-clock { flex: 1 1 auto; }
@@ -166,9 +175,6 @@ body {
 /* Clock is a snug fixed width (just the ring) so it doesn't waste side space. */
 .dock-bar.both .dock-clock { flex: 0 0 230px; }
 .dock-bar.both .dock-ids   { flex: 1 1 auto; }
-/* In the narrow (both) layout the clock pane shows only the ring, not the
-   separate "time to end of hour" panel. */
-.dock-bar.both .dock-clock-count { display: none; }
 
 /* ---- Start gate ------------------------------------------------------ */
 /* Shown first; the click unlocks browser audio autoplay before loading. */
@@ -194,11 +200,8 @@ body {
 body.layout-locked #chip-ids,
 body.layout-locked #chip-clock,
 body.layout-locked .window-controls,
-body.layout-locked .dock-nav { pointer-events: none; opacity: 0.4; }
-/* The undock button sits ON TOP of the dock iframe: keep it click-capturing so
-   a click can't fall through to a cart behind it, but make it inert while
-   locked (undock() no-ops when layout is locked). */
-body.layout-locked .dock-undock { opacity: 0.4; cursor: not-allowed; }
+body.layout-locked .dock-header-select { pointer-events: none; opacity: 0.4; }
+body.layout-locked .dock-undock { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 body.layout-locked .title-bar-0001,
 body.layout-locked .title-bar-0002 { cursor: default; }
 
@@ -808,9 +811,10 @@ body.layout-locked .title-bar-0002 { cursor: default; }
                 opacity 0.22s ease, margin-left 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .ticker-chip:hover .chip-reveal { max-width: 200px; opacity: 1; margin-left: 8px; }
-/* The chip's "manage" area (avatar + role) links to admin.php / dj.php. */
+/* The chip's identity area: a plain span for admin (management now lives
+   behind the topbar gearwheel), a real link to dj.php for DJ. */
 .ticker-chip .chip-main { display: inline-flex; align-items: center; color: inherit; text-decoration: none; }
-.ticker-chip .chip-main:hover { color: var(--cyan-text); }
+.ticker-chip a.chip-main:hover { color: var(--cyan-text); }
 .ticker-chip .chip-main i { font-size: 15px; opacity: 0.8; }
 .ticker-chip .logout-link { color: var(--text-tertiary); font-weight: 400; font-size: 11px; text-decoration: underline; }
 
@@ -1259,6 +1263,10 @@ body.layout-locked .title-bar-0002 { cursor: default; }
    login page rather than vanishing. */
 .icon-btn.locked { opacity: 0.35; }
 .icon-btn.locked:hover { opacity: 0.6; background: var(--raised-hover); }
+/* Download/Mobile hide outright when their switch is off (rather than
+   graying out): .icon-btn's own display:flex has equal specificity to the
+   [hidden] attribute and would otherwise win as the later rule. */
+.icon-btn[hidden] { display: none; }
 
 /* ---- Station manager (Audio | Station | Options) ----------------------- */
 .mgr-tabs {
@@ -1294,7 +1302,7 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .opt-switch {
     appearance: none; -webkit-appearance: none;
     flex: 0 0 40px; width: 40px; height: 22px; border-radius: 11px; cursor: pointer;
-    background: rgba(255, 255, 255, 0.14); position: relative; outline: none;
+    background: rgba(240, 69, 63, 0.55); position: relative; outline: none;
     transition: background 0.15s ease;
 }
 .opt-switch::after {
@@ -1427,15 +1435,23 @@ button.opt-link { cursor: pointer; font-family: 'Assistant', sans-serif; width: 
 .ma-volume-short { flex: 0 0 220px !important; }
 
 /* The pencil sits right after the text (name-text no longer force-grows to
-   fill the row, which used to push the pencil to the far right edge). */
+   fill the row, which used to push the pencil to the far right edge). The
+   name reads big (this is the headline of the whole detail panel); the
+   pencil is deliberately smaller so it doesn't compete with it. */
 .ma-name-wrap { flex: 1 1 auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .ma-name-text {
-    flex: 0 1 auto; max-width: 70%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    color: var(--text-primary); font-family: 'Assistant', sans-serif; font-size: 13.5px; font-weight: 600;
+    flex: 0 1 auto; max-width: 55%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text-primary); font-family: 'Assistant', sans-serif; font-size: 19px; font-weight: 800;
 }
-.ma-name-wrap .pbreak-edit { color: var(--text-tertiary); flex: 0 0 auto; }
+.ma-name-wrap .pbreak-edit { width: 18px; height: 18px; font-size: 10px; color: var(--text-tertiary); flex: 0 0 auto; }
 .ma-name-wrap .pbreak-edit:hover { background: rgba(255, 255, 255, 0.14); color: var(--text-primary); }
 .ma-name-wrap input[type="text"] { flex: 0 1 260px; }
+/* Full (untrimmed) length + the currently-saved trimmed length, pushed to the
+   row's far end. Only moves on select/Save trim — see audio-manager.js. */
+.ma-length-info {
+    margin-left: auto; flex: 0 0 auto; padding-left: 10px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text-tertiary); white-space: nowrap;
+}
 
 /* Inline waveform trimmer. Fixed heights on the wave area so a re-created
    WaveSurfer instance (switching carts, or coming back to one after tabbing
@@ -1478,6 +1494,10 @@ button.opt-link { cursor: pointer; font-family: 'Assistant', sans-serif; width: 
 /* Empty-slot view: nothing but a prompt + Upload button until a file lands. */
 .ma-empty-upload { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 30px 0; }
 .ma-empty-upload p { color: var(--text-tertiary); font-size: 13.5px; }
+/* The class's own display:flex has equal specificity to [hidden] and, being
+   later in the file, would otherwise win — showing the empty-slot uploader
+   over populated carts too. */
+.ma-empty-upload[hidden] { display: none; }
 
 /* Two-step "are you sure" for clearing a slot. The [hidden] rule must win
    over the class's own display:flex (equal specificity, last-in-file wins)
@@ -1539,15 +1559,4 @@ button.opt-link { cursor: pointer; font-family: 'Assistant', sans-serif; width: 
     background: #05070a; color: #9fe6d0;
     font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5;
     white-space: pre-wrap; word-break: break-word;
-}
-
-/* Small label over the docked ID window: the dropdown only exists floating,
-   so this is the only cue for which section (name editable in the manager's
-   Station tab) is currently docked. */
-.dock-ids-label {
-    position: absolute; top: 4px; left: 50%; transform: translateX(-50%); z-index: 2;
-    padding: 2px 9px; border-radius: 5px;
-    background: rgba(0, 0, 0, 0.55); color: var(--text-secondary);
-    font-family: 'Assistant', sans-serif; font-size: 10.5px; font-weight: 700;
-    letter-spacing: 0.04em; pointer-events: none;
 }

@@ -6,9 +6,10 @@
  */
 require_once __DIR__ . '/auth.php';
 
-// Already signed in? Jump straight to the relevant dashboard.
+// Already signed in? Admin lands on the player shell (the manager overlay
+// lives there now, not the legacy admin.php); DJ still gets its own page.
 if (is_admin()) {
-    header('Location: admin.php');
+    header('Location: index.php');
     exit;
 }
 if (is_dj()) {
@@ -23,7 +24,7 @@ if (isset($_POST['submit'])) {
 
     if ($username === ADMIN_USER && $password === ADMIN_PASS) {
         $_SESSION['login'] = true;
-        header('Location: admin.php');
+        header('Location: index.php');
         exit;
     } elseif ($username === DJ_USER && $password === DJ_PASS) {
         $_SESSION['login2'] = true;

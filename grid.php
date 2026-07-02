@@ -103,8 +103,17 @@ $backtimerStyles   = ($smallbacktimer === '1')
         .button.empty { background: var(--empty-fill); border: 1px dashed var(--empty-border); cursor: not-allowed; }
 
         /* Disabled (manager Audio tab): darkened but its name still shows —
-           reads as "this cart, turned off" rather than an empty slot. */
-        .button.button-off { background: #1a1d22; border: 1px solid rgba(255, 255, 255, 0.06); cursor: not-allowed; opacity: 0.55; filter: grayscale(0.6); }
+           reads as "this cart, turned off" rather than an empty slot. A thin
+           gray X (two corner-to-corner gradient "lines") crosses the face,
+           sitting behind the title/icons since background-image is always
+           behind box content. */
+        .button.button-off {
+            background-color: #1a1d22;
+            background-image:
+                linear-gradient(45deg, transparent calc(50% - 0.75px), rgba(190, 197, 206, 0.4) calc(50% - 0.75px), rgba(190, 197, 206, 0.4) calc(50% + 0.75px), transparent calc(50% + 0.75px)),
+                linear-gradient(-45deg, transparent calc(50% - 0.75px), rgba(190, 197, 206, 0.4) calc(50% - 0.75px), rgba(190, 197, 206, 0.4) calc(50% + 0.75px), transparent calc(50% + 0.75px));
+            border: 1px solid rgba(255, 255, 255, 0.06); cursor: not-allowed; opacity: 0.55; filter: grayscale(0.6);
+        }
         .button.button-off .title { color: var(--text-tertiary); }
 
         /* Flash a cart when jumped to from the search results. A sustained

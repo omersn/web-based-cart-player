@@ -131,6 +131,11 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 </select>
                 <i class="ph ph-caret-down"></i>
             </div>
+            <!-- DJ layout placeholder (not wired yet): lives beside the page
+                 selector since it's a board-view mode, not a window/tool. -->
+            <button type="button" class="icon-btn" id="chip-djmode" title="DJ mode (coming soon)" <?= $settings['dj_mode'] ? '' : 'disabled' ?>>
+                <i class="ph ph-squares-four"></i>
+            </button>
         </div>
 
         <span class="topbar-divider"></span>
@@ -150,42 +155,61 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
 
         <div class="topbar-end">
             <div class="icon-cluster">
-                <!-- Window toggles, grouped together and separated from the actions.
-                     Feature switches (manager Options tab) disable buttons; admin
-                     buttons stay visible when logged out, grayed, and lead to the
-                     login page. -->
-                <button type="button" class="icon-btn is-active" id="chip-ids" onclick="toggleIdsWindow();" title="Station IDs" <?= $settings['ids_window'] ? '' : 'disabled' ?>>
-                    <i class="ph ph-radio"></i><span class="status-dot red"></span>
-                </button>
+                <!-- Group A: the three always-on window/playlist toggles.
+                     Feature switches (manager Options tab) disable buttons;
+                     they stay visible even when off. -->
                 <button type="button" class="icon-btn is-active" id="chip-clock" onclick="toggleClockWindow();" title="Clock">
                     <i class="ph ph-clock"></i><span class="status-dot red"></span>
                 </button>
-                <button type="button" class="icon-btn" id="chip-auto" onclick="window.Automation && window.Automation.toggle();" title="Automation playlist" <?= $settings['automation'] ? '' : 'disabled' ?>>
-                    <i class="ph ph-playlist"></i><span class="status-dot amber"></span>
+                <button type="button" class="icon-btn is-active" id="chip-ids" onclick="toggleIdsWindow();" title="Station IDs" <?= $settings['ids_window'] ? '' : 'disabled' ?>>
+                    <i class="ph ph-radio"></i><span class="status-dot red"></span>
                 </button>
-                <!-- Break planner: admin edits the daily plan the strip shows.
-                     Logged out it stays visible (grayed) and opens the login. -->
+                <button type="button" class="icon-btn" id="chip-auto" onclick="window.Automation && window.Automation.toggle();" title="Automation playlist" <?= $settings['automation'] ? '' : 'disabled' ?>>
+                    <i class="ph ph-playlist"></i><span class="status-dot red"></span>
+                </button>
+                <span class="icon-sep"></span>
+                <!-- Group B: admin tools, each its own overlay/window. Logged
+                     out they stay visible (grayed) and open the login page
+                     instead of vanishing. -->
                 <?php if (is_admin()): ?>
                 <button type="button" class="icon-btn" id="chip-planner" title="Break planner" <?= $settings['automation'] ? '' : 'disabled' ?>>
                     <i class="ph ph-calendar-check"></i>
+                </button>
+                <button type="button" class="icon-btn" id="chip-audiomgr" title="Audio manager">
+                    <i class="ph ph-waveform"></i>
                 </button>
                 <?php else: ?>
                 <button type="button" class="icon-btn locked" id="chip-planner" title="Break planner — sign in" onclick="location.href='login.php';">
                     <i class="ph ph-calendar-check"></i>
                 </button>
-                <?php endif; ?>
-                <!-- DJ layout (placeholder — the layout itself isn't built yet). -->
-                <button type="button" class="icon-btn" id="chip-djmode" title="DJ mode (coming soon)" <?= $settings['dj_mode'] ? '' : 'disabled' ?>>
-                    <i class="ph ph-squares-four"></i>
+                <button type="button" class="icon-btn locked" id="chip-audiomgr" title="Audio manager — sign in" onclick="location.href='login.php';">
+                    <i class="ph ph-waveform"></i>
                 </button>
-                <span class="icon-sep"></span>
-                <!-- One-shot actions, gated by the feature switches. -->
-                <a class="icon-btn<?= $settings['download'] ? '' : ' off' ?>" id="chip-download" href="download.php" title="Download">
+                <?php endif; ?>
+                <!-- Group C: feature-gated one-shot actions, HIDDEN (not
+                     grayed) when their switch is off — individually, so this
+                     leading separator only appears when there's something
+                     for it to separate (never two in a row). -->
+                <span class="icon-sep" id="groupCSep" <?= ($settings['download'] || $settings['mobile']) ? '' : 'hidden' ?>></span>
+                <a class="icon-btn" id="chip-download" href="download.php" title="Download" <?= $settings['download'] ? '' : 'hidden' ?>>
                     <i class="ph ph-download-simple"></i>
                 </a>
-                <button type="button" class="icon-btn" id="qr-chip" onclick="showQR();" title="Mobile access" <?= $settings['mobile'] ? '' : 'disabled' ?>>
+                <button type="button" class="icon-btn" id="qr-chip" onclick="showQR();" title="Mobile access" <?= $settings['mobile'] ? '' : 'hidden' ?>>
                     <i class="ph ph-device-mobile"></i>
                 </button>
+                <span class="icon-sep"></span>
+                <!-- Group D: settings (Station manager). Admin-button
+                     convention — visible, grayed, and opens the login page
+                     when logged out. -->
+                <?php if (is_admin()): ?>
+                <button type="button" class="icon-btn" id="chip-gear" title="Settings">
+                    <i class="ph ph-gear"></i>
+                </button>
+                <?php else: ?>
+                <button type="button" class="icon-btn locked" id="chip-gear" title="Settings — sign in" onclick="location.href='login.php';">
+                    <i class="ph ph-gear"></i>
+                </button>
+                <?php endif; ?>
                 <?php if (SHOW_UTILITY_CHIPS): ?>
                 <button type="button" class="icon-btn" id="chip-credits" onclick="showCredits();" title="Credits">
                     <i class="ph ph-info"></i>
@@ -268,16 +292,27 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                  The layout adapts to what's docked (see renderDock below). -->
             <div class="dock-bar" id="dockBar">
                 <div class="dock-pane dock-clock" id="dockClock" style="display:none;">
-                    <button class="dock-undock" onclick="undock('clock')" title="Pop back out"><i class="ph ph-arrow-line-up"></i></button>
-                    <iframe class="dock-clock-time" id="dockClockTime" scrolling="no"></iframe>
-                    <iframe class="dock-clock-count" id="dockClockCount" scrolling="no"></iframe>
+                    <div class="dock-header">
+                        <div class="dock-header-select-wrap">
+                            <select id="dockClockSelect" class="dock-header-select">
+                                <option value="0">Clock</option>
+                                <option value="1">Time to end of hour</option>
+                            </select>
+                            <i class="ph ph-caret-down"></i>
+                        </div>
+                        <button class="dock-undock" onclick="undock('clock')" title="Pop back out"><i class="ph ph-arrow-line-up"></i></button>
+                    </div>
+                    <iframe class="dock-clock-frame" id="dockClockFrame" scrolling="no"></iframe>
                 </div>
                 <div class="dock-pane dock-ids" id="dockIds" style="display:none;">
-                    <span class="dock-ids-label" id="dockIdsLabel"></span>
-                    <button class="dock-undock" onclick="undock('ids')" title="Pop back out"><i class="ph ph-arrow-line-up"></i></button>
-                    <button class="dock-nav" onclick="dockIdsNav(-1)" title="Previous section"><i class="ph ph-caret-left"></i></button>
+                    <div class="dock-header">
+                        <div class="dock-header-select-wrap">
+                            <select id="dockIdsSelect" class="dock-header-select"></select>
+                            <i class="ph ph-caret-down"></i>
+                        </div>
+                        <button class="dock-undock" onclick="undock('ids')" title="Pop back out"><i class="ph ph-arrow-line-up"></i></button>
+                    </div>
                     <iframe class="dock-ids-frame" id="dockIdsFrame" scrolling="no"></iframe>
-                    <button class="dock-nav" onclick="dockIdsNav(1)" title="Next section"><i class="ph ph-caret-right"></i></button>
                 </div>
             </div>
         </div>
@@ -395,12 +430,19 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     <div class="statuses-bar">
         <?php if (is_admin() || is_dj()): ?>
             <span class="ticker-chip is-auth">
-                <!-- Admin opens the in-page manager; DJ keeps its page. The
-                     legacy admin panel stays reachable from Options. -->
-                <a class="chip-main" href="<?= is_admin() ? "javascript:window.Manager&&window.Manager.open();" : 'dj.php' ?>" title="Open management">
+                <!-- Admin's management lives behind the topbar gearwheel now
+                     (not this chip); DJ still opens its own page from here. -->
+                <?php if (is_admin()): ?>
+                <span class="chip-main">
                     <span class="avatar"><i class="ph-fill ph-user"></i></span>
-                    <span class="chip-reveal"><?= is_admin() ? 'Admin' : 'DJ' ?> <i class="ph ph-gear"></i></span>
+                    <span class="chip-reveal">Admin</span>
+                </span>
+                <?php else: ?>
+                <a class="chip-main" href="dj.php" title="Open DJ page">
+                    <span class="avatar"><i class="ph-fill ph-user"></i></span>
+                    <span class="chip-reveal">DJ</span>
                 </a>
+                <?php endif; ?>
                 <a class="logout-link chip-reveal" href="logout.php">Log out</a>
             </span>
         <?php else: ?>
@@ -425,27 +467,20 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     </div>
 
     <?php if (is_admin()): ?>
-    <!-- Station manager overlay (admin): Audio | Station | Options. Reuses the
-         planner's frame styling for unity. Audio/Station tabs land next; the
-         Options tab drives the feature switches live. -->
-    <div class="planner-overlay" id="managerOverlay" hidden>
+    <!-- Audio manager overlay (admin): its own window, separate from the
+         Station manager below — every slot (incl. empty/disabled) in a
+         sections list + one detail panel. Rendered by audio-manager.js from
+         MANAGER_DATA. -->
+    <div class="planner-overlay" id="audioManagerOverlay" hidden>
         <div class="planner-frame">
             <header class="planner-head">
-                <h2><i class="ph ph-gear"></i> Station manager</h2>
+                <h2><i class="ph ph-waveform"></i> Audio manager</h2>
                 <div class="planner-head-actions">
-                    <span class="planner-msg" id="managerMsg"></span>
-                    <button type="button" class="planner-cancel" id="managerClose" title="Close (Esc)">Close</button>
+                    <span class="planner-msg" id="audioManagerMsg"></span>
+                    <button type="button" class="planner-cancel" id="audioManagerClose" title="Close (Esc)">Close</button>
                 </div>
             </header>
-            <div class="mgr-tabs">
-                <button type="button" class="mgr-tab active" data-tab="audio">Audio</button>
-                <button type="button" class="mgr-tab" data-tab="station">Station</button>
-                <button type="button" class="mgr-tab" data-tab="options">Options</button>
-                <button type="button" class="mgr-tab" data-tab="maintenance">Maintenance</button>
-            </div>
             <div class="mgr-body">
-                <!-- AUDIO: sections>items list on the left, one detail panel on
-                     the right. Rendered by manager.js from MANAGER_DATA. -->
                 <div class="mgr-pane mgr-audio" id="mgrPaneAudio">
                     <div class="ma-list-col">
                         <div class="ptree-toolbar">
@@ -466,17 +501,18 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                             <p class="ma-upload-hint">MP3 only, max 30&nbsp;MB (roughly 30&nbsp;minutes at typical bitrates).</p>
                         </div>
                         <div id="maForm" hidden>
-                            <!-- Group 1: enabled + name + colour -->
+                            <!-- Group 1: enabled + big name (small pencil beside it) + full/trimmed length -->
                             <div class="ma-row">
                                 <label>Enabled</label>
                                 <label class="ma-chain"><input type="checkbox" class="opt-switch" id="maEnabled"><span>Playable and can be added to lists</span></label>
                             </div>
-                            <div class="ma-row">
+                            <div class="ma-row ma-name-row">
                                 <label>Name</label>
                                 <div class="ma-name-wrap">
                                     <span class="ma-name-text" id="maNameText"></span>
                                     <input type="text" id="maName" maxlength="60" autocomplete="off" hidden>
                                     <button type="button" class="pbreak-edit" id="maNameEdit" title="Rename"><i class="ph ph-pencil-simple"></i></button>
+                                    <span class="ma-length-info" id="maLengthInfo" title="Full length &middot; trimmed length"></span>
                                 </div>
                             </div>
                             <div class="ma-row"><label>Colour</label><div class="ma-swatches" id="maSwatches"></div></div>
@@ -534,8 +570,30 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Station manager overlay (admin): Station | Options | Maintenance.
+         Reuses the planner's frame styling for unity. The Options tab drives
+         the feature switches live. -->
+    <div class="planner-overlay" id="managerOverlay" hidden>
+        <div class="planner-frame">
+            <header class="planner-head">
+                <h2><i class="ph ph-gear"></i> Station manager</h2>
+                <div class="planner-head-actions">
+                    <span class="planner-msg" id="managerMsg"></span>
+                    <button type="button" class="planner-cancel" id="managerClose" title="Close (Esc)">Close</button>
+                </div>
+            </header>
+            <div class="mgr-tabs">
+                <button type="button" class="mgr-tab active" data-tab="station">Station</button>
+                <button type="button" class="mgr-tab" data-tab="options">Options</button>
+                <button type="button" class="mgr-tab" data-tab="maintenance">Maintenance</button>
+            </div>
+            <div class="mgr-body">
                 <!-- STATION: identity + ticker + section labels + ID-window names. -->
-                <div class="mgr-pane" id="mgrPaneStation" hidden>
+                <div class="mgr-pane" id="mgrPaneStation">
                     <div class="ma-row"><label>Station name</label><input type="text" id="stName" maxlength="60" autocomplete="off" placeholder="<?= htmlspecialchars(STATION_NAME) ?>"></div>
                     <div class="ma-row"><label>Logo</label>
                         <div class="ma-audio-btns">
@@ -941,7 +999,10 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 let iframe, needLoad = false;
                 if (winState.ids.docked) {
                     iframe = document.getElementById('dockIdsFrame');
-                    if (!here(iframe)) { dockIdsIndex = secIndex; iframe.src = idSectionUrls[secIndex]; needLoad = true; }
+                    if (!here(iframe)) {
+                        dockIdsIndex = secIndex; iframe.src = idSectionUrls[secIndex]; needLoad = true;
+                        document.getElementById('dockIdsSelect').value = secIndex;
+                    }
                 } else {
                     iframe = document.getElementById('floater');
                     if (!here(iframe)) {
@@ -1029,6 +1090,44 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             });
             if (window.Automation) window.Automation.stop();
         }
+        // Cart names/colours/enable-state/trims/labels can all change from the
+        // Station manager or the Audio manager; both call this on close so the
+        // board, the floating/docked ID windows, and the clock pick it up
+        // without needing a full page reload. Only live (non about:blank)
+        // frames are touched. The reload is masked by the same progress
+        // overlay the startup kick uses — the bar rides to 90% on a timer and
+        // completes when every reloaded frame has actually landed (with a
+        // safety timeout so the mask can never get stuck).
+        window.refreshPlayerWindows = function () {
+            const frames = ['cartgrid', 'floater', 'floater2', 'dockIdsFrame', 'dockClockFrame']
+                .map((id) => document.getElementById(id))
+                .filter((f) => f && f.src && !f.src.includes('about:blank'));
+            if (!frames.length) return;
+            const overlay = document.getElementById('loadingOverlay');
+            const bar = document.getElementById('progressBar');
+            overlay.querySelector('.message').textContent = 'Refreshing';
+            bar.style.width = '0%';
+            overlay.style.display = 'flex';
+            let progress = 0;
+            const tick = setInterval(() => {
+                progress = Math.min(progress + 15, 90);
+                bar.style.width = progress + '%';
+            }, 150);
+            let pending = frames.length, finished = false;
+            const finish = () => {
+                if (finished) return;
+                finished = true;
+                clearInterval(tick);
+                bar.style.width = '100%';
+                setTimeout(() => { overlay.style.display = 'none'; }, 350);
+            };
+            const done = () => { if (--pending <= 0) finish(); };
+            frames.forEach((f) => {
+                f.addEventListener('load', done, { once: true });
+                f.src = f.src;
+            });
+            setTimeout(finish, 4000);
+        };
         // --- Window manager -------------------------------------------------
         // Each of the two views (clock / Station IDs) carries two independent
         // bits: docked (floating vs. in the bottom dock) and visible (shown vs.
@@ -1044,28 +1143,34 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             clock: { floatSel: '.floating-container-0002', chip: 'chip-clock' },
             ids:   { floatSel: '.floating-container-0001', chip: 'chip-ids' },
         };
-        const DOCK_SRC = {
-            clockTime:  'clock.php?dock=1',
-            clockCount: 'clock-progress.php?dock=1',
-        };
-        // Docked Station-ID sections mirror the floating window's dropdown, so the
-        // dock's < > buttons cycle the same sections (there's no dropdown once
-        // docked). fit=1 makes the grid fill the dock pane.
+        // Docked clock: a thin header dropdown picks one of the two single-view
+        // pages — no "Clock + countdown" here (that combined 420x420 view only
+        // makes sense floating; the dock bar is a fixed, shorter strip).
+        const DOCK_SRC = ['clock.php?dock=1', 'clock-progress.php?dock=1'];
+        let dockClockIndex = 0;
+        // Docked Station-ID sections mirror the floating window's dropdown
+        // (names editable in the manager's Station tab). fit=1 makes the grid
+        // fill the dock pane.
         const idSectionUrls = [...document.getElementById('ids-select').options].map(o => o.value + '&fit=1');
         let dockIdsIndex = 0;
-        // Small label above the docked grid — the only visual cue for which of
-        // the two ID sections (names editable in the manager's Station tab)
-        // is currently docked, since the dropdown itself only exists floating.
-        function updateDockIdsLabel() {
-            const opt = document.getElementById('ids-select').options[dockIdsIndex];
-            document.getElementById('dockIdsLabel').textContent = opt ? opt.text : '';
-        }
-        function dockIdsNav(dir) {
+        (() => {
+            const sel = document.getElementById('dockIdsSelect');
+            [...document.getElementById('ids-select').options].forEach((o, i) => {
+                const opt = document.createElement('option');
+                opt.value = i; opt.textContent = o.textContent;
+                sel.appendChild(opt);
+            });
+        })();
+        document.getElementById('dockClockSelect').addEventListener('change', (e) => {
+            if (layoutLocked) return; // don't reload the frame mid-playback
+            dockClockIndex = +e.target.value;
+            document.getElementById('dockClockFrame').src = DOCK_SRC[dockClockIndex];
+        });
+        document.getElementById('dockIdsSelect').addEventListener('change', (e) => {
             if (layoutLocked) return; // don't reload the grid mid-playback
-            dockIdsIndex = (dockIdsIndex + dir + idSectionUrls.length) % idSectionUrls.length;
+            dockIdsIndex = +e.target.value;
             document.getElementById('dockIdsFrame').src = idSectionUrls[dockIdsIndex];
-            updateDockIdsLabel();
-        }
+        });
         const winState = (() => {
             // First visit (no saved state) starts with BOTH views docked.
             const def = { clock: { docked: true, visible: true }, ids: { docked: true, visible: true } };
@@ -1097,10 +1202,10 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             const idsDock   = winState.ids.visible && winState.ids.docked;
 
             // Lazy-load / release the dock iframes so nothing runs while undocked/hidden.
-            document.getElementById('dockClockTime').src  = clockDock ? DOCK_SRC.clockTime  : 'about:blank';
-            document.getElementById('dockClockCount').src = clockDock ? DOCK_SRC.clockCount : 'about:blank';
+            document.getElementById('dockClockFrame').src = clockDock ? DOCK_SRC[dockClockIndex] : 'about:blank';
             document.getElementById('dockIdsFrame').src   = idsDock   ? idSectionUrls[dockIdsIndex] : 'about:blank';
-            if (idsDock) updateDockIdsLabel();
+            document.getElementById('dockClockSelect').value = dockClockIndex;
+            document.getElementById('dockIdsSelect').value = dockIdsIndex;
 
             document.getElementById('dockClock').style.display = clockDock ? 'flex' : 'none';
             document.getElementById('dockIds').style.display   = idsDock   ? 'flex' : 'none';
@@ -1276,6 +1381,6 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         }
     </script>
     <script src="assets/js/automation.js"></script>
-    <?php if (is_admin()): ?><script src="assets/js/planner.js"></script><script src="assets/vendor/wavesurfer.min.js"></script><script src="assets/js/manager.js"></script><?php endif; ?>
+    <?php if (is_admin()): ?><script src="assets/js/planner.js"></script><script src="assets/vendor/wavesurfer.min.js"></script><script src="assets/js/manager.js"></script><script src="assets/js/audio-manager.js"></script><?php endif; ?>
 </body>
 </html>
