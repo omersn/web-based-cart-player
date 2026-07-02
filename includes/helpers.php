@@ -86,7 +86,7 @@ function save_enabled_states(array $states): bool
  * Commercial breaks (data/breaks.txt) for the planner and the automation
  * strip. One break per line, pipe separated:
  *
- *   HH:MM | anchor | name | itemIds | enabled | trigger
+ *   HH:MM | anchor | name | itemIds | enabled | trigger | overlaps | volumes
  *
  *   - HH:MM    24h wall-clock time the break anchors to; repeats daily.
  *              Kept (inert) for manual breaks so switching back restores it.
@@ -102,6 +102,13 @@ function save_enabled_states(array $states): bool
  *              (templates, holiday specials) — the player never shows them.
  *   - trigger  "auto" (fires on its time) or "manual" (no time trigger —
  *              the DJ loads and fires it by hand); missing = auto.
+ *   - overlaps comma-separated ms values, one per GAP between consecutive
+ *              items (so count = items - 1; missing/short = zeros). A value
+ *              means the next item launches that many ms BEFORE the previous
+ *              one ends (the planner's cross editor). Clamped 0..10000.
+ *   - volumes  comma-separated per-ITEM volume overrides (0..1, 2 decimals),
+ *              set by the cross editor's volume line. -1 (the default) means
+ *              "no override — play at the cart's own volume".
  *
  * Returned sorted by time so strip/list rendering can assume day order.
  * Malformed lines are skipped rather than fatal — same forgiving stance as
@@ -116,6 +123,16 @@ function load_breaks(): array
         $p = explode('|', $line);
         if (count($p) < 4 || !preg_match('/^(([01]\d|2[0-3]):[0-5]\d|NOTIME)$/', trim($p[0]))) continue;
         $ids = array_values(array_filter(array_map('intval', explode(',', $p[3])), fn ($n) => $n > 0));
+        // Per-gap overlaps: fit to exactly count(items)-1 (pad missing with 0,
+        // drop extras left behind by item removals), clamp each to 0..10s.
+        $gaps = max(0, count($ids) - 1);
+        $ov = isset($p[6]) && trim($p[6]) !== '' ? array_map('intval', explode(',', $p[6])) : [];
+        $ov = array_slice(array_pad($ov, $gaps, 0), 0, $gaps);
+        $ov = array_map(fn ($n) => max(0, min(10000, $n)), $ov);
+        // Per-item volume overrides: one per item, -1 = no override.
+        $vols = isset($p[7]) && trim($p[7]) !== '' ? array_map('floatval', explode(',', $p[7])) : [];
+        $vols = array_slice(array_pad($vols, count($ids), -1), 0, count($ids));
+        $vols = array_map(fn ($v) => ($v >= 0 && $v <= 1) ? round($v, 2) : -1, $vols);
         $breaks[] = [
             'time'    => trim($p[0]),
             'anchor'  => trim($p[1]) === 'end' ? 'end' : 'start',
@@ -123,6 +140,8 @@ function load_breaks(): array
             'items'   => $ids,
             'enabled' => !isset($p[4]) || trim($p[4]) !== '0',
             'manual'  => isset($p[5]) && trim($p[5]) === 'manual',
+            'overlaps' => $ov,
+            'volumes' => $vols,
         ];
     }
     usort($breaks, fn ($a, $b) => strcmp($a['time'], $b['time']));
@@ -274,6 +293,8 @@ function save_breaks(array $breaks): bool
             implode(',', $b['items']),
             (!isset($b['enabled']) || $b['enabled']) ? '1' : '0',
             !empty($b['manual']) ? 'manual' : 'auto',
+            implode(',', array_map('intval', $b['overlaps'] ?? [])),
+            implode(',', array_map(fn ($v) => $v >= 0 ? (string) round($v, 2) : '-1', $b['volumes'] ?? [])),
         ]),
         $breaks
     );

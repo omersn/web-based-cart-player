@@ -224,6 +224,7 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 /* ---- Automation Playlist panel -------------------------------------- */
 .automation-panel {
     display: none;              /* .active -> flex */
+    position: relative;         /* anchors the floating cross editor */
     flex: 0 0 28%; min-width: 340px; max-width: 460px;
     flex-direction: column; min-height: 0;
     background: var(--bg-panel);
@@ -1559,4 +1560,172 @@ button.opt-link { cursor: pointer; font-family: 'Assistant', sans-serif; width: 
     background: #05070a; color: #9fe6d0;
     font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5;
     white-space: pre-wrap; word-break: break-word;
+}
+
+/* ---- Cross (overlap) editor — planner only ----------------------------- */
+/* The small gap box between two queue items: an elongated ✕ (two fades
+   crossing), centred and deliberately overlapping the rows above and below
+   by 4px (the list's 6px flex gap is swallowed by the -10px margins). Gray
+   by default, grayish-yellow while ITS joint is in the editor, light green
+   once the joint carries any saved edit (overlap or volume). Solid fills —
+   it sits ON TOP of the coloured rows. */
+.auto-gap {
+    position: relative; z-index: 2;
+    display: flex; align-items: center; justify-content: center;
+    width: 25px; height: 22px; margin: -10px auto;
+    border: 1px solid rgba(0, 0, 0, 0.4); border-radius: 6px; cursor: pointer;
+    background: #454d57; color: #b8c0ca;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+.auto-gap svg { width: 17px; height: 7px; }
+.auto-gap:hover { background: #566070; color: #fff; }
+.auto-gap.editing { background: #6e6234; color: #ffe08a; }
+.auto-gap.set { background: #2f7d52; color: #c2f2d7; }
+.auto-gap.set:hover { background: #38935f; }
+
+/* The editor itself: floats over the WHOLE playlist view (JS matches its
+   box to the queue list's area within the panel). */
+.cross-editor {
+    position: absolute; z-index: 45;
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 14px;
+    background: var(--bg-panel);
+    border: 1px solid var(--hairline); border-radius: 10px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.65);
+}
+.cross-editor[hidden] { display: none; }
+.cross-head { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.cross-title {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 12px; font-weight: 800; color: var(--text-primary);
+}
+.cross-readout { flex: 0 0 auto; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-tertiary); }
+.cross-readout.on { color: var(--cyan-text); }
+
+/* Two lanes filling the square: the top item's END above, the next item's
+   START below (drag ⇄ left to overlap). Each block carries a canvas with
+   its real decoded waveform segment. */
+.cross-lanes {
+    position: relative; flex: 1 1 auto; min-height: 0;
+    background: rgba(0, 0, 0, 0.32); border: 1px solid var(--hairline); border-radius: 8px;
+    overflow: hidden;
+}
+.cross-block {
+    position: absolute; height: 38%; border-radius: 6px;
+    display: flex; align-items: center; padding: 0 8px; overflow: hidden;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 45%),
+        var(--blk, #333);
+}
+.cross-block .cross-wave { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+/* Name pinned to the block's top-left corner — out of the waveform's way. */
+.cross-block .cross-name {
+    position: absolute; top: 5px; left: 8px; right: 8px; z-index: 1;
+    font-size: 10.5px; font-weight: 700; color: #fff; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+/* Volume automation: ONE flat line (no nodes) across the block — top of the
+   block = 100%, bottom = silent — with a drag handle riding it at the
+   block's horizontal centre. DAW-yellow so it reads as an automation lane. */
+.cross-vol-line {
+    position: absolute; left: 0; right: 0; height: 0; z-index: 2;
+    border-top: 2px solid rgba(255, 214, 70, 0.9);
+    margin-top: -1px; pointer-events: none;
+}
+.cross-vol-handle {
+    position: absolute; left: 50%; z-index: 4;
+    width: 15px; height: 15px; transform: translate(-50%, -50%);
+    border-radius: 50%; background: #ffd646; border: 2px solid rgba(0, 0, 0, 0.55);
+    cursor: ns-resize; touch-action: none;
+}
+.cross-vol-handle:hover { box-shadow: 0 0 0 3px rgba(255, 214, 70, 0.35); }
+.cross-vol-handle span {
+    position: absolute; left: 50%; top: -15px; transform: translateX(-50%);
+    font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 700;
+    color: #ffd646; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85); pointer-events: none;
+}
+.cross-block-a { top: 6%; }
+.cross-block-b { bottom: 6%; cursor: grab; touch-action: none; }
+.cross-block-b:active { cursor: grabbing; }
+/* ⇄ on the lower block: the visual cue that it's the draggable one. */
+.cross-drag-hint {
+    position: absolute; top: 50%; right: 7px; transform: translateY(-50%); z-index: 1;
+    font-size: 14px; color: rgba(255, 255, 255, 0.85); pointer-events: none;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+/* Boundary marker: where the top item ends (overlap 0 = the lower block
+   starts exactly here). */
+.cross-junction {
+    position: absolute; top: 0; bottom: 0; width: 0; z-index: 1;
+    border-left: 1px dashed rgba(255, 255, 255, 0.5); pointer-events: none;
+}
+/* Gray strip riding the free middle band between the two lanes, spanning
+   exactly the overlap region (JS sets left/width; 0 overlap = no strip). */
+.cross-overlap-track {
+    position: absolute; top: 50%; height: 5px; transform: translateY(-50%); z-index: 1;
+    background: #8a939e; border-radius: 3px; pointer-events: none;
+}
+/* Read-only preview playhead (Play button drives it; touching stops it). */
+.cross-playhead {
+    position: absolute; top: 0; bottom: 0; width: 2px; z-index: 3;
+    background: #fff; box-shadow: 0 0 7px rgba(255, 255, 255, 0.85);
+    pointer-events: none;
+}
+.cross-playhead[hidden] { display: none; }
+.cross-scale {
+    flex: 0 0 auto; display: flex; justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--text-tertiary);
+}
+.cross-scale-mid { color: rgba(255, 255, 255, 0.45); }
+
+.cross-btns { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.cross-btn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border: 1px solid var(--hairline); border-radius: 8px; cursor: pointer;
+    background: var(--raised); color: var(--text-secondary);
+    font-family: 'Assistant', sans-serif; font-size: 12px; font-weight: 700;
+}
+.cross-btn:hover { background: var(--raised-hover); color: var(--text-primary); }
+.cross-btn:disabled { opacity: 0.3; pointer-events: none; }
+/* Clear/Save/Cancel cluster right; Play stays on its own at the left. */
+.cross-clear { margin-left: auto; }
+/* Save glows (same language as the trimmer's Save) once the drag diverges
+   from what's committed; never a size change. */
+.cross-save.dirty { background: var(--cyan); color: #06222a; border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-tint); }
+.cross-save.dirty:hover { filter: brightness(1.08); }
+
+/* V badge on every planner row — the door to the single-track volume
+   editor. Gray = playing at the cart's own volume; yellow (.on) = this
+   break attenuates it. */
+.auto-vol-flag {
+    flex: 0 0 auto; z-index: 2;
+    width: 16px; height: 16px; border-radius: 4px; cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(0, 0, 0, 0.45);
+    color: rgba(255, 255, 255, 0.45); font-family: 'Assistant', sans-serif; font-size: 10px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center; line-height: 1;
+}
+.auto-vol-flag:hover { background: rgba(255, 255, 255, 0.85); color: #1c232b; }
+/* Attenuated: a solid gold chip — unmistakable against the muted default. */
+.auto-vol-flag.on { background: #ffd646; border-color: #ffd646; color: #3d3006; }
+.auto-vol-flag.on:hover { background: #ffe584; border-color: #ffe584; }
+
+/* Solo (volume) mode: one centred lane — no second block, no junction, no
+   overlap track. */
+.cross-editor.solo .cross-block-b,
+.cross-editor.solo .cross-junction,
+.cross-editor.solo .cross-overlap-track { display: none; }
+.cross-editor.solo .cross-block-a { top: 31%; }
+
+/* Combined preview VU: a thin full-width green bar at the editor's bottom.
+   The fill width tracks the summed peak of both items (rAF-driven). */
+.cross-vu {
+    flex: 0 0 5px; width: 100%; border-radius: 3px; overflow: hidden;
+    background: rgba(0, 0, 0, 0.4);
+}
+.cross-vu-fill {
+    height: 100%; width: 0;
+    background: var(--green-dot);
+    box-shadow: 0 0 6px rgba(53, 196, 111, 0.7);
 }

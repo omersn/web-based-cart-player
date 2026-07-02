@@ -1,6 +1,6 @@
-08:30|start|Morning break|11,12,6,8|0|auto
-10:00|start|Template: promo block|36,37|1|auto
-12:00|end|Noon break|4,36,37,7|1|auto
-13:00|start|Holiday special|36,37,38,5|1|manual
-17:30|start|Drivetime break|13,38,6|1|auto
-21:00|end|Evening break|5,14,8|1|auto
+08:30|start|Morning break|11,12,6,8|0|auto|0,0,0|-1,-1,-1,-1
+10:00|start|Template: promo block|36,37|1|auto|0|-1,-1
+12:00|end|Noon break|4,36,37,7|1|auto|1497,1497,1497|-1,-1,-1,-1
+13:00|start|Holiday special|36,37,38,5|1|manual|1442,781,1120|-1,-1,0.59,-1
+17:30|start|Drivetime break|13,38,6|1|auto|0,0|-1,-1,-1
+21:00|end|Evening break|5,8,14|1|auto|1497,1323|-1,0.16,-1

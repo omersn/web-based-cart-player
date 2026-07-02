@@ -77,6 +77,7 @@
                     groupId: it.groupId, name: it.name, file: it.file,
                     start: it.start, end: it.end, volume: it.volume, color: it.color, runtime: it.runtime,
                     cartId: it.cartId || null,
+                    overlapIn: it.overlapIn || 0, volEdited: !!it.volEdited,
                 })),
                 groups: liveGroups, // full chain definitions (see loadState)
             }));
@@ -119,6 +120,8 @@
                     id: idSeq++, groupId: d.groupId, name: d.name, file: d.file,
                     start: d.start, end: d.end, volume: d.volume, color: d.color, runtime: d.runtime,
                     cartId: d.cartId || null,
+                    overlapIn: Math.max(0, Math.round(Number(d.overlapIn) || 0)),
+                    volEdited: !!d.volEdited,
                     audio, played: false,
                 };
                 primeAudio(item);
@@ -171,7 +174,14 @@
         const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
         return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     }
-    function totalRuntime() { return state.items.reduce((a, it) => a + it.runtime, 0); }
+    // Total air length: overlapped launches (cross editor) shave their ms off
+    // the straight runtime sum. Items only carry overlapIn in planner mode
+    // for now, so live schedule math is unchanged until playback learns it.
+    function totalRuntime() {
+        const sum = state.items.reduce((a, it) => a + it.runtime, 0);
+        const lap = state.items.reduce((a, it, i) => a + (i > 0 ? (it.overlapIn || 0) : 0), 0) / 1000;
+        return Math.max(0, sum - lap);
+    }
     function actualStart() { return state.anchorMode === 'end' ? new Date(state.anchorTime.getTime() - totalRuntime() * 1000) : state.anchorTime; }
     function actualEnd() { return state.anchorMode === 'end' ? state.anchorTime : new Date(state.anchorTime.getTime() + totalRuntime() * 1000); }
     function secsToStart() { return (actualStart().getTime() - Date.now()) / 1000; }
@@ -183,9 +193,11 @@
         state.items.forEach((it, i) => {
             if (i < state.playingIndex) return;
             if (i === state.playingIndex) rem += Math.max(0, itemEnd(it) - it.audio.currentTime);
-            else rem += it.runtime;
+            // Upcoming crossfades shave their overlap off the remaining span —
+            // each later item launches overlapIn ms before its predecessor ends.
+            else rem += it.runtime - (it.overlapIn || 0) / 1000;
         });
-        return rem;
+        return Math.max(0, rem);
     }
 
     // ---- add --------------------------------------------------------------
@@ -214,6 +226,13 @@
                 volume: (d.volume != null && d.volume !== '') ? Number(d.volume) : 1,
                 color: String(d.color || '1'), runtime: Math.max(0, Number(d.runtime) || 0),
                 cartId: d.cartId || null, // 1-based carts.txt line, when known (planner adds)
+                // Cross editor (planner): ms this item launches BEFORE the
+                // previous one ends. 0 = butt joint. Rides with the item, so
+                // reordering keeps the early launch it was given.
+                overlapIn: Math.max(0, Math.round(Number(d.overlapIn) || 0)),
+                // Cross editor volume line: true once the break carries its
+                // own volume override for this item (vs the cart's default).
+                volEdited: !!d.volEdited,
                 audio, played: false,
             };
             if (gid != null) {
@@ -271,6 +290,7 @@
     }
     function removeAt(from, to) {
         if (state.locked || state.running) return;
+        resetCross(); // the gap being edited may not survive the removal
         state.items.slice(from, to + 1).forEach(it => { try { it.audio.pause(); } catch (e) {} });
         state.items.splice(from, to - from + 1);
         if (state.items.length === 0) resetSchedule();   // stays open + empty
@@ -301,14 +321,45 @@
         playNext();
         el('autoList').scrollTop = 0; // snap the queue back to the top as playback begins
     }
+    // A crossfading item that has already handed over but is still ringing
+    // out its tail while the next one plays. Killed on stop/pause/advance.
+    let tailOut = null; // { audio, timer }
+    function killTail() {
+        if (!tailOut) return;
+        clearTimeout(tailOut.timer);
+        try { tailOut.audio.pause(); } catch (e) {}
+        tailOut = null;
+    }
+    // The advance to item i fires overlapIn(i) ms BEFORE item i-1 ends (the
+    // cross editor's plan): the outgoing item keeps playing its tail while
+    // the incoming one is already on, then silences itself at its own end.
+    function advanceLeadMs(nextIndex) {
+        const nx = state.items[nextIndex];
+        return nx ? Math.max(0, nx.overlapIn || 0) : 0;
+    }
     function playNext() {
+        killTail(); // at most one tail rings at a time
         const prev = state.items[state.playingIndex];
         if (prev) {
-            try { prev.audio.pause(); } catch (e) {}
             clearTimeout(prev._timer);
             prev.played = true;
-            const prevId = prev.id;
-            setTimeout(() => removeItemById(prevId), 1000);
+            const prevAudio = prev.audio;
+            const nextIt = state.items[state.playingIndex + 1];
+            const fading = nextIt && (nextIt.overlapIn || 0) > 0;
+            let tailMs = 0;
+            if (fading) {
+                tailMs = Math.max(0, (itemEnd(prev) - prevAudio.currentTime) * 1000);
+                tailOut = { audio: prevAudio, timer: setTimeout(() => { try { prevAudio.pause(); } catch (e) {} tailOut = null; }, tailMs) };
+            } else {
+                try { prevAudio.pause(); } catch (e) {}
+            }
+            // Finished items shrink out of the live queue — but the planner's
+            // transport is just a PREVIEW: the break keeps its items. Removal
+            // waits for the tail (removeItemById pauses the audio).
+            if (!plannerMode) {
+                const prevId = prev.id;
+                setTimeout(() => removeItemById(prevId), Math.max(1000, tailMs + 300));
+            }
         }
         state.playingIndex++;
         if (state.playingIndex >= state.items.length) { endPlayback(); render(); return; }
@@ -318,22 +369,30 @@
         a.volume = it.volume;
         a.play().catch(() => {});
         clearTimeout(it._timer);
-        it._timer = setTimeout(() => playNext(), Math.max(0, (itemEnd(it) - it.start) * 1000));
+        it._timer = setTimeout(() => playNext(), Math.max(0, (itemEnd(it) - it.start) * 1000 - advanceLeadMs(state.playingIndex + 1)));
         render();
         centerCurrent();
         startProgress();
     }
-    function pause() { const it = state.items[state.playingIndex]; if (it) { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); } render(); }
+    function pause() {
+        killTail(); // a manual pause mid-fade silences the outgoing tail too
+        const it = state.items[state.playingIndex];
+        if (it) { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); }
+        render();
+    }
     function resume() {
         const it = state.items[state.playingIndex];
         if (!it) { playNext(); return; }
         it.audio.play().catch(() => {});
-        it._timer = setTimeout(() => playNext(), Math.max(0, (itemEnd(it) - it.audio.currentTime) * 1000));
+        it._timer = setTimeout(() => playNext(), Math.max(0, (itemEnd(it) - it.audio.currentTime) * 1000 - advanceLeadMs(state.playingIndex + 1)));
         render();
     }
     function endPlayback() {
         state.running = false; state.playingIndex = -1;
+        killTail();
         state.items.forEach(it => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
+        // Planner preview consumed nothing — drop the "played" dimming too.
+        if (plannerMode) state.items.forEach(it => { it.played = false; });
         stopProgress();
         // The tick loop skips syncLock() entirely once the queue is empty (see
         // below), so if playback finishes and drains to 0 items before the tick
@@ -653,6 +712,7 @@
         else nodes[idx].classList.add('drop-before');
     }
     function reorderBlock(src, insertBlockIndex) {
+        resetCross(); // an open cross editor's gap index is meaningless after a move
         const srcCount = src.to - src.from + 1;
         // insertBlockIndex counts blocks BEFORE removal; translate to an item index.
         let insertAt = insertBlockIndex >= dropBlocks.length
@@ -661,6 +721,10 @@
         const moved = state.items.splice(src.from, srcCount);
         if (src.from < insertAt) insertAt -= srcCount;
         state.items.splice(insertAt, 0, ...moved);
+        // Safety: a crossfade was tuned for one specific PAIR — any reorder
+        // voids the whole crossfade plan. Volume overrides ride their item
+        // and survive the move.
+        state.items.forEach((it) => { it.overlapIn = 0; });
         saveState();
         render();
     }
@@ -705,9 +769,13 @@
     // ---- render -----------------------------------------------------------
     function render() {
         stopRowPreview(); // rows (and their play-button refs) are about to be rebuilt
+        // A structural change may have invalidated the gap/item being edited.
+        if (crossGap >= 0 && crossGap >= state.items.length - 1) resetCross();
+        if (crossSolo >= 0 && crossSolo >= state.items.length) resetCross();
         const list = el('autoList');
         list.innerHTML = '';
-        blocks().forEach((block) => {
+        const blockList = blocks();
+        blockList.forEach((block, bi) => {
             const makeItemRow = (it, idx) => {
                 const row = document.createElement('div');
                 row.className = 'auto-item' + (idx === state.playingIndex ? ' playing' : '') + (it.played ? ' played' : '');
@@ -717,6 +785,9 @@
                     `<span class="auto-progress"></span>` +
                     (plannerMode ? `<button class="auto-item-play" title="Preview"><i class="ph-fill ph-play"></i></button>` : '') +
                     `<span class="auto-name"></span>` +
+                    // V badge on every planner row: gray = cart volume, yellow
+                    // = this break attenuates it. Click -> solo volume editor.
+                    (plannerMode ? `<button class="auto-vol-flag${it.volEdited ? ' on' : ''}" title="${it.volEdited ? 'Volume edited — click to adjust' : 'Adjust volume for this break'}">V</button>` : '') +
                     `<span class="auto-runtime">${fmtDur(it.runtime)}</span>` +
                     (block.groupId == null ? `<button class="auto-remove" title="Remove"><i class="ph ph-trash"></i></button>` : '');
                 row.querySelector('.auto-name').textContent = it.name;
@@ -724,6 +795,11 @@
                 if (rm) rm.addEventListener('click', (e) => { e.stopPropagation(); removeAt(block.from, block.to); });
                 const pv = row.querySelector('.auto-item-play');
                 if (pv) pv.addEventListener('click', (e) => { e.stopPropagation(); toggleRowPreview(it, pv); });
+                const vf = row.querySelector('.auto-vol-flag');
+                if (vf) vf.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (crossSolo === idx) closeCross(); else openVolume(idx);
+                });
                 return row;
             };
             if (block.groupId == null) {
@@ -744,7 +820,12 @@
                 attachDrag(g, block);
                 list.appendChild(g);
             }
+            // Planner only: a thin cross(fade) button in every gap between two
+            // items — opens the overlap editor at the panel's bottom. (No
+            // data-from attr, so the drag & drop index math skips these.)
+            if (plannerMode && bi < blockList.length - 1) list.appendChild(makeGapButton(block.to));
         });
+        if (plannerMode && crossActive()) updateCrossUI();
 
         // total (or remaining while running) — reads like the on-air countdown
         // bars elsewhere (red background, white text) while playing.
@@ -862,6 +943,19 @@
     setInterval(() => {
         syncLock();
         updateStrip();   // advance/pulse the breaks strip's "next" chip
+        // Watchdog: the playback advance rides setTimeout chains, which
+        // browsers clamp/drift in background tabs — a break could finish
+        // with the panel stuck "playing" and locked. The tick is the
+        // authority: if the item that should be on air has actually finished
+        // (audio ended, or past its end trim), force the advance its timer
+        // owed us — playNext() clears the stale timer itself, and on the
+        // last item it lands in endPlayback(), releasing the lock. A manual
+        // PAUSE is untouched: a paused item's clock stays short of its end.
+        if (state.running) {
+            const cur = state.items[state.playingIndex];
+            if (!cur) { endPlayback(); render(); }
+            else if (cur.audio.ended || cur.audio.currentTime >= itemEnd(cur) - 0.05) playNext();
+        }
         if (state.running) { el('autoTotal').textContent = fmtDur(remainingRuntime()); }
 
         if (state.items.length === 0) {
@@ -968,7 +1062,11 @@
         a.preload = 'metadata';
         a.addEventListener('loadedmetadata', () => { durCache[file] = a.duration || 0; renderStrip(); });
     }
-    function breakLength(b) { return b.items.reduce((s, id) => s + cartRuntime(resolveCart(id)), 0); }
+    function breakLength(b) {
+        const sum = b.items.reduce((s, id) => s + cartRuntime(resolveCart(id)), 0);
+        const lap = (b.overlaps || []).reduce((s, ms) => s + (ms || 0), 0) / 1000;
+        return Math.max(0, sum - lap);
+    }
     // Seconds from now to the break's HH:MM today; negative once it has passed.
     function secsToBreak(b) {
         const [hh, mm] = b.time.split(':').map(Number);
@@ -1094,10 +1192,26 @@
     // (locked, too close to start, won't fit, would overrun the hour). Any idle
     // queue content is REPLACED: loading a break means preparing that break.
     function resolveBreakItems(b) {
-        return b.items.map(resolveCart).filter(Boolean).map((c) => ({
-            name: c.name, file: c.file, start: c.start, end: c.end,
-            volume: c.volume, color: c.color, runtime: cartRuntime(c),
-        }));
+        // The break's per-item volume overrides AND per-gap overlaps (cross
+        // editor) ride into the live queue — indexed BEFORE dropping dead
+        // references so a missing cart can't shift its neighbours' values.
+        // A fade whose partner cart is gone is meaningless: it resets to 0.
+        const out = [];
+        let prevValid = false;
+        b.items.forEach((id, k) => {
+            const c = resolveCart(id);
+            if (!c) { prevValid = false; return; }
+            const vol = b.volumes && b.volumes[k] != null && b.volumes[k] >= 0 ? b.volumes[k] : null;
+            const lap = k > 0 && prevValid && b.overlaps ? Math.max(0, b.overlaps[k - 1] || 0) : 0;
+            out.push({
+                name: c.name, file: c.file, start: c.start, end: c.end,
+                volume: vol != null ? vol : c.volume, volEdited: vol != null,
+                overlapIn: out.length > 0 ? lap : 0,
+                color: c.color, runtime: cartRuntime(c),
+            });
+            prevValid = true;
+        });
+        return out;
     }
     // Record what was just loaded (for the yellow chip + the name box), but
     // only if the whole batch actually made it in — a refused addItems leaves
@@ -1173,6 +1287,7 @@
             panel.classList.add('planner-mode', 'active');
             render();
         } else {
+            resetCross();         // the editor (and its gap) belong to the planner
             state.items.forEach((it) => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
             state.items = [];
             plannerMode = false;
@@ -1212,14 +1327,26 @@
     }
 
     // Replace the editor's content (planner selects a break). No schedule
-    // involved — the break's air time is edited in the planner's list, not here.
-    function loadPlaylist(list) {
+    // involved — the break's air time is edited in the planner's list, not
+    // here. `overlaps` (optional) is the break's per-gap ms list; each value
+    // lands on the FOLLOWING item as its overlapIn. `volumes` (optional) is
+    // the break's per-item override list; >= 0 replaces the cart's volume.
+    function loadPlaylist(list, overlaps, volumes) {
+        resetCross();
         stopRowPreview();
         state.items.forEach((it) => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
         state.items = [];
         state.playingIndex = -1;
-        if (Array.isArray(list) && list.length) addItems(list, false);
-        else render();
+        if (Array.isArray(list) && list.length) {
+            const ov = Array.isArray(overlaps) ? overlaps : [];
+            const vol = Array.isArray(volumes) ? volumes : [];
+            addItems(list.map((d, k) => ({
+                ...d,
+                overlapIn: k > 0 ? (ov[k - 1] || 0) : 0,
+                volume: (vol[k] != null && vol[k] >= 0) ? vol[k] : d.volume,
+                volEdited: vol[k] != null && vol[k] >= 0,
+            })), false);
+        } else render();
     }
     /** Current queue as plain data (incl. cartId where known) for the planner. */
     function getItems() {
@@ -1228,11 +1355,479 @@
             start: it.start, end: it.end, volume: it.volume, color: it.color, runtime: it.runtime,
         }));
     }
+    /** Per-gap overlap ms values (count = items - 1), for the planner's save. */
+    function getOverlaps() {
+        return state.items.slice(1).map((it) => Math.max(0, Math.round(it.overlapIn || 0)));
+    }
+    /** Per-item volume overrides (-1 = none) for the planner's save. */
+    function getVolumes() {
+        return state.items.map((it) => it.volEdited ? Math.round((it.volume != null ? it.volume : 1) * 100) / 100 : -1);
+    }
+
+    // ---- cross (overlap) editor ---------------------------------------------
+    // Planner-only. Every gap between two queue items gets a thin full-width
+    // button (an elongated ✕ — two fades crossing; plain green once a saved
+    // overlap exists). Clicking one floats this editor as a 1:1 square
+    // anchored over the gap (overlapping the rows above/below): two lanes
+    // show the END of the upper item (its last ≤10 s) and the START of the
+    // lower one (its first ≤10 s) as real decoded waveforms; dragging the
+    // lower lane (⇄) LEFT launches it before the upper one ends. Play
+    // previews the joint with a read-only playhead — touching the lanes
+    // stops it. Save commits the ms onto the item (overlapIn) and closes;
+    // Clear commits a 0 and closes; Cancel closes without committing.
+    const CROSS_WINDOW = 10; // seconds of tail/head shown per lane
+    const GAP_X = '<svg viewBox="0 0 30 10" width="30" height="10" aria-hidden="true"><path d="M3 1.5 L27 8.5 M3 8.5 L27 1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+    let crossGap = -1;      // index of the gap being edited (items[gap] -> items[gap+1])
+    let crossSolo = -1;     // item index in single-track VOLUME mode (V badge); -1 = cross mode
+    let crossMs = 0;        // editor's current value
+    let crossSavedMs = 0;   // last value committed onto the item
+    let crossDrag = null;   // { startX, startMs, msPerPx, maxMs } while dragging
+    let crossVol = null;    // volume-line drafts { a, b, aEd, bEd, openA, openB }
+    let crossVolDrag = null; // 'a' | 'b' while dragging a volume handle
+    let crossSavedHook = null; // planner: re-commit + refresh meta after a save
+    const crossActive = () => crossGap >= 0 || crossSolo >= 0;
+    function resetCross() {
+        crossStopPreview();
+        crossGap = -1;
+        crossSolo = -1;
+        crossDrag = null;
+        crossVolDrag = null;
+        crossVol = null;
+        const ce = el('crossEditor');
+        if (ce) { ce.hidden = true; ce.classList.remove('solo'); }
+    }
+    function makeGapButton(i) {
+        const ms = Math.round(state.items[i + 1].overlapIn || 0);
+        // Green means a CROSSFADE exists — volume-only edits show as the V
+        // badge on the item row instead. Always present, always clickable.
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.gap = i;
+        btn.className = 'auto-gap' + (crossGap === i ? ' editing' : (ms > 0 ? ' set' : ''));
+        btn.title = ms > 0 ? `Overlap: ${(ms / 1000).toFixed(2)} s — click to edit` : 'Edit this joint (overlap / volume)';
+        btn.innerHTML = GAP_X;
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (crossGap === i) closeCross(); else openCross(i);
+        });
+        return btn;
+    }
+    function openCross(i) {
+        crossStopPreview();
+        crossGap = i;
+        crossSolo = -1;
+        crossSavedMs = Math.round(state.items[i + 1].overlapIn || 0);
+        crossMs = crossSavedMs;
+        // Volume-line drafts: start from each item's current effective volume
+        // (the cart's own, or the break's committed override).
+        const a = state.items[i], b = state.items[i + 1];
+        crossVol = {
+            a: a.volume != null ? a.volume : 1, aEd: !!a.volEdited,
+            b: b.volume != null ? b.volume : 1, bEd: !!b.volEdited,
+            openA: a.volume != null ? a.volume : 1, openB: b.volume != null ? b.volume : 1,
+        };
+        const ed = el('crossEditor');
+        ed.hidden = false;
+        ed.classList.remove('solo');
+        crossLoadWaves();
+        render(); // repaint gap highlights + editor geometry
+    }
+    // Single-track VOLUME mode (the item row's yellow V badge): the same
+    // window with just one lane — the whole trimmed item — and its volume
+    // line. No overlap here; Clear resets the override to the cart's volume.
+    function openVolume(i) {
+        crossStopPreview();
+        crossGap = -1;
+        crossSolo = i;
+        const it = state.items[i];
+        const v = it.volume != null ? it.volume : 1;
+        crossVol = { a: v, aEd: !!it.volEdited, b: 1, bEd: false, openA: v, openB: 1 };
+        const ed = el('crossEditor');
+        ed.hidden = false;
+        ed.classList.add('solo');
+        crossDrawKey = '';
+        crossBuffer(it.file).then(() => { if (crossSolo === i) crossDrawWaves(); });
+        render();
+    }
+    function closeCross() {
+        if (!crossActive()) return;
+        resetCross();
+        render();
+    }
+    // Lane windows: never longer than the item itself (a 3 s sting shows 3 s).
+    // runtime is the TRIMMED length (end - start), so trims are respected.
+    const crossTail = (a) => Math.min(CROSS_WINDOW, Math.max(0.5, a.runtime));
+    const crossHead = (b) => Math.min(CROSS_WINDOW, Math.max(0.5, b.runtime));
+    // Safety cap: an overlap may never exceed 30% of the SHORTER item's
+    // trimmed length (nor the visible tail) — a deep crossfade into a short
+    // sting is always a mistake on air.
+    const crossMaxMs = (a, b) => Math.round(Math.min(
+        crossTail(a) * 1000,
+        0.3 * Math.min(a.runtime, b.runtime) * 1000
+    ));
+    // The editor covers the playlist view AND everything below it — all the
+    // way down over the transport (its play button must not be reachable
+    // while a joint or a volume line is being edited).
+    function sizeCrossEditor() {
+        const panel = el('automationPanel');
+        const ed = el('crossEditor');
+        const pr = panel.getBoundingClientRect();
+        const lr = el('autoList').getBoundingClientRect();
+        const top = Math.max(0, Math.round(lr.top - pr.top));
+        ed.style.left = '0px';
+        ed.style.width = panel.clientWidth + 'px';
+        ed.style.top = top + 'px';
+        ed.style.height = (panel.clientHeight - top) + 'px';
+    }
+    // Volume line helper: 0 dB at the top of the block, silence at the
+    // bottom; the handle rides the line at the block's horizontal centre.
+    function setVolLine(blk, vol) {
+        const y = ((1 - vol) * 100).toFixed(1) + '%';
+        blk.querySelector('.cross-vol-line').style.top = y;
+        const hd = blk.querySelector('.cross-vol-handle');
+        hd.style.top = y;
+        hd.querySelector('span').textContent = Math.round(vol * 100) + '%';
+    }
+    // Single-track volume mode: one full-width lane (the whole trimmed item).
+    function updateSoloUI() {
+        const it = state.items[crossSolo];
+        if (!it) { resetCross(); return; }
+        sizeCrossEditor();
+        const lanes = el('crossLanes');
+        const blkA = el('crossBlockA');
+        blkA.style.left = '0px';
+        blkA.style.width = (lanes.clientWidth || 1) + 'px';
+        blkA.style.setProperty('--blk', CAT[it.color] || CAT['1']);
+        blkA.querySelector('.cross-name').textContent = it.name;
+        if (crossVol) setVolLine(blkA, crossVol.a);
+        el('crossTitle').textContent = it.name;
+        el('crossScaleTail').textContent = '0:00';
+        el('crossScaleHead').textContent = fmtDur(it.runtime);
+        el('crossReadout').textContent = `volume ${Math.round((crossVol ? crossVol.a : 1) * 100)}%`;
+        el('crossReadout').classList.toggle('on', !!(crossVol && (crossVol.aEd || crossVol.a !== crossVol.openA)));
+        el('crossClear').title = 'Reset to the cart volume and close';
+        const dirty = crossVol && crossVol.a !== crossVol.openA;
+        el('crossSave').disabled = !dirty;
+        el('crossSave').classList.toggle('dirty', !!dirty);
+        crossDrawWaves();
+    }
+    function updateCrossUI() {
+        if (crossSolo >= 0) { updateSoloUI(); return; }
+        const a = state.items[crossGap], b = state.items[crossGap + 1];
+        if (!a || !b) { resetCross(); return; }
+        sizeCrossEditor();
+        el('crossClear').title = 'Remove the overlap and close';
+
+        const tail = crossTail(a), head = crossHead(b), win = tail + head;
+        crossMs = Math.min(crossMs, crossMaxMs(a, b));
+        const lanes = el('crossLanes');
+        const w = lanes.clientWidth || 1;
+        const px = (secs) => Math.round((secs / win) * w);
+        const blkA = el('crossBlockA'), blkB = el('crossBlockB');
+        blkA.style.left = '0px';
+        blkA.style.width = px(tail) + 'px';
+        blkA.style.setProperty('--blk', CAT[a.color] || CAT['1']);
+        blkA.querySelector('.cross-name').textContent = a.name;
+        blkB.style.left = px(tail - crossMs / 1000) + 'px';
+        blkB.style.width = px(head) + 'px';
+        blkB.style.setProperty('--blk', CAT[b.color] || CAT['1']);
+        blkB.querySelector('.cross-name').textContent = b.name;
+        if (crossVol) { setVolLine(blkA, crossVol.a); setVolLine(blkB, crossVol.b); }
+        el('crossJunction').style.left = px(tail) + 'px';
+        // Gray track between the two lanes spanning exactly the overlap
+        // region (B's launch to A's end); collapses to nothing at 0 overlap.
+        const trk = el('crossOverlapTrack');
+        trk.style.left = px(tail - crossMs / 1000) + 'px';
+        trk.style.width = Math.max(0, px(tail) - px(tail - crossMs / 1000)) + 'px';
+        el('crossTitle').textContent = `${a.name} → ${b.name}`;
+        el('crossScaleTail').textContent = `end −${tail.toFixed(1)}s`;
+        el('crossScaleHead').textContent = `start +${head.toFixed(1)}s`;
+        el('crossReadout').textContent = crossMs > 0 ? `overlap ${(crossMs / 1000).toFixed(2)} s (${crossMs} ms)` : 'no overlap';
+        el('crossReadout').classList.toggle('on', crossMs > 0);
+        const dirty = crossMs !== crossSavedMs ||
+            (crossVol && (crossVol.a !== crossVol.openA || crossVol.b !== crossVol.openB));
+        el('crossSave').disabled = !dirty;
+        el('crossSave').classList.toggle('dirty', !!dirty);
+        crossDrawWaves(); // canvases track the block boxes; cheap when unchanged
+    }
+    // Commit onto the items and close. Save lands the overlap AND the volume
+    // lines; Clear commits only a 0 overlap (volumes stay as committed);
+    // Cancel skips this entirely.
+    function commitCross(ms, withVolumes) {
+        if (crossGap < 0) return;
+        const a = state.items[crossGap], b = state.items[crossGap + 1];
+        if (withVolumes && crossVol) {
+            if (crossVol.a !== crossVol.openA) { a.volume = crossVol.a; a.volEdited = true; }
+            if (crossVol.b !== crossVol.openB) { b.volume = crossVol.b; b.volEdited = true; }
+        }
+        b.overlapIn = ms;
+        closeCross(); // render() repaints the gap button green/gray
+        if (crossSavedHook) crossSavedHook();
+    }
+    // Solo (volume) mode commits: Save lands the line as this break's
+    // override; Clear (reset=true) drops the override — back to the cart's
+    // own volume — and the V badge disappears.
+    function commitSolo(reset) {
+        const it = state.items[crossSolo];
+        if (!it) { resetCross(); return; }
+        if (reset) {
+            const base = it.cartId ? resolveCart(it.cartId) : null;
+            it.volume = base && base.volume != null ? base.volume : 1;
+            it.volEdited = false;
+        } else if (crossVol) {
+            it.volume = crossVol.a;
+            it.volEdited = true;
+        }
+        closeCross();
+        if (crossSavedHook) crossSavedHook();
+    }
+
+    // -- waveforms: decode once per file (shared ctx), draw the visible
+    //    window (item A's tail / item B's head) into each block's canvas.
+    let waveCtx = null;                 // one shared AudioContext for decoding
+    const waveBufs = {};                // file -> AudioBuffer | Promise
+    let crossDrawKey = '';              // skip redraws when nothing changed
+    function crossBuffer(file) {
+        if (waveBufs[file] instanceof AudioBuffer) return Promise.resolve(waveBufs[file]);
+        if (!waveBufs[file]) {
+            waveCtx = waveCtx || new (window.AudioContext || window.webkitAudioContext)();
+            waveBufs[file] = fetch('uploads/' + file)
+                .then((r) => r.arrayBuffer())
+                .then((buf) => waveCtx.decodeAudioData(buf))
+                .then((decoded) => { waveBufs[file] = decoded; return decoded; })
+                .catch(() => null);
+        }
+        return Promise.resolve(waveBufs[file]);
+    }
+    function crossLoadWaves() {
+        const a = state.items[crossGap], b = state.items[crossGap + 1];
+        if (!a || !b) return;
+        crossDrawKey = ''; // force a redraw once the buffers land
+        Promise.all([crossBuffer(a.file), crossBuffer(b.file)]).then(() => {
+            if (crossGap >= 0) crossDrawWaves();
+        });
+    }
+    function drawWaveSegment(canvas, buffer, fromSec, toSec) {
+        const w = canvas.clientWidth, h = canvas.clientHeight;
+        if (!w || !h) return;
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = w * dpr; canvas.height = h * dpr;
+        const g = canvas.getContext('2d');
+        g.scale(dpr, dpr);
+        if (!buffer) return; // decode failed: block stays a plain colour
+        const data = buffer.getChannelData(0);
+        const sr = buffer.sampleRate;
+        const s0 = Math.max(0, Math.floor(fromSec * sr));
+        const s1 = Math.min(data.length, Math.max(s0 + 1, Math.floor(toSec * sr)));
+        const bars = Math.max(1, Math.floor(w / 3));
+        const per = Math.max(1, Math.floor((s1 - s0) / bars));
+        g.fillStyle = 'rgba(255, 255, 255, 0.75)';
+        for (let i = 0; i < bars; i++) {
+            let peak = 0;
+            const from = s0 + i * per, to = Math.min(s1, from + per);
+            for (let j = from; j < to; j += 16) peak = Math.max(peak, Math.abs(data[j]));
+            const bh = Math.max(1, peak * (h - 6));
+            g.fillRect(i * 3, (h - bh) / 2, 2, bh);
+        }
+    }
+    function crossDrawWaves() {
+        // Solo (volume) mode: one lane showing the WHOLE trimmed item.
+        if (crossSolo >= 0) {
+            const it = state.items[crossSolo];
+            if (!it) return;
+            const buf = waveBufs[it.file] instanceof AudioBuffer ? waveBufs[it.file] : null;
+            const cv = el('crossBlockA').querySelector('canvas');
+            const key = `solo|${it.file}|${cv.clientWidth}x${cv.clientHeight}|${!!buf}`;
+            if (key === crossDrawKey) return;
+            crossDrawKey = key;
+            drawWaveSegment(cv, buf, it.start, itemEnd(it));
+            return;
+        }
+        const a = state.items[crossGap], b = state.items[crossGap + 1];
+        if (!a || !b) return;
+        const bufA = waveBufs[a.file] instanceof AudioBuffer ? waveBufs[a.file] : null;
+        const bufB = waveBufs[b.file] instanceof AudioBuffer ? waveBufs[b.file] : null;
+        const cvA = el('crossBlockA').querySelector('canvas');
+        const cvB = el('crossBlockB').querySelector('canvas');
+        const key = `${a.file}|${b.file}|${cvA.clientWidth}x${cvA.clientHeight}|${cvB.clientWidth}|${!!bufA}|${!!bufB}`;
+        if (key === crossDrawKey) return;
+        crossDrawKey = key;
+        const endA = itemEnd(a);
+        drawWaveSegment(cvA, bufA, Math.max(a.start, endA - crossTail(a)), endA);
+        drawWaveSegment(cvB, bufB, b.start, b.start + crossHead(b));
+    }
+
+    // -- preview: play the joint as it would air — item A's tail, item B
+    //    launching crossMs early — under a read-only playhead. Touching the
+    //    lanes (or dragging, or any close path) stops it.
+    let crossPrev = null; // { audA, audB?, t0, timer, ts0, ts1, win, vu nodes }
+    function crossStopPreview() {
+        if (!crossPrev) return;
+        const p = crossPrev;
+        crossPrev = null;
+        clearInterval(p.timer);
+        clearTimeout(p.startBTimer);
+        clearInterval(p.vuTimer);
+        [p.audA, p.audB].forEach((aud) => { try { aud && aud.pause(); } catch (e) {} });
+        // Tear the VU graph down so the next preview starts a fresh one.
+        [...(p.srcs || []), p.analyser].forEach((n) => { try { n && n.disconnect(); } catch (e) {} });
+        const vu = el('crossVuFill');
+        if (vu) vu.style.width = '0%';
+        const ph = el('crossPlayhead');
+        if (ph) ph.hidden = true;
+        const btn = el('crossPlay');
+        if (btn) btn.innerHTML = '<i class="ph-fill ph-play"></i> Play';
+    }
+    // Feed the given audio elements through ONE analyser (via the shared
+    // decode context, resumed here — the Play click is our gesture) and
+    // drive the green VU strip. +25% fake gain keeps it lively (demo clips
+    // sit well under full scale). setInterval, not rAF — rAF freezes when
+    // the tab loses focus (same reason the item progress bars use one).
+    function wireVu(p, auds) {
+        try {
+            waveCtx = waveCtx || new (window.AudioContext || window.webkitAudioContext)();
+            waveCtx.resume();
+            p.analyser = waveCtx.createAnalyser();
+            p.analyser.fftSize = 512;
+            p.srcs = auds.map((aud) => {
+                const s = waveCtx.createMediaElementSource(aud);
+                s.connect(p.analyser);
+                return s;
+            });
+            p.analyser.connect(waveCtx.destination);
+            const buf = new Uint8Array(p.analyser.fftSize);
+            p.vuTimer = setInterval(() => {
+                p.analyser.getByteTimeDomainData(buf);
+                let peak = 0;
+                for (let i = 0; i < buf.length; i++) {
+                    const v = Math.abs(buf[i] - 128) / 128;
+                    if (v > peak) peak = v;
+                }
+                el('crossVuFill').style.width = Math.min(100, Math.round(peak * 125)) + '%';
+            }, 33);
+        } catch (e) { /* no VU is never fatal — audio still plays */ }
+    }
+    function crossPlayToggle() {
+        if (crossPrev) { crossStopPreview(); return; }
+        stopRowPreview(); // one preview at a time
+        // Solo (volume) mode: audition the whole trimmed item at the draft
+        // volume, playhead sweeping the single lane.
+        if (crossSolo >= 0) {
+            const it = state.items[crossSolo];
+            if (!it) return;
+            const win = Math.max(0.5, it.runtime);
+            const aud = new Audio('uploads/' + it.file);
+            aud.volume = crossVol ? crossVol.a : (it.volume != null ? it.volume : 1);
+            try { aud.currentTime = it.start; } catch (e) {}
+            const p = { audA: aud, t0: performance.now(), ts0: 0, ts1: win, win };
+            wireVu(p, [aud]);
+            aud.play().catch(() => {});
+            p.timer = setInterval(() => {
+                const t = (performance.now() - p.t0) / 1000;
+                if (t >= win) { crossStopPreview(); return; }
+                const ph = el('crossPlayhead');
+                ph.hidden = false;
+                ph.style.left = Math.round((t / win) * (el('crossLanes').clientWidth || 1)) + 'px';
+            }, 40);
+            crossPrev = p;
+            el('crossPlay').innerHTML = '<i class="ph-fill ph-stop"></i> Stop';
+            return;
+        }
+        const a = state.items[crossGap], b = state.items[crossGap + 1];
+        if (!a || !b) return;
+        const tail = crossTail(a), head = crossHead(b), win = tail + head;
+        const overlap = crossMs / 1000;
+        const startB = tail - overlap;                       // window-seconds where B launches
+        const endB = startB + head;
+        // Preview just the joint: 1.5 s before the active overlap begins (B's
+        // launch) to 1.5 s after it ends (A's tail-out) — not the full lanes.
+        const PAD = 1.5;
+        const ts0 = Math.max(0, startB - PAD);
+        const ts1 = Math.min(tail + PAD, Math.max(tail, endB));
+        const audA = new Audio('uploads/' + a.file);
+        const audB = new Audio('uploads/' + b.file);
+        // Volume-line drafts apply to the preview — that's what they're for.
+        audA.volume = crossVol ? crossVol.a : (a.volume != null ? a.volume : 1);
+        audB.volume = crossVol ? crossVol.b : (b.volume != null ? b.volume : 1);
+        const endA = itemEnd(a);
+        try { audA.currentTime = Math.max(a.start, endA - tail) + ts0; } catch (e) {}
+        try { audB.currentTime = b.start; } catch (e) {}
+        const p = { audA, audB, t0: performance.now(), ts0, ts1, win };
+        wireVu(p, [audA, audB]); // combined meter — the joint exactly as it airs
+        if (ts0 < tail) audA.play().catch(() => {});
+        p.startBTimer = setTimeout(() => { if (crossPrev === p) audB.play().catch(() => {}); }, Math.max(0, (startB - ts0) * 1000));
+        p.timer = setInterval(() => {
+            const t = ts0 + (performance.now() - p.t0) / 1000; // window-seconds
+            if (t >= p.ts1) { crossStopPreview(); return; }
+            if (t >= tail) { try { audA.pause(); } catch (e) {} }             // A's window is over
+            if (t >= endB) { try { audB.pause(); } catch (e) {} }
+            const lanes = el('crossLanes');
+            const ph = el('crossPlayhead');
+            ph.hidden = false;
+            ph.style.left = Math.round((t / p.win) * (lanes.clientWidth || 1)) + 'px';
+        }, 40);
+        crossPrev = p;
+        el('crossPlay').innerHTML = '<i class="ph-fill ph-stop"></i> Stop';
+    }
+
+    function wireCross() {
+        const blkB = el('crossBlockB');
+        if (!blkB) return; // markup not present (shouldn't happen, but never fatal)
+        // Touching the lanes while previewing STOPS the preview (read-only
+        // playhead); the same touch never starts a drag.
+        el('crossLanes').addEventListener('pointerdown', () => { if (crossPrev) crossStopPreview(); }, true);
+        blkB.addEventListener('pointerdown', (e) => {
+            if (crossGap < 0 || crossPrev) return;
+            e.preventDefault();
+            const a = state.items[crossGap], b = state.items[crossGap + 1];
+            if (!a || !b) return;
+            const win = crossTail(a) + crossHead(b);
+            crossDrag = {
+                startX: e.clientX,
+                startMs: crossMs,
+                msPerPx: (win * 1000) / (el('crossLanes').clientWidth || 1),
+                maxMs: crossMaxMs(a, b),
+            };
+        });
+        // Volume handles: vertical drag, top = 100%, bottom = silent. The
+        // pointerdown must not fall through to block B's overlap drag.
+        [['crossBlockA', 'a'], ['crossBlockB', 'b']].forEach(([blockId, key]) => {
+            el(blockId).querySelector('.cross-vol-handle').addEventListener('pointerdown', (e) => {
+                if (!crossActive() || crossPrev) return;
+                e.preventDefault();
+                e.stopPropagation();
+                crossVolDrag = key;
+            });
+        });
+        document.addEventListener('pointermove', (e) => {
+            if (!crossActive()) return;
+            if (crossVolDrag && crossVol) {
+                const blk = el(crossVolDrag === 'a' ? 'crossBlockA' : 'crossBlockB');
+                const r = blk.getBoundingClientRect();
+                const vol = Math.max(0, Math.min(1, 1 - (e.clientY - r.top) / (r.height || 1)));
+                crossVol[crossVolDrag] = Math.round(vol * 100) / 100;
+                updateCrossUI();
+                return;
+            }
+            if (!crossDrag) return;
+            // Dragging LEFT increases the overlap (item 2 launches earlier).
+            const val = crossDrag.startMs + (crossDrag.startX - e.clientX) * crossDrag.msPerPx;
+            crossMs = Math.round(Math.max(0, Math.min(crossDrag.maxMs, val)));
+            updateCrossUI();
+        });
+        document.addEventListener('pointerup', () => { crossDrag = null; crossVolDrag = null; });
+        el('crossPlay').addEventListener('click', crossPlayToggle);
+        el('crossClear').addEventListener('click', () => { if (crossSolo >= 0) commitSolo(true); else commitCross(0, false); });
+        el('crossSave').addEventListener('click', () => { if (crossSolo >= 0) commitSolo(false); else commitCross(crossMs, true); });
+        el('crossCancel').addEventListener('click', closeCross);
+        window.addEventListener('resize', () => { if (crossActive()) updateCrossUI(); });
+    }
 
     // ---- wire up ----------------------------------------------------------
     function init() {
         buildPickerCombos();
         initListDragDrop();
+        wireCross();
         el('autoHeader').addEventListener('click', () => togglePop());
         el('autoAnchorToggle').addEventListener('click', (e) => { e.stopPropagation(); toggleAnchor(); });
         el('autoPopOk').addEventListener('click', () => commitDraft());
@@ -1284,6 +1879,11 @@
         setPlannerMode,
         loadPlaylist,
         getItems,
+        getOverlaps,
+        getVolumes,
+        // The planner re-commits the selected break (and refreshes its meta
+        // line) whenever a cross-editor save lands.
+        onOverlapSaved: (fn) => { crossSavedHook = fn; },
         clear: () => loadPlaylist([]),
         isPlannerMode: () => plannerMode,
     };

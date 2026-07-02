@@ -365,6 +365,55 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
 
             <div class="auto-list" id="autoList"></div>
 
+            <!-- Cross (overlap) editor — opened by the thin ✕ gap buttons the
+                 planner renders between queue items. A floating square window
+                 anchored over its gap (overlapping the rows above/below). Top
+                 lane: the END of the item above; bottom lane: the START of the
+                 item below (drag ⇄ left to launch before the top one ends),
+                 both with real decoded waveforms. Play previews the joint with
+                 a read-only playhead — touching the lanes stops it. -->
+            <div class="cross-editor" id="crossEditor" hidden>
+                <div class="cross-head">
+                    <span class="cross-title" id="crossTitle"></span>
+                    <span class="cross-readout" id="crossReadout">no overlap</span>
+                </div>
+                <div class="cross-lanes" id="crossLanes">
+                    <div class="cross-junction" id="crossJunction"></div>
+                    <div class="cross-playhead" id="crossPlayhead" hidden></div>
+                    <!-- Gray strip between the lanes marking the overlap span. -->
+                    <div class="cross-overlap-track" id="crossOverlapTrack"></div>
+                    <!-- Each block: waveform canvas + a single flat volume-
+                         automation line (no nodes) with its drag handle at the
+                         block's centre — up = louder, top = 100%. -->
+                    <div class="cross-block cross-block-a" id="crossBlockA">
+                        <canvas class="cross-wave"></canvas>
+                        <div class="cross-vol-line"></div>
+                        <div class="cross-vol-handle" title="Volume"><span></span></div>
+                        <span class="cross-name"></span>
+                    </div>
+                    <div class="cross-block cross-block-b" id="crossBlockB">
+                        <canvas class="cross-wave"></canvas>
+                        <div class="cross-vol-line"></div>
+                        <div class="cross-vol-handle" title="Volume"><span></span></div>
+                        <span class="cross-name"></span>
+                        <i class="ph ph-arrows-left-right cross-drag-hint"></i>
+                    </div>
+                </div>
+                <div class="cross-scale">
+                    <span id="crossScaleTail"></span>
+                    <span class="cross-scale-mid">item boundary</span>
+                    <span id="crossScaleHead"></span>
+                </div>
+                <div class="cross-btns">
+                    <button type="button" class="cross-btn" id="crossPlay" title="Preview the joint"><i class="ph-fill ph-play"></i> Play</button>
+                    <button type="button" class="cross-btn cross-clear" id="crossClear" title="Remove the overlap and close"><i class="ph ph-arrow-counter-clockwise"></i> Clear</button>
+                    <button type="button" class="cross-btn cross-save" id="crossSave" disabled><i class="ph ph-floppy-disk"></i> Save</button>
+                    <button type="button" class="cross-btn" id="crossCancel">Cancel</button>
+                </div>
+                <!-- Combined VU (both items summed) while the preview runs. -->
+                <div class="cross-vu"><div class="cross-vu-fill" id="crossVuFill"></div></div>
+            </div>
+
             <div class="auto-total" id="autoTotalRow"><span id="autoTotalLabel">Total</span><span id="autoTotal">0:00</span></div>
 
             <!-- Playback control area: mode switch always; AUTO shows the clocks,

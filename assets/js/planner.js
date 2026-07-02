@@ -31,7 +31,10 @@
     const cartById = (id) => (window.CARTS || []).find((c) => c.i === id - 1) || null;
     const cartRuntime = (c) => (c && c.end != null) ? Math.max(0, c.end - (c.start || 0)) : 0;
     const fmtDur = (s) => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
-    const breakLength = (b) => b.items.reduce((s, id) => s + cartRuntime(cartById(id)), 0);
+    // Overlapped launches (cross editor) shave their ms off the runtime sum.
+    const breakLength = (b) => Math.max(0,
+        b.items.reduce((s, id) => s + cartRuntime(cartById(id)), 0) -
+        (b.overlaps || []).reduce((s, ms) => s + (ms || 0), 0) / 1000);
     const asItem = (c) => ({
         cartId: c.i + 1, name: c.name, file: c.file, start: c.start, end: c.end,
         volume: c.volume, color: c.color, runtime: cartRuntime(c),
@@ -243,6 +246,7 @@
                 b: {
                     time: 'NOTIME', anchor: b.anchor, name: (b.name || 'Break') + ' (copy)',
                     items: [...b.items], enabled: b.enabled !== false, manual: !!b.manual,
+                    overlaps: [...(b.overlaps || [])], volumes: [...(b.volumes || [])],
                 },
             };
             renderBreaks();
@@ -335,7 +339,7 @@
         commitEditor();
         sel = i;
         const items = (plan[i] ? plan[i].items : []).map(cartById).filter(Boolean).map(asItem);
-        window.Automation.loadPlaylist(items);
+        window.Automation.loadPlaylist(items, plan[i] ? plan[i].overlaps || [] : [], plan[i] ? plan[i].volumes || [] : []);
         renderBreaks();
     }
     function addBreak() {
@@ -346,7 +350,7 @@
         const taken = new Set(plan.filter((b) => b.enabled !== false && !b.manual).map((b) => b.time));
         let h = 12, m = 0;
         while (taken.has(`${pad(h)}:${pad(m)}`)) { m += 5; if (m >= 60) { m = 0; h = (h + 1) % 24; } }
-        plan.push({ time: `${pad(h)}:${pad(m)}`, anchor: 'start', name: 'New break', items: [], enabled: true, manual: false });
+        plan.push({ time: `${pad(h)}:${pad(m)}`, anchor: 'start', name: 'New break', items: [], enabled: true, manual: false, overlaps: [], volumes: [] });
         sel = plan.length - 1;
         window.Automation.loadPlaylist([]);
         renderBreaks();
@@ -359,10 +363,14 @@
         else if (sel > i) sel--;
         renderBreaks();
     }
-    // Pull the editor's current queue back into the selected break (as ids).
+    // Pull the editor's current queue back into the selected break (as ids),
+    // along with the per-gap overlaps and per-item volume overrides the
+    // cross editor set.
     function commitEditor() {
         if (sel < 0 || !plan[sel]) return;
         plan[sel].items = window.Automation.getItems().map((it) => it.cartId).filter(Boolean);
+        plan[sel].overlaps = window.Automation.getOverlaps();
+        plan[sel].volumes = window.Automation.getVolumes();
     }
     function isDirty() {
         commitEditor();
@@ -372,7 +380,7 @@
     // ---- open / close / save ------------------------------------------------
     function open() {
         if (!window.Automation.setPlannerMode(true)) return; // refused while playing
-        plan = (window.BREAKS || []).map((b) => ({ ...b, items: [...b.items] }));
+        plan = (window.BREAKS || []).map((b) => ({ ...b, items: [...b.items], overlaps: [...(b.overlaps || [])], volumes: [...(b.volumes || [])] }));
         sel = -1;
         draft = null;
         treeQuery = ''; favOnly = false; // fresh filters each session
@@ -461,6 +469,9 @@
     function init() {
         const openBtn = $('chip-planner');
         if (openBtn) openBtn.addEventListener('click', open);
+        // A cross-editor save changes the selected break's overlaps (and its
+        // real length) — pull it into the plan and refresh the meta line.
+        window.Automation.onOverlapSaved(() => { commitEditor(); renderBreaks(); });
         // Tree toolbar: live search + favourites-only filter.
         $('ptreeSearch').addEventListener('input', (e) => { treeQuery = e.target.value; renderTree(); });
         $('ptreeFavFilter').addEventListener('click', (e) => {

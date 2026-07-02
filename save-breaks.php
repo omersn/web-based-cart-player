@@ -72,6 +72,21 @@ foreach ($payload['breaks'] as $i => $b) {
             exit;
         }
     }
+    // Per-gap overlaps (cross editor): fit to exactly count(items)-1 and
+    // clamp each to 0..10s — a malformed client can't inflate the file.
+    $ovIn = array_values(array_map('intval', (array) ($b['overlaps'] ?? [])));
+    $ov = [];
+    for ($g = 0; $g < max(0, count($items) - 1); $g++) {
+        $ov[] = max(0, min(10000, $ovIn[$g] ?? 0));
+    }
+    // Per-item volume overrides (cross editor's volume line): one per item;
+    // anything outside 0..1 collapses to -1 = "no override".
+    $volIn = array_values((array) ($b['volumes'] ?? []));
+    $vols = [];
+    for ($g = 0; $g < count($items); $g++) {
+        $v = isset($volIn[$g]) && is_numeric($volIn[$g]) ? (float) $volIn[$g] : -1;
+        $vols[] = ($v >= 0 && $v <= 1) ? round($v, 2) : -1;
+    }
     $clean[] = [
         'time'    => $time,
         'anchor'  => ((string) ($b['anchor'] ?? 'start')) === 'end' ? 'end' : 'start',
@@ -79,6 +94,8 @@ foreach ($payload['breaks'] as $i => $b) {
         'items'   => $items,
         'enabled' => $enabled,
         'manual'  => $manual,
+        'overlaps' => $ov,
+        'volumes' => $vols,
     ];
 }
 
