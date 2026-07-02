@@ -142,6 +142,58 @@ function breaks_referencing(array $ids): array
     ));
 }
 
+/**
+ * Feature switches (data/settings.txt, one "key|value" per line). Unknown
+ * keys are ignored; missing keys fall back to the defaults below. All are
+ * UI-level toggles — they enable/disable buttons, nothing deeper.
+ *   mobile      Mobile-access (QR) button
+ *   download    Download button
+ *   automation  Automation playlist + break planner buttons
+ *   ids_window  Station-ID / sweepers window button
+ *   dj_mode     DJ layout button (placeholder — layout not built yet)
+ */
+function load_settings(): array
+{
+    $s = ['mobile' => 0, 'download' => 0, 'automation' => 1, 'ids_window' => 1, 'dj_mode' => 0];
+    $path  = data_path('settings.txt');
+    $lines = file_exists($path) ? file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
+    foreach ($lines as $line) {
+        [$k, $v] = array_pad(explode('|', $line, 2), 2, '');
+        if (array_key_exists(trim($k), $s)) $s[trim($k)] = trim($v) === '1' ? 1 : 0;
+    }
+    return $s;
+}
+
+/**
+ * Station name: the manager's Station tab writes an override to
+ * data/station.txt; the config.php constant stays as the fallback/default.
+ */
+function station_name(): string
+{
+    $path = data_path('station.txt');
+    $name = file_exists($path) ? trim((string) file_get_contents($path)) : '';
+    return $name !== '' ? $name : STATION_NAME;
+}
+
+/** Uploaded custom logo (manager Station tab), falling back to the default. */
+function station_logo(): string
+{
+    foreach (['logo-custom.svg', 'logo-custom.png'] as $f) {
+        if (file_exists(BASE_DIR . '/assets/img/' . $f)) return 'assets/img/' . $f;
+    }
+    return 'assets/img/logo.svg';
+}
+
+/** Persist the switches. Returns false on failure. */
+function save_settings(array $s): bool
+{
+    $lines = [];
+    foreach (load_settings() as $k => $def) {
+        $lines[] = $k . '|' . ((isset($s[$k]) ? $s[$k] : $def) ? '1' : '0');
+    }
+    return file_put_contents(data_path('settings.txt'), implode("\n", $lines) . "\n", LOCK_EX) !== false;
+}
+
 /** Persist the breaks list back to data/breaks.txt. Returns false on failure. */
 function save_breaks(array $breaks): bool
 {

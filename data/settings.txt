@@ -1,0 +1,5 @@
+mobile|0
+download|0
+automation|1
+ids_window|1
+dj_mode|1

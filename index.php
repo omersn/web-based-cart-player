@@ -18,6 +18,7 @@ header('Expires: 0');
 ensure_session();
 
 $labels     = load_section_labels();
+$settings   = load_settings();   // feature switches (manager Options tab)
 $statusFile = data_path('status.txt');
 $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : '';
 
@@ -46,8 +47,30 @@ foreach (load_carts() as $i => $line) {
 // The daily commercial-breaks plan (planner-editable, admin-gated on save).
 $breaks = load_breaks();
 
-// Split "Demo Radio Station" -> "DEMO RADIO" / "STATION" for the two-line brand mark.
-$nameWords = preg_split('/\s+/', trim(STATION_NAME));
+// Manager (admin) needs EVERY slot — including empty placeholders — plus the
+// chain flags, so the Audio tab can edit and place items anywhere.
+$managerCarts = [];
+if (is_admin()) {
+    $crossStates = load_cross_states();
+    foreach (load_carts() as $i => $line) {
+        $p = array_pad(explode('|', $line), 6, '');
+        $name = trim($p[0]); $file = trim($p[1]);
+        $managerCarts[] = [
+            'id'     => $i + 1,
+            'name'   => $name,
+            'file'   => $file,
+            'start'  => (float) $p[2],
+            'color'  => trim($p[3]) !== '' ? trim($p[3]) : '1',
+            'end'    => trim($p[4]) !== '' ? (float) $p[4] : null,
+            'volume' => trim($p[5]) !== '' ? (float) $p[5] : 1,
+            'cross'  => (int) ($crossStates[$i] ?? 0),
+            'empty'  => ($name === '' || $name === '-' || $file === '' || $file === '0.mp3'),
+        ];
+    }
+}
+
+// Split the station name -> "DEMO RADIO" / "STATION" for the two-line brand mark.
+$nameWords = preg_split('/\s+/', trim(station_name()));
 $brandSub  = strtoupper(array_pop($nameWords));
 $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
 ?>
@@ -121,33 +144,43 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
 
         <div class="topbar-end">
             <div class="icon-cluster">
-                <!-- Window toggles, grouped together and separated from the actions. -->
-                <button type="button" class="icon-btn is-active" id="chip-ids" onclick="toggleIdsWindow();" title="Station IDs">
+                <!-- Window toggles, grouped together and separated from the actions.
+                     Feature switches (manager Options tab) disable buttons; admin
+                     buttons stay visible when logged out, grayed, and lead to the
+                     login page. -->
+                <button type="button" class="icon-btn is-active" id="chip-ids" onclick="toggleIdsWindow();" title="Station IDs" <?= $settings['ids_window'] ? '' : 'disabled' ?>>
                     <i class="ph ph-radio"></i><span class="status-dot red"></span>
                 </button>
                 <button type="button" class="icon-btn is-active" id="chip-clock" onclick="toggleClockWindow();" title="Clock">
                     <i class="ph ph-clock"></i><span class="status-dot red"></span>
                 </button>
-                <button type="button" class="icon-btn" id="chip-auto" onclick="window.Automation && window.Automation.toggle();" title="Automation playlist">
+                <button type="button" class="icon-btn" id="chip-auto" onclick="window.Automation && window.Automation.toggle();" title="Automation playlist" <?= $settings['automation'] ? '' : 'disabled' ?>>
                     <i class="ph ph-playlist"></i><span class="status-dot amber"></span>
                 </button>
+                <!-- Break planner: admin edits the daily plan the strip shows.
+                     Logged out it stays visible (grayed) and opens the login. -->
                 <?php if (is_admin()): ?>
-                <!-- Break planner (admin): edits the daily plan the strip shows. -->
-                <button type="button" class="icon-btn" id="chip-planner" title="Break planner">
+                <button type="button" class="icon-btn" id="chip-planner" title="Break planner" <?= $settings['automation'] ? '' : 'disabled' ?>>
+                    <i class="ph ph-calendar-check"></i>
+                </button>
+                <?php else: ?>
+                <button type="button" class="icon-btn locked" id="chip-planner" title="Break planner — sign in" onclick="location.href='login.php';">
                     <i class="ph ph-calendar-check"></i>
                 </button>
                 <?php endif; ?>
-                <?php if (SHOW_UTILITY_CHIPS): ?>
+                <!-- DJ layout (placeholder — the layout itself isn't built yet). -->
+                <button type="button" class="icon-btn" id="chip-djmode" title="DJ mode (coming soon)" <?= $settings['dj_mode'] ? '' : 'disabled' ?>>
+                    <i class="ph ph-squares-four"></i>
+                </button>
                 <span class="icon-sep"></span>
-                <!-- One-shot actions. Temporarily hidden via SHOW_UTILITY_CHIPS
-                     (config.php) while the product direction shifts; flip that
-                     flag to true to bring them back. -->
-                <a class="icon-btn" id="chip-download" href="download.php" title="Download">
+                <!-- One-shot actions, gated by the feature switches. -->
+                <a class="icon-btn<?= $settings['download'] ? '' : ' off' ?>" id="chip-download" href="download.php" title="Download">
                     <i class="ph ph-download-simple"></i>
                 </a>
-                <button type="button" class="icon-btn" id="qr-chip" onclick="showQR();" title="Mobile access">
+                <button type="button" class="icon-btn" id="qr-chip" onclick="showQR();" title="Mobile access" <?= $settings['mobile'] ? '' : 'disabled' ?>>
                     <i class="ph ph-device-mobile"></i>
                 </button>
+                <?php if (SHOW_UTILITY_CHIPS): ?>
                 <button type="button" class="icon-btn" id="chip-credits" onclick="showCredits();" title="Credits">
                     <i class="ph ph-info"></i>
                 </button>
@@ -355,7 +388,9 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     <div class="statuses-bar">
         <?php if (is_admin() || is_dj()): ?>
             <span class="ticker-chip is-auth">
-                <a class="chip-main" href="<?= is_admin() ? 'admin.php' : 'dj.php' ?>" title="Open management">
+                <!-- Admin opens the in-page manager; DJ keeps its page. The
+                     legacy admin panel stays reachable from Options. -->
+                <a class="chip-main" href="<?= is_admin() ? "javascript:window.Manager&&window.Manager.open();" : 'dj.php' ?>" title="Open management">
                     <span class="avatar"><i class="ph-fill ph-user"></i></span>
                     <span class="chip-reveal"><?= is_admin() ? 'Admin' : 'DJ' ?> <i class="ph ph-gear"></i></span>
                 </a>
@@ -383,6 +418,101 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     </div>
 
     <?php if (is_admin()): ?>
+    <!-- Station manager overlay (admin): Audio | Station | Options. Reuses the
+         planner's frame styling for unity. Audio/Station tabs land next; the
+         Options tab drives the feature switches live. -->
+    <div class="planner-overlay" id="managerOverlay" hidden>
+        <div class="planner-frame">
+            <header class="planner-head">
+                <h2><i class="ph ph-gear"></i> Station manager</h2>
+                <div class="planner-head-actions">
+                    <span class="planner-msg" id="managerMsg"></span>
+                    <button type="button" class="planner-cancel" id="managerClose" title="Close (Esc)">Close</button>
+                </div>
+            </header>
+            <div class="mgr-tabs">
+                <button type="button" class="mgr-tab" data-tab="audio">Audio</button>
+                <button type="button" class="mgr-tab" data-tab="station">Station</button>
+                <button type="button" class="mgr-tab active" data-tab="options">Options</button>
+            </div>
+            <div class="mgr-body">
+                <!-- AUDIO: sections>items list on the left, one detail panel on
+                     the right (rename / colour / volume / chain / trim / move /
+                     delete). Rendered by manager.js from MANAGER_DATA. -->
+                <div class="mgr-pane mgr-audio" id="mgrPaneAudio" hidden>
+                    <div class="ma-list-col">
+                        <div class="ptree-toolbar">
+                            <input type="text" class="ptree-search" id="maSearch" placeholder="Search carts&hellip;" autocomplete="off">
+                        </div>
+                        <div class="ptree-scroller" id="maList"></div>
+                    </div>
+                    <div class="ma-detail" id="maDetail">
+                        <p class="mgr-stub" id="maEmptyHint"><i class="ph ph-cursor-click"></i> Pick a cart on the left to edit it.</p>
+                        <div id="maForm" hidden>
+                            <div class="ma-row"><label>Name</label><input type="text" id="maName" maxlength="60" autocomplete="off"></div>
+                            <div class="ma-row"><label>Colour</label><div class="ma-swatches" id="maSwatches"></div></div>
+                            <div class="ma-row"><label>Volume</label><input type="range" id="maVolume" min="0" max="100" step="5"><span class="ma-vol-val" id="maVolVal">100%</span></div>
+                            <div class="ma-row"><label>Chain</label><label class="ma-chain"><input type="checkbox" class="opt-switch" id="maChain"><span>Auto-play the next cart when this one ends</span></label></div>
+                            <div class="ma-row"><label>Audio</label>
+                                <div class="ma-audio-btns">
+                                    <button type="button" class="ma-btn" id="maPreview"><i class="ph-fill ph-play"></i> Preview</button>
+                                    <button type="button" class="ma-btn" id="maTrimStart"><i class="ph ph-arrow-line-left"></i> Trim start</button>
+                                    <button type="button" class="ma-btn" id="maTrimEnd"><i class="ph ph-arrow-line-right"></i> Trim end</button>
+                                </div>
+                            </div>
+                            <div class="ma-trim-host" id="maTrimHost" hidden></div>
+                            <div class="ma-row"><label>Move</label>
+                                <div class="ma-audio-btns">
+                                    <select class="ma-select" id="maMoveSlot"></select>
+                                    <button type="button" class="ma-btn" id="maMoveBtn"><i class="ph ph-arrows-down-up"></i> Move</button>
+                                </div>
+                            </div>
+                            <div class="ma-row ma-danger-row">
+                                <label></label>
+                                <button type="button" class="ma-btn danger" id="maDelete"><i class="ph ph-trash"></i> Clear this slot</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- STATION: identity + ticker + section labels + page names. -->
+                <div class="mgr-pane" id="mgrPaneStation" hidden>
+                    <div class="ma-row"><label>Station name</label><input type="text" id="stName" maxlength="60" autocomplete="off" placeholder="<?= htmlspecialchars(STATION_NAME) ?>"></div>
+                    <div class="ma-row"><label>Logo</label>
+                        <div class="ma-audio-btns">
+                            <img id="stLogoPreview" class="st-logo" alt="logo" src="<?= htmlspecialchars(station_logo()) ?>">
+                            <input type="file" id="stLogoFile" accept=".svg,.png" hidden>
+                            <button type="button" class="ma-btn" id="stLogoUpload"><i class="ph ph-upload-simple"></i> Upload</button>
+                            <button type="button" class="ma-btn" id="stLogoReset"><i class="ph ph-arrow-counter-clockwise"></i> Default</button>
+                        </div>
+                    </div>
+                    <div class="ma-row"><label>Ticker</label><input type="text" id="stTicker" maxlength="200" autocomplete="off"></div>
+                    <div class="ma-row"><label>Sections</label><div class="st-labels" id="stLabels"></div></div>
+                    <div class="ma-row"><label>Page names</label><textarea id="stPageNames" rows="6" spellcheck="false"></textarea></div>
+                    <div class="ma-row"><label></label><button type="button" class="planner-save" id="stSave"><i class="ph ph-floppy-disk"></i> Save station</button></div>
+                    <p class="mgr-stub st-note">Name &amp; ticker apply on the next reload of each screen.</p>
+                </div>
+                <div class="mgr-pane" id="mgrPaneOptions">
+                    <div class="opt-list" id="optList"></div>
+                    <button type="button" class="opt-link" id="optRegenQr" title="Not wired up yet"><i class="ph ph-qr-code"></i> Regenerate QR code</button>
+                    <div class="opt-actions">
+                        <a class="opt-link" href="download.php" target="_blank" rel="noopener"><i class="ph ph-download-simple"></i> Open Legacy download page</a>
+                        <a class="opt-link" href="admin.php"><i class="ph ph-clock-counter-clockwise"></i> Legacy admin panel</a>
+                    </div>
+                    <!-- Danger zone: destructive resets, guarded by a typed confirmation. -->
+                    <div class="opt-danger">
+                        <div class="opt-danger-head">Danger zone</div>
+                        <p class="opt-danger-hint">Type <b>clear</b> to arm the buttons. Audio files in uploads/ are never touched.</p>
+                        <input type="text" id="optClearConfirm" class="opt-clear-input" placeholder="type clear here" autocomplete="off">
+                        <div class="opt-danger-btns">
+                            <button type="button" class="opt-danger-btn" id="optClearPlanner" disabled><i class="ph ph-calendar-x"></i> Clear planner data</button>
+                            <button type="button" class="opt-danger-btn" id="optClearAll" disabled><i class="ph ph-warning"></i> Clear whole DB</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Break planner overlay (admin). LEFT: pages>carts tree (preview + add).
          RIGHT: the breaks list above the playlist editor — the editor is the
          automation panel itself, moved in here (and back) by planner.js. -->
@@ -439,6 +569,21 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
 
         // Planner favourites: starred cart ids, station-wide (data/favorites.txt).
         window.FAVORITES = <?= json_encode(load_favorites()) ?>;
+
+        // Feature switches (data/settings.txt) — UI-level button gating only.
+        window.SETTINGS = <?= json_encode($settings) ?>;
+<?php if (is_admin()): ?>
+        // Manager data (admin): every slot incl. placeholders + chain flags,
+        // and the Station tab's current values.
+        window.MANAGER_DATA = <?= json_encode([
+            'carts'       => $managerCarts,
+            'labels'      => $labels,
+            'pageNames'   => load_page_names(),
+            'ticker'      => $statusText,
+            'stationName' => station_name(),
+            'logo'        => station_logo(),
+        ], JSON_UNESCAPED_UNICODE) ?>;
+<?php endif; ?>
 
         // --- Start gate + loading overlay + first-load preload kick.
         // Browsers block audio autoplay until a user gesture, and the preload
@@ -1020,6 +1165,6 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         }
     </script>
     <script src="assets/js/automation.js"></script>
-    <?php if (is_admin()): ?><script src="assets/js/planner.js"></script><?php endif; ?>
+    <?php if (is_admin()): ?><script src="assets/js/planner.js"></script><script src="assets/js/manager.js"></script><?php endif; ?>
 </body>
 </html>
