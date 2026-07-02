@@ -22,17 +22,20 @@ $settings   = load_settings();   // feature switches (manager Options tab)
 $statusFile = data_path('status.txt');
 $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : '';
 
-// Real (non-placeholder) carts, with their 0-based index. One island feeds
-// both the live search AND the planner/breaks strip (which references carts
-// by 1-based carts.txt line = i + 1). The index maps to a board section by
-// the same from/to ranges the section selectors use, so a result can show
-// its page and jump there.
-$allCarts = [];
+// Real (non-placeholder, ENABLED) carts, with their 0-based index. One island
+// feeds both the live search AND the planner/breaks strip (which references
+// carts by 1-based carts.txt line = i + 1). A disabled cart is excluded here
+// entirely — it can't be found, previewed, or queued from anywhere in the
+// player. The index maps to a board section by the same from/to ranges the
+// section selectors use, so a result can show its page and jump there.
+$allCarts  = [];
+$enabledStates = load_enabled_states();
 foreach (load_carts() as $i => $line) {
     $p    = explode('|', $line);
     $name = trim($p[0] ?? '');
     $file = trim($p[1] ?? '');
     if ($name === '' || $name === '-' || $file === '' || $file === '0.mp3') continue;
+    if (($enabledStates[$i] ?? 1) === 0) continue;
     $allCarts[] = [
         'i'      => $i,
         'name'   => $name,
@@ -47,8 +50,9 @@ foreach (load_carts() as $i => $line) {
 // The daily commercial-breaks plan (planner-editable, admin-gated on save).
 $breaks = load_breaks();
 
-// Manager (admin) needs EVERY slot — including empty placeholders — plus the
-// chain flags, so the Audio tab can edit and place items anywhere.
+// Manager (admin) needs EVERY slot — including empty and disabled ones —
+// plus the chain flags, so the Audio tab can edit, toggle and place items
+// anywhere.
 $managerCarts = [];
 if (is_admin()) {
     $crossStates = load_cross_states();
@@ -56,15 +60,16 @@ if (is_admin()) {
         $p = array_pad(explode('|', $line), 6, '');
         $name = trim($p[0]); $file = trim($p[1]);
         $managerCarts[] = [
-            'id'     => $i + 1,
-            'name'   => $name,
-            'file'   => $file,
-            'start'  => (float) $p[2],
-            'color'  => trim($p[3]) !== '' ? trim($p[3]) : '1',
-            'end'    => trim($p[4]) !== '' ? (float) $p[4] : null,
-            'volume' => trim($p[5]) !== '' ? (float) $p[5] : 1,
-            'cross'  => (int) ($crossStates[$i] ?? 0),
-            'empty'  => ($name === '' || $name === '-' || $file === '' || $file === '0.mp3'),
+            'id'      => $i + 1,
+            'name'    => $name,
+            'file'    => $file,
+            'start'   => (float) $p[2],
+            'color'   => trim($p[3]) !== '' ? trim($p[3]) : '1',
+            'end'     => trim($p[4]) !== '' ? (float) $p[4] : null,
+            'volume'  => trim($p[5]) !== '' ? (float) $p[5] : 1,
+            'cross'   => (int) ($crossStates[$i] ?? 0),
+            'enabled' => (int) ($enabledStates[$i] ?? 1),
+            'empty'   => ($name === '' || $name === '-' || $file === '' || $file === '0.mp3'),
         ];
     }
 }
@@ -431,52 +436,96 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 </div>
             </header>
             <div class="mgr-tabs">
-                <button type="button" class="mgr-tab" data-tab="audio">Audio</button>
+                <button type="button" class="mgr-tab active" data-tab="audio">Audio</button>
                 <button type="button" class="mgr-tab" data-tab="station">Station</button>
-                <button type="button" class="mgr-tab active" data-tab="options">Options</button>
+                <button type="button" class="mgr-tab" data-tab="options">Options</button>
+                <button type="button" class="mgr-tab" data-tab="maintenance">Maintenance</button>
             </div>
             <div class="mgr-body">
                 <!-- AUDIO: sections>items list on the left, one detail panel on
-                     the right (rename / colour / volume / chain / trim / move /
-                     delete). Rendered by manager.js from MANAGER_DATA. -->
-                <div class="mgr-pane mgr-audio" id="mgrPaneAudio" hidden>
+                     the right. Rendered by manager.js from MANAGER_DATA. -->
+                <div class="mgr-pane mgr-audio" id="mgrPaneAudio">
                     <div class="ma-list-col">
                         <div class="ptree-toolbar">
-                            <input type="text" class="ptree-search" id="maSearch" placeholder="Search carts&hellip;" autocomplete="off">
+                            <div class="ma-search-wrap">
+                                <input type="text" class="ptree-search" id="maSearch" placeholder="Search carts&hellip;" autocomplete="off">
+                                <button type="button" class="ma-search-clear" id="maSearchClear" title="Clear" hidden><i class="ph ph-x"></i></button>
+                            </div>
+                            <button type="button" class="ptree-fav-filter" id="maFavFilter" title="Show favourites only"><i class="ph ph-star"></i></button>
                         </div>
                         <div class="ptree-scroller" id="maList"></div>
                     </div>
                     <div class="ma-detail" id="maDetail">
                         <p class="mgr-stub" id="maEmptyHint"><i class="ph ph-cursor-click"></i> Pick a cart on the left to edit it.</p>
                         <div id="maForm" hidden>
-                            <div class="ma-row"><label>Name</label><input type="text" id="maName" maxlength="60" autocomplete="off"></div>
-                            <div class="ma-row"><label>Colour</label><div class="ma-swatches" id="maSwatches"></div></div>
-                            <div class="ma-row"><label>Volume</label><input type="range" id="maVolume" min="0" max="100" step="5"><span class="ma-vol-val" id="maVolVal">100%</span></div>
-                            <div class="ma-row"><label>Chain</label><label class="ma-chain"><input type="checkbox" class="opt-switch" id="maChain"><span>Auto-play the next cart when this one ends</span></label></div>
-                            <div class="ma-row"><label>Audio</label>
-                                <div class="ma-audio-btns">
-                                    <button type="button" class="ma-btn" id="maPreview"><i class="ph-fill ph-play"></i> Preview</button>
-                                    <button type="button" class="ma-btn" id="maTrimStart"><i class="ph ph-arrow-line-left"></i> Trim start</button>
-                                    <button type="button" class="ma-btn" id="maTrimEnd"><i class="ph ph-arrow-line-right"></i> Trim end</button>
-                                    <input type="file" id="maAudioFile" accept=".mp3" hidden>
-                                    <button type="button" class="ma-btn" id="maAudioUpload"><i class="ph ph-upload-simple"></i> Upload / replace</button>
+                            <!-- Group 1: enabled + name + colour -->
+                            <div class="ma-row">
+                                <label>Enabled</label>
+                                <label class="ma-chain"><input type="checkbox" class="opt-switch" id="maEnabled"><span>Playable and can be added to lists</span></label>
+                            </div>
+                            <div class="ma-row">
+                                <label>Name</label>
+                                <div class="ma-name-wrap">
+                                    <span class="ma-name-text" id="maNameText"></span>
+                                    <input type="text" id="maName" maxlength="60" autocomplete="off" hidden>
+                                    <button type="button" class="pbreak-edit" id="maNameEdit" title="Rename"><i class="ph ph-pencil-simple"></i></button>
                                 </div>
                             </div>
-                            <div class="ma-trim-host" id="maTrimHost" hidden></div>
+                            <div class="ma-row"><label>Colour</label><div class="ma-swatches" id="maSwatches"></div></div>
+                            <hr class="ma-hr">
+                            <!-- Group 2: volume + inline trimmer -->
+                            <div class="ma-row"><label>Volume</label><input type="range" class="ma-volume-short" id="maVolume" min="0" max="100" step="5"><span class="ma-vol-val" id="maVolVal">100%</span></div>
+                            <div class="ma-row ma-row-top"><label>Trim</label>
+                                <div class="ma-trimmer" id="maTrimmer">
+                                    <div class="ma-wave-wrap">
+                                        <div id="maWaveform"></div>
+                                        <div class="ma-handle ma-handle-start" id="maHandleStart"></div>
+                                        <div class="ma-handle ma-handle-end" id="maHandleEnd"></div>
+                                    </div>
+                                    <div class="ma-trim-times">
+                                        <span>Start <b id="maTStart">0:00.0</b></span>
+                                        <span>End <b id="maTEnd">0:00.0</b></span>
+                                        <span>Length <b id="maTLen">0:00.0</b></span>
+                                    </div>
+                                    <div class="ma-audio-btns">
+                                        <button type="button" class="ma-btn" id="maPlayFull"><i class="ph-fill ph-play"></i> Play</button>
+                                        <button type="button" class="ma-btn" id="maPlayTrim"><i class="ph ph-brackets-square"></i> Play trimmed</button>
+                                        <button type="button" class="ma-btn" id="maTrimSave"><i class="ph ph-floppy-disk"></i> Save trim</button>
+                                        <input type="file" id="maAudioFile" accept=".mp3,audio/mpeg" hidden>
+                                        <button type="button" class="ma-btn" id="maAudioUpload"><i class="ph ph-upload-simple"></i> Upload / replace</button>
+                                    </div>
+                                    <p class="ma-upload-hint">MP3 only, max 30&nbsp;MB (roughly 30&nbsp;minutes at typical bitrates).</p>
+                                </div>
+                            </div>
+                            <hr class="ma-hr">
+                            <!-- Group 3: chain + move -->
+                            <div class="ma-row"><label>Chain</label><label class="ma-chain"><input type="checkbox" class="opt-switch" id="maChain"><span>Auto-play the next cart when this one ends</span></label></div>
                             <div class="ma-row"><label>Move</label>
                                 <div class="ma-audio-btns">
                                     <select class="ma-select" id="maMoveSlot"></select>
                                     <button type="button" class="ma-btn" id="maMoveBtn"><i class="ph ph-arrows-down-up"></i> Move</button>
                                 </div>
                             </div>
+                            <hr class="ma-hr">
+                            <!-- Group 4: download -->
+                            <div class="ma-row"><label>Download</label>
+                                <a class="ma-btn" id="maDownload" download><i class="ph ph-download-simple"></i> Download this audio file</a>
+                            </div>
+                            <hr class="ma-hr">
+                            <!-- Group 5: clear (danger, two-step confirm) -->
                             <div class="ma-row ma-danger-row">
                                 <label></label>
                                 <button type="button" class="ma-btn danger" id="maDelete"><i class="ph ph-trash"></i> Clear this slot</button>
+                                <span class="ma-confirm" id="maDeleteConfirm" hidden>
+                                    Are you sure?
+                                    <button type="button" class="ma-btn danger" id="maDeleteYes">Yes, clear it</button>
+                                    <button type="button" class="ma-btn" id="maDeleteNo">Cancel</button>
+                                </span>
                             </div>
                         </div>
                     </div>
                 </div>
-                <!-- STATION: identity + ticker + section labels + page names. -->
+                <!-- STATION: identity + ticker + section labels. -->
                 <div class="mgr-pane" id="mgrPaneStation" hidden>
                     <div class="ma-row"><label>Station name</label><input type="text" id="stName" maxlength="60" autocomplete="off" placeholder="<?= htmlspecialchars(STATION_NAME) ?>"></div>
                     <div class="ma-row"><label>Logo</label>
@@ -489,17 +538,42 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                     </div>
                     <div class="ma-row"><label>Ticker</label><input type="text" id="stTicker" maxlength="200" autocomplete="off"></div>
                     <div class="ma-row"><label>Sections</label><div class="st-labels" id="stLabels"></div></div>
-                    <div class="ma-row"><label>Page names</label><textarea id="stPageNames" rows="6" spellcheck="false"></textarea></div>
                     <div class="ma-row"><label></label><button type="button" class="planner-save" id="stSave"><i class="ph ph-floppy-disk"></i> Save station</button></div>
                     <p class="mgr-stub st-note">Name &amp; ticker apply on the next reload of each screen.</p>
                 </div>
-                <div class="mgr-pane" id="mgrPaneOptions">
+                <div class="mgr-pane" id="mgrPaneOptions" hidden>
                     <div class="opt-list" id="optList"></div>
                     <button type="button" class="opt-link" id="optRegenQr" title="Not wired up yet"><i class="ph ph-qr-code"></i> Regenerate QR code</button>
                     <div class="opt-actions">
                         <a class="opt-link" href="download.php" target="_blank" rel="noopener"><i class="ph ph-download-simple"></i> Open Legacy download page</a>
                         <a class="opt-link" href="admin.php"><i class="ph ph-clock-counter-clockwise"></i> Legacy admin panel</a>
                     </div>
+                </div>
+                <!-- MAINTENANCE: backup/restore (.cartdb, cross-compatible with any
+                     station built on the same helpers), runtime logs, and the
+                     danger zone (moved here from Options). -->
+                <div class="mgr-pane" id="mgrPaneMaintenance" hidden>
+                    <div class="mnt-section">
+                        <h3>Backup &amp; restore</h3>
+                        <p class="mgr-stub-text">A backup is a single <b>.cartdb</b> file (all audio + the pseudo-database). Restoring OVERWRITES the current station. A raw legacy carts.txt/uploads folder (e.g. from an older station) needs to be zipped into the same audio.zip + db.zip shape first — the field format itself (name|file|start|colour|end|volume) already matches.</p>
+                        <form method="post" action="backup.php" target="_blank" class="mnt-form">
+                            <button type="submit" name="create_backup" class="ma-btn"><i class="ph ph-download-simple"></i> Download full backup (.cartdb)</button>
+                        </form>
+                        <form method="post" action="backup.php" enctype="multipart/form-data" target="_blank" class="mnt-form">
+                            <input type="file" name="backup_file" accept=".cartdb" required class="mnt-file">
+                            <button type="submit" name="restore_backup" class="ma-btn danger"><i class="ph ph-upload-simple"></i> Restore from backup</button>
+                        </form>
+                    </div>
+                    <hr class="ma-hr">
+                    <div class="mnt-section">
+                        <h3>Logs</h3>
+                        <div class="mnt-log-tabs">
+                            <button type="button" class="mnt-log-tab active" data-log="keepalive">Keep-alive</button>
+                            <button type="button" class="mnt-log-tab" data-log="playback">Playback</button>
+                        </div>
+                        <pre class="mnt-log-view" id="mntLogView">Loading&hellip;</pre>
+                    </div>
+                    <hr class="ma-hr">
                     <!-- Danger zone: destructive resets, guarded by a typed confirmation. -->
                     <div class="opt-danger">
                         <div class="opt-danger-head">Danger zone</div>
@@ -580,7 +654,6 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         window.MANAGER_DATA = <?= json_encode([
             'carts'       => $managerCarts,
             'labels'      => $labels,
-            'pageNames'   => load_page_names(),
             'ticker'      => $statusText,
             'stationName' => station_name(),
             'logo'        => station_logo(),
@@ -1167,6 +1240,6 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         }
     </script>
     <script src="assets/js/automation.js"></script>
-    <?php if (is_admin()): ?><script src="assets/js/planner.js"></script><script src="assets/js/manager.js"></script><?php endif; ?>
+    <?php if (is_admin()): ?><script src="assets/js/planner.js"></script><script src="assets/vendor/wavesurfer.min.js"></script><script src="assets/js/manager.js"></script><?php endif; ?>
 </body>
 </html>

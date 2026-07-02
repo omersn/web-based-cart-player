@@ -300,14 +300,21 @@ body.layout-locked .title-bar-0002 { cursor: default; }
    read as one control (both go amber together in To mode). */
 .auto-anchor-toggle {
     /* Symmetric 12px on both sides of the clock icon (label -> icon matches
-       icon -> time via the header's column-gap), so it reads centred. */
-    display: flex; align-items: center; column-gap: 12px;
+       icon -> time via the header's column-gap), so it reads centred.
+       min-height pins the row to the From/To label's own height so hiding
+       that label in hand-mode (MANUAL) can't shrink the toggle — which used
+       to shrink the whole header and nudge the queue/total/switch beneath it
+       up by a few px every time AUTO/MANUAL was toggled. */
+    display: flex; align-items: center; column-gap: 12px; min-height: 43px; box-sizing: border-box;
     border: none; background: none; cursor: pointer; padding: 6px 0 6px 10px; border-radius: 8px;
     color: var(--text-secondary); flex: 0 0 auto;
 }
 .auto-anchor-toggle:hover { background: var(--raised); color: var(--text-primary); }
 .auto-header.end-mode .auto-anchor-toggle { color: var(--amber); }
-.auto-header-icon { display: flex; }
+/* Fixed height matching the From/To SVG (20px) so the hand icon (a font glyph,
+   not an SVG) can't make the header a few px taller in MANUAL mode — that
+   growth was pushing the queue/total/switch/transport down underneath it. */
+.auto-header-icon { display: flex; align-items: center; justify-content: center; height: 20px; }
 /* Fixed-width label (fits "From"), right-aligned so From/To stays tight to the
    icon that follows it and its differing length can't shove the time sideways.
    Inherits the toggle's colour so it ambers up in To mode. */
@@ -1203,7 +1210,7 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 /* Hand mode (panel in MANUAL): green outline hand replaces From/To, the time
    reads —:— and the whole header is inert until AUTO comes back. */
 .auto-header.hand-mode { pointer-events: none; }
-.auto-header.hand-mode .auto-header-icon i { font-size: 22px; color: var(--green-dot); display: block; }
+.auto-header.hand-mode .auto-header-icon i { font-size: 20px; line-height: 20px; color: var(--green-dot); display: block; }
 .auto-header.hand-mode .auto-header-time { color: var(--text-tertiary); }
 /* Centre the [hand][—:—] pair: the empty From/To label and the caret must
    not reserve any width, and the toggle's asymmetric padding goes too. */
@@ -1399,3 +1406,83 @@ button.opt-link { cursor: pointer; font-family: 'Assistant', sans-serif; width: 
 /* The Audio pane's display:flex must not beat the hidden attribute — without
    this the pane never hides and sits over the other two tabs. */
 .mgr-pane[hidden] { display: none !important; }
+
+/* ---- Manager Audio tab additions (round 2: trimmer, groups, favourites) -- */
+.ma-search-wrap { position: relative; flex: 1 1 auto; }
+.ma-search-wrap .ptree-search { width: 100%; padding-right: 30px; }
+.ma-search-clear {
+    position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+    width: 20px; height: 20px; border: none; border-radius: 5px; cursor: pointer;
+    background: rgba(0, 0, 0, 0.12); color: #333;
+    display: flex; align-items: center; justify-content: center; font-size: 11px;
+}
+.ma-search-clear:hover { background: rgba(0, 0, 0, 0.22); }
+.ma-ids-icon { font-size: 13px; color: #0b6b79; flex: 0 0 auto; }
+.ma-item.off { opacity: 0.45; }
+.ma-item.off .ptree-name { text-decoration: line-through; }
+
+.ma-hr { border: none; border-top: 1px solid var(--hairline); margin: 4px 0 16px; }
+.ma-row-top { align-items: flex-start; }
+.ma-row-top > label:first-child { padding-top: 6px; }
+.ma-volume-short { flex: 0 0 220px !important; }
+
+.ma-name-wrap { flex: 1 1 auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ma-name-text {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text-primary); font-family: 'Assistant', sans-serif; font-size: 13.5px; font-weight: 600;
+}
+.ma-name-wrap .pbreak-edit { color: var(--text-tertiary); }
+.ma-name-wrap .pbreak-edit:hover { background: rgba(255, 255, 255, 0.14); color: var(--text-primary); }
+.ma-name-wrap input[type="text"] { flex: 1 1 auto; }
+
+/* Inline waveform trimmer */
+.ma-trimmer { flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; }
+.ma-trimmer[hidden] { display: none; }
+.ma-wave-wrap { position: relative; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--hairline); border-radius: 8px; padding: 4px 0; }
+.ma-handle {
+    position: absolute; top: 0; bottom: 0; width: 10px; margin-left: -5px;
+    cursor: ew-resize; touch-action: none;
+}
+.ma-handle::before {
+    content: ''; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: #f4c542;
+}
+.ma-handle::after {
+    content: ''; position: absolute; top: 0; left: 0; width: 10px; height: 10px;
+    background: #f4c542; border-radius: 2px;
+}
+.ma-handle-end::before, .ma-handle-end::after { background: #f0453f; }
+.ma-trim-times {
+    display: flex; gap: 18px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-secondary);
+}
+.ma-trim-times b { color: var(--text-primary); }
+.ma-upload-hint { font-size: 11px; color: var(--text-tertiary); }
+.ma-btn.disabled { opacity: 0.3; pointer-events: none; }
+
+/* Two-step "are you sure" for clearing a slot */
+.ma-danger-row { flex-wrap: wrap; }
+.ma-confirm { display: flex; align-items: center; gap: 10px; color: var(--text-primary); font-size: 13px; font-weight: 700; }
+
+/* Maintenance tab */
+.mnt-section { margin-bottom: 4px; }
+.mnt-section h3 { font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 10px; }
+.mgr-stub-text { font-size: 12.5px; color: var(--text-tertiary); line-height: 1.5; margin-bottom: 14px; max-width: 560px; }
+.mgr-stub-text b { color: var(--text-primary); }
+.mnt-form { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.mnt-file {
+    flex: 1 1 auto; max-width: 320px; padding: 6px 8px; border: 1px solid var(--hairline); border-radius: 7px;
+    background: rgba(0, 0, 0, 0.3); color: var(--text-secondary); font-size: 12px;
+}
+.mnt-log-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+.mnt-log-tab {
+    padding: 6px 14px; border: 1px solid var(--hairline); border-radius: 7px; cursor: pointer;
+    background: transparent; color: var(--text-secondary);
+    font-family: 'Assistant', sans-serif; font-size: 12px; font-weight: 700;
+}
+.mnt-log-tab.active { background: var(--cyan-tint); color: var(--cyan-text); border-color: var(--cyan-border); }
+.mnt-log-view {
+    max-height: 260px; overflow-y: auto; margin: 0;
+    padding: 12px; border: 1px solid var(--hairline); border-radius: 8px;
+    background: #05070a; color: #9fe6d0;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5;
+    white-space: pre-wrap; word-break: break-word;
+}

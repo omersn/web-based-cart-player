@@ -52,6 +52,7 @@
     const fileUrl = `${DATA_URL}/carts.txt?v=${Date.now()}`;
     const pageNamesUrl = `${DATA_URL}/page_names.txt?v=${Date.now()}`;
     const crossFileUrl = `${DATA_URL}/cross.txt?v=${Date.now()}`;
+    const enabledFileUrl = `${DATA_URL}/enabled.txt?v=${Date.now()}`;
 
     // Columns come from ?line (defaults to 5).
     const columns = parseInt(urlParams.get('line'), 10) || 5;
@@ -122,12 +123,26 @@
         }
     }
 
+    // enabled.txt -> per-cart on/off (manager Audio tab). Raw, unsliced array
+    // (one entry per carts.txt line) so lookups use the same absolute index
+    // as carts.txt/cross.txt; missing entries default to enabled.
+    let enabledStates = [];
+    async function loadEnabledFile() {
+        try {
+            const text = await (await fetch(enabledFileUrl)).text();
+            enabledStates = text.split(/\n/).map((l) => l.trim() !== '0');
+        } catch (error) {
+            console.error(`Error fetching enabled.txt: ${error.message}`);
+        }
+    }
+
     async function loadCartwall() {
         const from = parseInt(urlParams.get('from'), 10) || 0;
         const to = parseInt(urlParams.get('to'), 10) || Infinity;
 
         try {
             await loadCrossFile();
+            await loadEnabledFile();
 
             const response = await fetch(fileUrl);
             if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`);
@@ -162,7 +177,7 @@
 
                 filteredCartLines.slice(i * itemsPerPage, (i + 1) * itemsPerPage).forEach((line, index) => {
                     // Stagger button creation slightly to spread out audio decoding.
-                    setTimeout(() => buildButton(line, i, index, pageDiv), index * 25);
+                    setTimeout(() => buildButton(line, i, index, pageDiv, from), index * 25);
                 });
 
                 cartwall.appendChild(pageDiv);
@@ -205,7 +220,7 @@
 
     const chainedAt = (bn) => specialBoxes.some(box => box.boxNumber === bn && box.flag === 1);
 
-    function buildButton(line, pageIndex, index, pageDiv) {
+    function buildButton(line, pageIndex, index, pageDiv, sectionFrom) {
         const boxNumber = pageIndex * itemsPerPage + index + 1;
         const isChained = chainedAt(boxNumber);
         const buttonClass = isChained ? 'buttonext' : 'button';
@@ -240,6 +255,19 @@
             button.disabled = true;
             button.classList.remove(catClass);
             button.classList.add('empty');
+            pageDiv.appendChild(button);
+            return;
+        }
+
+        // Disabled (manager Audio tab): darkened, unclickable, no audio/VU
+        // wiring at all — same static-tile treatment as an empty slot, but
+        // keeps its name/colour visible so it still reads as "this cart,
+        // turned off" rather than "nothing here".
+        const absoluteIndex = sectionFrom + boxNumber - 1;
+        if (enabledStates[absoluteIndex] === false) {
+            button.disabled = true;
+            button.classList.add('button-off');
+            button.appendChild(span);
             pageDiv.appendChild(button);
             return;
         }

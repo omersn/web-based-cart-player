@@ -64,6 +64,25 @@ function load_cross_states(): array
 }
 
 /**
+ * Per-cart enabled flags (data/enabled.txt), same shape as cross.txt — one
+ * "1"/"0" per carts.txt line. A disabled cart is darkened in the manager and
+ * excluded everywhere it could be played or queued (search, planner tree,
+ * grid). Missing entries default to enabled (1).
+ */
+function load_enabled_states(): array
+{
+    $path  = data_path('enabled.txt');
+    $lines = file_exists($path) ? file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
+    return array_map(fn ($l) => trim($l) !== '0' ? 1 : 0, $lines);
+}
+
+/** Persist the per-cart enabled flags. Returns false on failure. */
+function save_enabled_states(array $states): bool
+{
+    return file_put_contents(data_path('enabled.txt'), implode("\n", $states) . "\n", LOCK_EX) !== false;
+}
+
+/**
  * Commercial breaks (data/breaks.txt) for the planner and the automation
  * strip. One break per line, pipe separated:
  *
@@ -192,6 +211,32 @@ function save_settings(array $s): bool
         $lines[] = $k . '|' . ((isset($s[$k]) ? $s[$k] : $def) ? '1' : '0');
     }
     return file_put_contents(data_path('settings.txt'), implode("\n", $lines) . "\n", LOCK_EX) !== false;
+}
+
+/**
+ * Last $lines lines of a (possibly large) log file, without loading the
+ * whole thing into memory — seeks backward from the end in chunks until it
+ * has enough newlines or hits the start of the file.
+ */
+function tail_file(string $path, int $lines = 200): array
+{
+    if (!file_exists($path)) return [];
+    $fh = fopen($path, 'r');
+    if (!$fh) return [];
+    $chunk = 8192;
+    $data = '';
+    $pos = filesize($path);
+    $found = 0;
+    while ($pos > 0 && $found <= $lines) {
+        $read = min($chunk, $pos);
+        $pos -= $read;
+        fseek($fh, $pos);
+        $data = fread($fh, $read) . $data;
+        $found = substr_count($data, "\n");
+    }
+    fclose($fh);
+    $all = explode("\n", rtrim($data, "\n"));
+    return array_slice($all, -$lines);
 }
 
 /** Persist the breaks list back to data/breaks.txt. Returns false on failure. */

@@ -102,6 +102,11 @@ $backtimerStyles   = ($smallbacktimer === '1')
         /* Empty slot: dashed, near-invisible tile. */
         .button.empty { background: var(--empty-fill); border: 1px dashed var(--empty-border); cursor: not-allowed; }
 
+        /* Disabled (manager Audio tab): darkened but its name still shows —
+           reads as "this cart, turned off" rather than an empty slot. */
+        .button.button-off { background: #1a1d22; border: 1px solid rgba(255, 255, 255, 0.06); cursor: not-allowed; opacity: 0.55; filter: grayscale(0.6); }
+        .button.button-off .title { color: var(--text-tertiary); }
+
         /* Flash a cart when jumped to from the search results. A sustained
            "breathing" cyan ring — stays visible the whole time (never fully
            fades between beats) so it keeps holding the eye while the grid

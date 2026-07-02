@@ -1,12 +1,11 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /**
- * Save the Station tab (manager): ticker, section labels, page names and the
- * station name override.
+ * Save the Station tab (manager): ticker, section labels and the station
+ * name override.
  *
  * POST JSON, all keys optional:
- *   { "ticker": "...", "labels": ["..." x10], "pageNames": ["..."],
- *     "stationName": "..." }
+ *   { "ticker": "...", "labels": ["..." x10], "stationName": "..." }
  *
  * Admin-only. Field lengths are clamped; pipes/newlines stripped where the
  * flat files use them as separators. Responds { ok: true }.
@@ -44,10 +43,6 @@ if (isset($p['labels']) && is_array($p['labels'])) {
     $labels = [];
     for ($i = 0; $i < 10; $i++) $labels[] = $clean($p['labels'][$i] ?? (string) ($i + 1), 40) ?: (string) ($i + 1);
     $ok = $ok && file_put_contents(data_path('parts.txt'), implode("\n", $labels) . "\n", LOCK_EX) !== false;
-}
-if (isset($p['pageNames']) && is_array($p['pageNames'])) {
-    $names = array_map(fn ($n) => $clean($n, 40), $p['pageNames']);
-    $ok = $ok && file_put_contents(data_path('page_names.txt'), implode("\n", $names) . "\n", LOCK_EX) !== false;
 }
 if (array_key_exists('stationName', $p)) {
     // Empty = revert to the config.php default.

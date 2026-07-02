@@ -4,8 +4,9 @@
  * Unified cart editor endpoint (manager Audio tab). One endpoint, four ops —
  * all on the 1-based carts.txt line id:
  *
- *   { "op": "update", "id": N, "name"?, "color"?, "volume"? }
+ *   { "op": "update", "id": N, "name"?, "color"?, "volume"?, "start"?, "end"? }
  *   { "op": "chain",  "id": N, "cross": 0|1 }        auto-play-next flag
+ *   { "op": "enable", "id": N, "enabled": 0|1 }      per-cart on/off
  *   { "op": "delete", "id": N }                      slot -> empty placeholder
  *   { "op": "move",   "id": N, "to": M }             reorder (slot N -> slot M)
  *
@@ -42,16 +43,19 @@ if ($id < 1 || $id > count($carts)) {
     exit;
 }
 
-// cross.txt padded to the cart count so line moves stay aligned.
+// cross.txt / enabled.txt padded to the cart count so line moves stay aligned.
 $cross = load_cross_states();
 $cross = array_pad($cross, count($carts), 0);
+$enabledStates = load_enabled_states();
+$enabledStates = array_pad($enabledStates, count($carts), 1);
 
 $fail = function ($msg, $code = 400) {
     http_response_code($code);
     echo json_encode(['ok' => false, 'error' => $msg]);
     exit;
 };
-$saveCross = fn ($c) => file_put_contents(data_path('cross.txt'), implode("\n", $c) . "\n", LOCK_EX) !== false;
+$saveCross   = fn ($c) => file_put_contents(data_path('cross.txt'), implode("\n", $c) . "\n", LOCK_EX) !== false;
+$saveEnabled = fn ($e) => save_enabled_states($e);
 // Rewrite every cart-id reference (breaks + favourites) through $map(oldId)->newId|null.
 $remapRefs = function (callable $map) {
     $breaks = load_breaks();
@@ -77,6 +81,15 @@ switch ($op) {
             $v = max(0, min(1, (float) $p['volume']));
             $f[5] = $v == 1 ? '' : (string) $v;
         }
+        // Inline trimmer (replaces the old iframe trimmer pages): start/end
+        // in seconds, validated relative to each other when both are known.
+        if (array_key_exists('start', $p)) $f[2] = (string) max(0, (float) $p['start']);
+        if (array_key_exists('end', $p)) {
+            $end = (float) $p['end'];
+            $start = (float) ($f[2] !== '' ? $f[2] : 0);
+            if ($end <= $start) $fail('End must be after start');
+            $f[4] = (string) $end;
+        }
         // Drop empty trailing fields so untouched lines keep their old shape.
         while (count($f) > 4 && trim(end($f)) === '') array_pop($f);
         $carts[$id - 1] = implode('|', $f);
@@ -88,10 +101,16 @@ switch ($op) {
         if (!$saveCross($cross)) $fail('Could not write cross.txt', 500);
         break;
     }
+    case 'enable': {
+        $enabledStates[$id - 1] = !empty($p['enabled']) ? 1 : 0;
+        if (!$saveEnabled($enabledStates)) $fail('Could not write enabled.txt', 500);
+        break;
+    }
     case 'delete': {
         $carts[$id - 1] = '- | 0.mp3|0|1';
         $cross[$id - 1] = 0;
-        if (!save_carts($carts) || !$saveCross($cross)) $fail('Could not write data files', 500);
+        $enabledStates[$id - 1] = 1;
+        if (!save_carts($carts) || !$saveCross($cross) || !$saveEnabled($enabledStates)) $fail('Could not write data files', 500);
         $remapRefs(fn ($x) => $x === $id ? null : $x); // purge from breaks + favourites
         break;
     }
@@ -99,12 +118,14 @@ switch ($op) {
         $to = (int) ($p['to'] ?? 0);
         if ($to < 1 || $to > count($carts)) $fail("Bad target slot $to");
         if ($to === $id) break;
-        // Move the line (and its chain flag) from slot id to slot to.
+        // Move the line (and its chain + enabled flags) from slot id to slot to.
         $line = array_splice($carts, $id - 1, 1)[0];
         array_splice($carts, $to - 1, 0, [$line]);
         $flag = array_splice($cross, $id - 1, 1)[0];
         array_splice($cross, $to - 1, 0, [$flag]);
-        if (!save_carts($carts) || !$saveCross($cross)) $fail('Could not write data files', 500);
+        $en = array_splice($enabledStates, $id - 1, 1)[0];
+        array_splice($enabledStates, $to - 1, 0, [$en]);
+        if (!save_carts($carts) || !$saveCross($cross) || !$saveEnabled($enabledStates)) $fail('Could not write data files', 500);
         // Every reference shifts with the move.
         $remapRefs(function ($x) use ($id, $to) {
             if ($x === $id) return $to;
