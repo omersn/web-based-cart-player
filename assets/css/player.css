@@ -1396,3 +1396,6 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 button.opt-link { cursor: pointer; font-family: 'Assistant', sans-serif; width: 100%; margin-bottom: 8px; }
 .mgr-stub[hidden] { display: none; }
 .ma-chain { flex: 1 1 auto; text-align: left; text-transform: none; letter-spacing: normal; }
+/* The Audio pane's display:flex must not beat the hidden attribute — without
+   this the pane never hides and sits over the other two tabs. */
+.mgr-pane[hidden] { display: none !important; }
