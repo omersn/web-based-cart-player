@@ -405,8 +405,15 @@
             vuBars[1].style.height = '10%';
         };
 
+        // The cart's own trimmed span — endAt falls back to the file's natural
+        // end once metadata is known. Progress and the countdown both measure
+        // against THIS span, not the raw file duration, so a trimmed cart's
+        // bar reaches 100% (and its readout hits 0:00) exactly at its own end
+        // point rather than the untrimmed tail of the audio file.
+        let effectiveEnd = endAt;
         audio.addEventListener('loadedmetadata', () => {
-            const trimmed = audio.duration - startAt;
+            if (effectiveEnd == null) effectiveEnd = audio.duration;
+            const trimmed = effectiveEnd - startAt;
             duration.textContent = `${Math.floor(trimmed / 60)}:${Math.floor(trimmed % 60).toString().padStart(2, '0')}`;
         });
 
@@ -415,8 +422,10 @@
         // which reflects whatever is on air — not just this cart.
         audio.addEventListener('timeupdate', () => {
             if (audio.paused) return;
-            const remainingTime = audio.duration - audio.currentTime;
-            progress.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
+            const end = effectiveEnd != null ? effectiveEnd : audio.duration;
+            const span = Math.max(0.001, end - startAt);
+            const remainingTime = Math.max(0, end - audio.currentTime);
+            progress.style.width = `${Math.min(100, Math.max(0, ((audio.currentTime - startAt) / span) * 100))}%`;
             const minutes = Math.floor(remainingTime / 60);
             const seconds = Math.floor(remainingTime % 60).toString().padStart(2, '0');
             duration.textContent = `${minutes}:${seconds}`;
@@ -445,7 +454,8 @@
             audio.currentTime = startAt;
             progress.style.width = '0';
             progress.style.display = 'none';
-            const trimmed = audio.duration - startAt;
+            const end = effectiveEnd != null ? effectiveEnd : audio.duration;
+            const trimmed = end - startAt;
             duration.textContent = `${Math.floor(trimmed / 60)}:${Math.floor(trimmed % 60).toString().padStart(2, '0')}`;
             duration.classList.remove('active');
             refreshBackTimer();
@@ -457,7 +467,8 @@
             button.classList.remove('playing');
             progress.style.width = '0';
             progress.style.display = 'none';
-            const trimmed = audio.duration - startAt;
+            const end = effectiveEnd != null ? effectiveEnd : audio.duration;
+            const trimmed = end - startAt;
             duration.textContent = `${Math.floor(trimmed / 60)}:${Math.floor(trimmed % 60).toString().padStart(2, '0')}`;
             duration.classList.remove('active');
 

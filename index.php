@@ -19,6 +19,7 @@ ensure_session();
 
 $labels     = load_section_labels();
 $settings   = load_settings();   // feature switches (manager Options tab)
+$idSectionNames = load_id_section_names(); // the two ID-window section names (manager Station tab)
 $statusFile = data_path('status.txt');
 $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : '';
 
@@ -229,8 +230,8 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         <div class="title-bar-0001" id="titleBar">
             <div class="window-select-wrap">
                 <select id="ids-select" class="window-select">
-                    <option value="grid.php?from=0&to=10&pagination=0&smalltext=15&smallbacktimer=1&btnh=76">Station IDs</option>
-                    <option value="grid.php?from=110&to=120&pagination=0&smalltext=15&smallbacktimer=1&btnh=76">Sweepers &amp; Effects</option>
+                    <option value="grid.php?from=0&to=10&pagination=0&smalltext=15&smallbacktimer=1&btnh=76"><?= htmlspecialchars($idSectionNames[0]) ?></option>
+                    <option value="grid.php?from=110&to=120&pagination=0&smalltext=15&smallbacktimer=1&btnh=76"><?= htmlspecialchars($idSectionNames[1]) ?></option>
                 </select>
                 <i class="ph ph-caret-down"></i>
             </div>
@@ -272,6 +273,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                     <iframe class="dock-clock-count" id="dockClockCount" scrolling="no"></iframe>
                 </div>
                 <div class="dock-pane dock-ids" id="dockIds" style="display:none;">
+                    <span class="dock-ids-label" id="dockIdsLabel"></span>
                     <button class="dock-undock" onclick="undock('ids')" title="Pop back out"><i class="ph ph-arrow-line-up"></i></button>
                     <button class="dock-nav" onclick="dockIdsNav(-1)" title="Previous section"><i class="ph ph-caret-left"></i></button>
                     <iframe class="dock-ids-frame" id="dockIdsFrame" scrolling="no"></iframe>
@@ -457,6 +459,12 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                     </div>
                     <div class="ma-detail" id="maDetail">
                         <p class="mgr-stub" id="maEmptyHint"><i class="ph ph-cursor-click"></i> Pick a cart on the left to edit it.</p>
+                        <!-- Empty slot: nothing but an uploader until a file lands. -->
+                        <div class="ma-empty-upload" id="maEmptyUpload" hidden>
+                            <p>This slot is empty. Upload an MP3 to start editing it.</p>
+                            <button type="button" class="ma-btn" id="maEmptyUploadBtn"><i class="ph ph-upload-simple"></i> Upload audio</button>
+                            <p class="ma-upload-hint">MP3 only, max 30&nbsp;MB (roughly 30&nbsp;minutes at typical bitrates).</p>
+                        </div>
                         <div id="maForm" hidden>
                             <!-- Group 1: enabled + name + colour -->
                             <div class="ma-row">
@@ -490,11 +498,8 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                                     <div class="ma-audio-btns">
                                         <button type="button" class="ma-btn" id="maPlayFull"><i class="ph-fill ph-play"></i> Play</button>
                                         <button type="button" class="ma-btn" id="maPlayTrim"><i class="ph ph-brackets-square"></i> Play trimmed</button>
-                                        <button type="button" class="ma-btn" id="maTrimSave"><i class="ph ph-floppy-disk"></i> Save trim</button>
-                                        <input type="file" id="maAudioFile" accept=".mp3,audio/mpeg" hidden>
-                                        <button type="button" class="ma-btn" id="maAudioUpload"><i class="ph ph-upload-simple"></i> Upload / replace</button>
+                                        <button type="button" class="ma-btn" id="maTrimSave" disabled><i class="ph ph-floppy-disk"></i> Save trim</button>
                                     </div>
-                                    <p class="ma-upload-hint">MP3 only, max 30&nbsp;MB (roughly 30&nbsp;minutes at typical bitrates).</p>
                                 </div>
                             </div>
                             <hr class="ma-hr">
@@ -507,9 +512,13 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                                 </div>
                             </div>
                             <hr class="ma-hr">
-                            <!-- Group 4: download -->
-                            <div class="ma-row"><label>Download</label>
-                                <a class="ma-btn" id="maDownload" download><i class="ph ph-download-simple"></i> Download this audio file</a>
+                            <!-- Group 4: download + upload/replace, side by side -->
+                            <div class="ma-row"><label>Audio file</label>
+                                <div class="ma-audio-btns">
+                                    <a class="ma-btn" id="maDownload" download><i class="ph ph-download-simple"></i> Download</a>
+                                    <input type="file" id="maAudioFile" accept=".mp3,audio/mpeg" hidden>
+                                    <button type="button" class="ma-btn" id="maAudioUpload"><i class="ph ph-upload-simple"></i> Upload / replace</button>
+                                </div>
                             </div>
                             <hr class="ma-hr">
                             <!-- Group 5: clear (danger, two-step confirm) -->
@@ -525,7 +534,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                         </div>
                     </div>
                 </div>
-                <!-- STATION: identity + ticker + section labels. -->
+                <!-- STATION: identity + ticker + section labels + ID-window names. -->
                 <div class="mgr-pane" id="mgrPaneStation" hidden>
                     <div class="ma-row"><label>Station name</label><input type="text" id="stName" maxlength="60" autocomplete="off" placeholder="<?= htmlspecialchars(STATION_NAME) ?>"></div>
                     <div class="ma-row"><label>Logo</label>
@@ -538,6 +547,8 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                     </div>
                     <div class="ma-row"><label>Ticker</label><input type="text" id="stTicker" maxlength="200" autocomplete="off"></div>
                     <div class="ma-row"><label>Sections</label><div class="st-labels" id="stLabels"></div></div>
+                    <div class="ma-row"><label>ID window 1</label><input type="text" id="stIdName1" maxlength="30" autocomplete="off" placeholder="Station IDs"></div>
+                    <div class="ma-row"><label>ID window 2</label><input type="text" id="stIdName2" maxlength="30" autocomplete="off" placeholder="Sweepers &amp; FX"></div>
                     <div class="ma-row"><label></label><button type="button" class="planner-save" id="stSave"><i class="ph ph-floppy-disk"></i> Save station</button></div>
                     <p class="mgr-stub st-note">Name &amp; ticker apply on the next reload of each screen.</p>
                 </div>
@@ -545,7 +556,6 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                     <div class="opt-list" id="optList"></div>
                     <button type="button" class="opt-link" id="optRegenQr" title="Not wired up yet"><i class="ph ph-qr-code"></i> Regenerate QR code</button>
                     <div class="opt-actions">
-                        <a class="opt-link" href="download.php" target="_blank" rel="noopener"><i class="ph ph-download-simple"></i> Open Legacy download page</a>
                         <a class="opt-link" href="admin.php"><i class="ph ph-clock-counter-clockwise"></i> Legacy admin panel</a>
                     </div>
                 </div>
@@ -554,8 +564,11 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                      danger zone (moved here from Options). -->
                 <div class="mgr-pane" id="mgrPaneMaintenance" hidden>
                     <div class="mnt-section">
-                        <h3>Backup &amp; restore</h3>
-                        <p class="mgr-stub-text">A backup is a single <b>.cartdb</b> file (all audio + the pseudo-database). Restoring OVERWRITES the current station. A raw legacy carts.txt/uploads folder (e.g. from an older station) needs to be zipped into the same audio.zip + db.zip shape first — the field format itself (name|file|start|colour|end|volume) already matches.</p>
+                        <div class="mnt-section-head">
+                            <h3>Backup &amp; restore</h3>
+                            <button type="button" class="mnt-info-btn" id="mntBackupInfoBtn" title="What is this?">?</button>
+                        </div>
+                        <p class="mgr-stub-text" id="mntBackupInfo" hidden>A backup is a single <b>.cartdb</b> file (all audio + the pseudo-database). Restoring OVERWRITES the current station. A raw legacy carts.txt/uploads folder (e.g. from an older station) needs to be zipped into the same audio.zip + db.zip shape first — the field format itself (name|file|start|colour|end|volume) already matches.</p>
                         <form method="post" action="backup.php" target="_blank" class="mnt-form">
                             <button type="submit" name="create_backup" class="ma-btn"><i class="ph ph-download-simple"></i> Download full backup (.cartdb)</button>
                         </form>
@@ -568,10 +581,23 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                     <div class="mnt-section">
                         <h3>Logs</h3>
                         <div class="mnt-log-tabs">
-                            <button type="button" class="mnt-log-tab active" data-log="keepalive">Keep-alive</button>
+                            <button type="button" class="mnt-log-tab" data-log="keepalive">Keep-alive</button>
                             <button type="button" class="mnt-log-tab" data-log="playback">Playback</button>
                         </div>
-                        <pre class="mnt-log-view" id="mntLogView">Loading&hellip;</pre>
+                    </div>
+                    <!-- Log content opens as its own modal (the inline scroller read
+                         as cramped/jittery); Clear wipes the file server-side. -->
+                    <div class="mnt-log-modal" id="mntLogModal" hidden>
+                        <div class="mnt-log-box">
+                            <div class="mnt-log-box-head">
+                                <h4 id="mntLogTitle">Log</h4>
+                                <div class="mnt-log-box-actions">
+                                    <button type="button" class="ma-btn danger" id="mntLogClear"><i class="ph ph-trash"></i> Clear</button>
+                                    <button type="button" class="planner-cancel" id="mntLogClose">Close</button>
+                                </div>
+                            </div>
+                            <pre class="mnt-log-view" id="mntLogView">Loading&hellip;</pre>
+                        </div>
                     </div>
                     <hr class="ma-hr">
                     <!-- Danger zone: destructive resets, guarded by a typed confirmation. -->
@@ -652,11 +678,12 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         // Manager data (admin): every slot incl. placeholders + chain flags,
         // and the Station tab's current values.
         window.MANAGER_DATA = <?= json_encode([
-            'carts'       => $managerCarts,
-            'labels'      => $labels,
-            'ticker'      => $statusText,
-            'stationName' => station_name(),
-            'logo'        => station_logo(),
+            'carts'          => $managerCarts,
+            'labels'         => $labels,
+            'ticker'         => $statusText,
+            'stationName'    => station_name(),
+            'logo'           => station_logo(),
+            'idSectionNames' => $idSectionNames,
         ], JSON_UNESCAPED_UNICODE) ?>;
 <?php endif; ?>
 
@@ -1026,10 +1053,18 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         // docked). fit=1 makes the grid fill the dock pane.
         const idSectionUrls = [...document.getElementById('ids-select').options].map(o => o.value + '&fit=1');
         let dockIdsIndex = 0;
+        // Small label above the docked grid — the only visual cue for which of
+        // the two ID sections (names editable in the manager's Station tab)
+        // is currently docked, since the dropdown itself only exists floating.
+        function updateDockIdsLabel() {
+            const opt = document.getElementById('ids-select').options[dockIdsIndex];
+            document.getElementById('dockIdsLabel').textContent = opt ? opt.text : '';
+        }
         function dockIdsNav(dir) {
             if (layoutLocked) return; // don't reload the grid mid-playback
             dockIdsIndex = (dockIdsIndex + dir + idSectionUrls.length) % idSectionUrls.length;
             document.getElementById('dockIdsFrame').src = idSectionUrls[dockIdsIndex];
+            updateDockIdsLabel();
         }
         const winState = (() => {
             // First visit (no saved state) starts with BOTH views docked.
@@ -1065,6 +1100,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             document.getElementById('dockClockTime').src  = clockDock ? DOCK_SRC.clockTime  : 'about:blank';
             document.getElementById('dockClockCount').src = clockDock ? DOCK_SRC.clockCount : 'about:blank';
             document.getElementById('dockIdsFrame').src   = idsDock   ? idSectionUrls[dockIdsIndex] : 'about:blank';
+            if (idsDock) updateDockIdsLabel();
 
             document.getElementById('dockClock').style.display = clockDock ? 'flex' : 'none';
             document.getElementById('dockIds').style.display   = idsDock   ? 'flex' : 'none';

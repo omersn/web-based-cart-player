@@ -214,6 +214,30 @@ function save_settings(array $s): bool
 }
 
 /**
+ * Names of the two floating/docked ID-window sections (data/id-sections.txt,
+ * 2 lines). Defaults match the demo data; editable from the manager's
+ * Station tab. Used for the ids-select dropdown, the docked-window label,
+ * and the manager/planner's section list.
+ */
+function load_id_section_names(): array
+{
+    $path  = data_path('id-sections.txt');
+    $lines = file_exists($path) ? file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
+    return [
+        trim($lines[0] ?? '') !== '' ? trim($lines[0]) : 'Station IDs',
+        trim($lines[1] ?? '') !== '' ? trim($lines[1]) : 'Sweepers & FX',
+    ];
+}
+
+/** Persist the two ID-section names. Returns false on failure. */
+function save_id_section_names(array $names): bool
+{
+    $a = mb_substr(trim((string) ($names[0] ?? '')), 0, 30, 'UTF-8') ?: 'Station IDs';
+    $b = mb_substr(trim((string) ($names[1] ?? '')), 0, 30, 'UTF-8') ?: 'Sweepers & FX';
+    return file_put_contents(data_path('id-sections.txt'), "$a\n$b\n", LOCK_EX) !== false;
+}
+
+/**
  * Last $lines lines of a (possibly large) log file, without loading the
  * whole thing into memory — seeks backward from the end in chunks until it
  * has enough newlines or hits the start of the file.

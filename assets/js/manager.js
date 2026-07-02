@@ -16,7 +16,7 @@
     if (!window.IS_ADMIN) return;
     const $ = (id) => document.getElementById(id);
     const CAT = { '1': '#2f6fd6', '2': '#2f9e5f', '3': '#b0479e', '4': '#c98a2b', '5': '#2aa7bf' };
-    const M = () => window.MANAGER_DATA || { carts: [], labels: [], ticker: '', stationName: '', logo: '' };
+    const M = () => window.MANAGER_DATA || { carts: [], labels: [], ticker: '', stationName: '', logo: '', idSectionNames: [] };
     const fmtT = (s) => { s = Math.max(0, s || 0); return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`; };
 
     let msgTimer = null;
@@ -44,9 +44,10 @@
     // own icon instead of a "(window)" suffix and sit above the board list.
     function audioSections() {
         const L = M().labels;
+        const idNames = M().idSectionNames || ['Station IDs', 'Sweepers & FX'];
         const ids = [
-            { label: 'Station IDs', from: 0, to: 10, ids: true },
-            { label: 'Sweepers & FX', from: 110, to: 120, ids: true },
+            { label: idNames[0] || 'Station IDs', from: 0, to: 10, ids: true },
+            { label: idNames[1] || 'Sweepers & FX', from: 110, to: 120, ids: true },
         ];
         const board = [
             { label: L[0] || '1', from: 10, to: 35 }, { label: L[1] || '2', from: 35, to: 60 },
@@ -128,8 +129,16 @@
 
     // -- Inline waveform trimmer (replaces the old iframe trimmer pages) --------
     let ws = null, wsHandlesWired = false, dragging = null; // 'start' | 'end' | null
-    let trimStart = 0, trimEnd = 0, trimDur = 0;
-    function destroyWs() { if (ws) { try { ws.destroy(); } catch (e) {} ws = null; } }
+    let trimStart = 0, trimEnd = 0, trimDur = 0, savedStart = 0, savedEnd = 0;
+    function destroyWs() {
+        if (ws) { try { ws.destroy(); } catch (e) {} ws = null; }
+        // Belt-and-suspenders: WaveSurfer.destroy() can leave its canvas/wrapper
+        // behind if a decode was still in flight, and a new instance created
+        // alongside that leftover DOM is what caused the "collapsed on return"
+        // waveform bug. Force the container empty before the next create().
+        const host = $('maWaveform');
+        if (host) host.innerHTML = '';
+    }
     function updateHandlePositions() {
         if (!trimDur) return;
         const wrap = document.querySelector('.ma-wave-wrap');
@@ -140,13 +149,23 @@
         $('maTStart').textContent = fmtT(trimStart);
         $('maTEnd').textContent = fmtT(trimEnd);
         $('maTLen').textContent = fmtT(trimEnd - trimStart);
+        updateTrimSaveState();
+    }
+    // Save trim starts disabled; it only enables (with a glowing highlight,
+    // never a size/visibility change so it can't shove neighbouring buttons
+    // around) once the handles actually differ from what's saved.
+    function updateTrimSaveState() {
+        const btn = $('maTrimSave');
+        const dirty = Math.abs(trimStart - savedStart) > 0.01 || Math.abs(trimEnd - savedEnd) > 0.01;
+        btn.disabled = !dirty;
+        btn.classList.toggle('dirty', dirty);
     }
     function wireHandleDrag() {
         if (wsHandlesWired) return;
         wsHandlesWired = true;
-        const wrap = document.querySelector('.ma-wave-wrap');
         const onMove = (e) => {
             if (!dragging || !trimDur) return;
+            const wrap = document.querySelector('.ma-wave-wrap');
             const rect = wrap.getBoundingClientRect();
             const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
             const secs = (x / rect.width) * trimDur;
@@ -174,8 +193,8 @@
         ws.load('uploads/' + c.file);
         ws.on('ready', () => {
             trimDur = ws.getDuration();
-            trimStart = Math.min(c.start || 0, trimDur);
-            trimEnd = c.end != null ? Math.min(c.end, trimDur) : trimDur;
+            trimStart = savedStart = Math.min(c.start || 0, trimDur);
+            trimEnd = savedEnd = c.end != null ? Math.min(c.end, trimDur) : trimDur;
             updateHandlePositions();
         });
         ws.on('finish', () => resetPlayButtons());
@@ -201,6 +220,8 @@
     async function saveTrim() {
         if (await post('save-cart.php', { op: 'update', id: selId, start: trimStart, end: trimEnd })) {
             Object.assign(cart(selId), { start: trimStart, end: trimEnd });
+            savedStart = trimStart; savedEnd = trimEnd;
+            updateTrimSaveState();
         }
     }
 
@@ -209,23 +230,30 @@
         destroyWs();
         const c = cart(id);
         $('maEmptyHint').hidden = true;
-        $('maForm').hidden = false;
         $('maDeleteConfirm').hidden = true; $('maDelete').hidden = false;
-        $('maEnabled').checked = c.empty || c.enabled !== 0;
-        $('maEnabled').disabled = c.empty;
-        $('maNameText').textContent = c.empty ? '(empty)' : c.name;
-        $('maName').value = c.empty ? '' : c.name;
+        // Empty slot: nothing but the uploader until a file lands — none of
+        // enable/name/colour/volume/trim/chain/move/download mean anything yet.
+        if (c.empty) {
+            $('maForm').hidden = true;
+            $('maEmptyUpload').hidden = false;
+            renderAudioList();
+            return;
+        }
+        $('maEmptyUpload').hidden = true;
+        $('maForm').hidden = false;
+        $('maEnabled').checked = c.enabled !== 0;
+        $('maEnabled').disabled = false;
+        $('maNameText').textContent = c.name;
+        $('maName').value = c.name;
         $('maName').hidden = true; $('maNameText').hidden = false;
         $('maVolume').value = Math.round((c.volume != null ? c.volume : 1) * 100);
         $('maVolVal').textContent = $('maVolume').value + '%';
         $('maChain').checked = !!c.cross;
-        $('maDownload').href = c.empty ? '#' : 'uploads/' + c.file;
-        $('maDownload').download = c.empty ? '' : (c.name.replace(/[^\w -]+/g, '_') + '.mp3');
-        $('maDownload').classList.toggle('disabled', c.empty);
+        $('maDownload').href = 'uploads/' + c.file;
+        $('maDownload').download = c.name.replace(/[^\w -]+/g, '_') + '.mp3';
         renderSwatches(c.color);
         renderMoveSlots(id);
-        $('maTrimmer').hidden = c.empty;
-        if (!c.empty) loadTrimmer(c); else { trimDur = 0; }
+        loadTrimmer(c);
         renderAudioList();
     }
     function renderSwatches(active) {
@@ -320,6 +348,7 @@
         // reset server-side — they belonged to the old file. Client-side
         // gate on type/size too, so a bad pick fails fast with a clear reason.
         $('maAudioUpload').addEventListener('click', () => $('maAudioFile').click());
+        $('maEmptyUploadBtn').addEventListener('click', () => $('maAudioFile').click());
         $('maAudioFile').addEventListener('change', async () => {
             const f = $('maAudioFile').files[0];
             if (!f) return;
@@ -373,16 +402,25 @@
             inp.dataset.i = i;
             host.appendChild(inp);
         }
+        const idNames = M().idSectionNames || ['Station IDs', 'Sweepers & FX'];
+        $('stIdName1').value = idNames[0] || '';
+        $('stIdName2').value = idNames[1] || '';
     }
     function wireStationTab() {
         $('stSave').addEventListener('click', async () => {
             const labels = [...$('stLabels').querySelectorAll('input')].map((i) => i.value);
+            const idSectionNames = [$('stIdName1').value, $('stIdName2').value];
             const resp = await post('save-station.php', {
                 stationName: $('stName').value,
                 ticker: $('stTicker').value,
                 labels,
+                idSectionNames,
             });
-            if (resp) { M().stationName = resp.stationName; M().labels = labels; M().ticker = $('stTicker').value; }
+            if (resp) {
+                M().stationName = resp.stationName; M().labels = labels; M().ticker = $('stTicker').value;
+                M().idSectionNames = resp.idSectionNames;
+                flash('Saved — reload the player to see the ID window names change', true);
+            }
         });
         $('stLogoUpload').addEventListener('click', () => $('stLogoFile').click());
         $('stLogoFile').addEventListener('change', async () => {
@@ -447,6 +485,7 @@
     }
 
     // ---- Maintenance tab --------------------------------------------------------
+    const LOG_TITLES = { keepalive: 'Keep-alive log', playback: 'Playback log' };
     let mntLogKey = 'keepalive';
     async function loadLog() {
         $('mntLogView').textContent = 'Loading…';
@@ -457,12 +496,30 @@
             $('mntLogView').textContent = resp.lines.length ? resp.lines.join('\n') : '(empty)';
         } catch (e) { $('mntLogView').textContent = 'Could not load log'; }
     }
+    function openLogModal(key) {
+        mntLogKey = key;
+        $('mntLogTitle').textContent = LOG_TITLES[key] || 'Log';
+        $('mntLogModal').hidden = false;
+        loadLog();
+    }
+    function closeLogModal() { $('mntLogModal').hidden = true; }
     function wireMaintenanceTab() {
-        document.querySelectorAll('.mnt-log-tab').forEach((t) => t.addEventListener('click', () => {
-            document.querySelectorAll('.mnt-log-tab').forEach((x) => x.classList.toggle('active', x === t));
-            mntLogKey = t.dataset.log;
-            loadLog();
-        }));
+        // Each tab OPENS the log as its own modal (over the whole manager) —
+        // the small inline scroller this replaced read as cramped/jittery.
+        document.querySelectorAll('.mnt-log-tab').forEach((t) => t.addEventListener('click', () => openLogModal(t.dataset.log)));
+        $('mntLogClose').addEventListener('click', closeLogModal);
+        $('mntLogClear').addEventListener('click', async () => {
+            const resp = await post('maintenance-logs.php', { log: mntLogKey, action: 'clear' });
+            if (resp) loadLog();
+        });
+        // Backup/restore explanation: tucked behind a "?" — hidden by default
+        // so the panel doesn't open with a wall of text (productization: keep
+        // it simple until someone actually asks what it means).
+        $('mntBackupInfoBtn').addEventListener('click', (e) => {
+            const shown = !$('mntBackupInfo').hidden;
+            $('mntBackupInfo').hidden = shown;
+            e.currentTarget.classList.toggle('active', !shown);
+        });
         // Danger zone: the typed word arms the buttons; the server re-checks it.
         const confirmIn = $('optClearConfirm');
         const arm = () => {
@@ -490,7 +547,7 @@
         $('mgrPaneOptions').hidden = name !== 'options';
         $('mgrPaneMaintenance').hidden = name !== 'maintenance';
         if (name !== 'audio') { if (ws && ws.isPlaying()) ws.pause(); }
-        if (name === 'maintenance') loadLog();
+        if (name !== 'maintenance') closeLogModal();
     }
     function open() {
         renderOptions();
@@ -503,10 +560,15 @@
     function close() {
         if (ws && ws.isPlaying()) ws.pause();
         destroyWs();
+        closeLogModal();
         $('managerOverlay').hidden = true;
         document.removeEventListener('keydown', onKey);
     }
-    function onKey(e) { if (e.key === 'Escape' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') close(); }
+    function onKey(e) {
+        if (e.key !== 'Escape' || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (!$('mntLogModal').hidden) { closeLogModal(); return; } // one Esc closes the log first
+        close();
+    }
 
     function init() {
         $('managerClose').addEventListener('click', close);

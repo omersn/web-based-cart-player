@@ -1,6 +1,11 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/** Tail a runtime log for the manager's Maintenance tab. Admin-only. */
+/**
+ * Runtime log viewer for the manager's Maintenance tab. Admin-only.
+ *
+ *   GET  ?log=keepalive|playback              -> tail the log (JSON lines)
+ *   POST { "log": "...", "action": "clear" }   -> truncate that log file
+ */
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/includes/helpers.php';
 
@@ -12,11 +17,29 @@ if (!is_admin()) {
     exit;
 }
 
-$which = $_GET['log'] ?? '';
 $files = [
     'keepalive' => BASE_DIR . '/keep-alive.log',
     'playback'  => BASE_DIR . '/playback-log.log',
 ];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $p = json_decode(file_get_contents('php://input'), true);
+    $which = $p['log'] ?? '';
+    if (!isset($files[$which]) || ($p['action'] ?? '') !== 'clear') {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Bad request']);
+        exit;
+    }
+    if (file_put_contents($files[$which], '', LOCK_EX) === false) {
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'Could not clear the log']);
+        exit;
+    }
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+$which = $_GET['log'] ?? '';
 if (!isset($files[$which])) {
     http_response_code(400);
     echo json_encode(['ok' => false, 'error' => 'Unknown log']);

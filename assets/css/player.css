@@ -1426,19 +1426,28 @@ button.opt-link { cursor: pointer; font-family: 'Assistant', sans-serif; width: 
 .ma-row-top > label:first-child { padding-top: 6px; }
 .ma-volume-short { flex: 0 0 220px !important; }
 
+/* The pencil sits right after the text (name-text no longer force-grows to
+   fill the row, which used to push the pencil to the far right edge). */
 .ma-name-wrap { flex: 1 1 auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .ma-name-text {
-    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 0 1 auto; max-width: 70%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     color: var(--text-primary); font-family: 'Assistant', sans-serif; font-size: 13.5px; font-weight: 600;
 }
-.ma-name-wrap .pbreak-edit { color: var(--text-tertiary); }
+.ma-name-wrap .pbreak-edit { color: var(--text-tertiary); flex: 0 0 auto; }
 .ma-name-wrap .pbreak-edit:hover { background: rgba(255, 255, 255, 0.14); color: var(--text-primary); }
-.ma-name-wrap input[type="text"] { flex: 1 1 auto; }
+.ma-name-wrap input[type="text"] { flex: 0 1 260px; }
 
-/* Inline waveform trimmer */
+/* Inline waveform trimmer. Fixed heights on the wave area so a re-created
+   WaveSurfer instance (switching carts, or coming back to one after tabbing
+   away) can never render into a collapsed/zero-height container. */
 .ma-trimmer { flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; }
 .ma-trimmer[hidden] { display: none; }
-.ma-wave-wrap { position: relative; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--hairline); border-radius: 8px; padding: 4px 0; }
+.ma-wave-wrap {
+    position: relative; height: 68px;
+    background: rgba(0, 0, 0, 0.3); border: 1px solid var(--hairline); border-radius: 8px;
+    padding: 4px 0; overflow: hidden;
+}
+#maWaveform { width: 100%; height: 60px; }
 .ma-handle {
     position: absolute; top: 0; bottom: 0; width: 10px; margin-left: -5px;
     cursor: ew-resize; touch-action: none;
@@ -1457,15 +1466,40 @@ button.opt-link { cursor: pointer; font-family: 'Assistant', sans-serif; width: 
 .ma-trim-times b { color: var(--text-primary); }
 .ma-upload-hint { font-size: 11px; color: var(--text-tertiary); }
 .ma-btn.disabled { opacity: 0.3; pointer-events: none; }
+/* Play / Play trimmed keep a fixed min-width so swapping their label to
+   "Stop" (a shorter string) can't resize the button under the cursor. */
+#maPlayFull, #maPlayTrim { min-width: 118px; justify-content: center; }
+/* Save trim: disabled by default, only enabling — with a glowing highlight,
+   never a layout change — once the handles actually move away from the
+   saved values. Always occupies the same slot in the row either way. */
+#maTrimSave.dirty { background: var(--cyan); color: #06222a; border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-tint); }
+#maTrimSave.dirty:hover { filter: brightness(1.08); }
 
-/* Two-step "are you sure" for clearing a slot */
+/* Empty-slot view: nothing but a prompt + Upload button until a file lands. */
+.ma-empty-upload { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 30px 0; }
+.ma-empty-upload p { color: var(--text-tertiary); font-size: 13.5px; }
+
+/* Two-step "are you sure" for clearing a slot. The [hidden] rule must win
+   over the class's own display:flex (equal specificity, last-in-file wins)
+   — without it the confirm row showed on every fresh selectCart(). */
 .ma-danger-row { flex-wrap: wrap; }
 .ma-confirm { display: flex; align-items: center; gap: 10px; color: var(--text-primary); font-size: 13px; font-weight: 700; }
+.ma-confirm[hidden] { display: none; }
 
 /* Maintenance tab */
 .mnt-section { margin-bottom: 4px; }
-.mnt-section h3 { font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 10px; }
+.mnt-section-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.mnt-section h3 { font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); margin: 0; }
+/* "?" info trigger — the explanation is hidden by default (productization:
+   don't scare the user with a wall of text they didn't ask for). */
+.mnt-info-btn {
+    flex: 0 0 auto; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--hairline); cursor: pointer;
+    background: rgba(255, 255, 255, 0.06); color: var(--text-tertiary);
+    display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800;
+}
+.mnt-info-btn:hover, .mnt-info-btn.active { color: var(--text-primary); background: rgba(255, 255, 255, 0.14); }
 .mgr-stub-text { font-size: 12.5px; color: var(--text-tertiary); line-height: 1.5; margin-bottom: 14px; max-width: 560px; }
+.mgr-stub-text[hidden] { display: none; }
 .mgr-stub-text b { color: var(--text-primary); }
 .mnt-form { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .mnt-file {
@@ -1479,10 +1513,41 @@ button.opt-link { cursor: pointer; font-family: 'Assistant', sans-serif; width: 
     font-family: 'Assistant', sans-serif; font-size: 12px; font-weight: 700;
 }
 .mnt-log-tab.active { background: var(--cyan-tint); color: var(--cyan-text); border-color: var(--cyan-border); }
+/* The log VIEW itself is a full modal (its own overlay above the manager),
+   not a small inline scroller — that inline box read as jittery/cramped. */
+.mnt-log-modal {
+    position: fixed; inset: 0; z-index: 30;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(4, 6, 9, 0.72);
+}
+.mnt-log-modal[hidden] { display: none; }
+.mnt-log-box {
+    width: min(900px, 90vw); height: min(600px, 80vh);
+    display: flex; flex-direction: column;
+    background: var(--bg-panel); border: 1px solid var(--hairline); border-radius: 12px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6); overflow: hidden;
+}
+.mnt-log-box-head {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; background: var(--window-header); border-bottom: 1px solid var(--hairline);
+}
+.mnt-log-box-head h4 { font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-primary); }
+.mnt-log-box-actions { display: flex; gap: 8px; }
 .mnt-log-view {
-    max-height: 260px; overflow-y: auto; margin: 0;
-    padding: 12px; border: 1px solid var(--hairline); border-radius: 8px;
+    flex: 1 1 auto; overflow-y: auto; margin: 0;
+    padding: 14px 16px;
     background: #05070a; color: #9fe6d0;
     font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5;
     white-space: pre-wrap; word-break: break-word;
+}
+
+/* Small label over the docked ID window: the dropdown only exists floating,
+   so this is the only cue for which section (name editable in the manager's
+   Station tab) is currently docked. */
+.dock-ids-label {
+    position: absolute; top: 4px; left: 50%; transform: translateX(-50%); z-index: 2;
+    padding: 2px 9px; border-radius: 5px;
+    background: rgba(0, 0, 0, 0.55); color: var(--text-secondary);
+    font-family: 'Assistant', sans-serif; font-size: 10.5px; font-weight: 700;
+    letter-spacing: 0.04em; pointer-events: none;
 }

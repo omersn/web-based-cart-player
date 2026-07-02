@@ -1,11 +1,12 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /**
- * Save the Station tab (manager): ticker, section labels and the station
- * name override.
+ * Save the Station tab (manager): ticker, section labels, the two ID-window
+ * names and the station name override.
  *
  * POST JSON, all keys optional:
- *   { "ticker": "...", "labels": ["..." x10], "stationName": "..." }
+ *   { "ticker": "...", "labels": ["..." x10], "idSectionNames": ["...", "..."],
+ *     "stationName": "..." }
  *
  * Admin-only. Field lengths are clamped; pipes/newlines stripped where the
  * flat files use them as separators. Responds { ok: true }.
@@ -44,6 +45,9 @@ if (isset($p['labels']) && is_array($p['labels'])) {
     for ($i = 0; $i < 10; $i++) $labels[] = $clean($p['labels'][$i] ?? (string) ($i + 1), 40) ?: (string) ($i + 1);
     $ok = $ok && file_put_contents(data_path('parts.txt'), implode("\n", $labels) . "\n", LOCK_EX) !== false;
 }
+if (isset($p['idSectionNames']) && is_array($p['idSectionNames'])) {
+    $ok = $ok && save_id_section_names($p['idSectionNames']);
+}
 if (array_key_exists('stationName', $p)) {
     // Empty = revert to the config.php default.
     $ok = $ok && file_put_contents(data_path('station.txt'), $clean($p['stationName'], 60), LOCK_EX) !== false;
@@ -54,4 +58,4 @@ if (!$ok) {
     echo json_encode(['ok' => false, 'error' => 'Could not write data files']);
     exit;
 }
-echo json_encode(['ok' => true, 'stationName' => station_name()]);
+echo json_encode(['ok' => true, 'stationName' => station_name(), 'idSectionNames' => load_id_section_names()]);
