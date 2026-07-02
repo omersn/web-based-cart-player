@@ -458,6 +458,8 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                                     <button type="button" class="ma-btn" id="maPreview"><i class="ph-fill ph-play"></i> Preview</button>
                                     <button type="button" class="ma-btn" id="maTrimStart"><i class="ph ph-arrow-line-left"></i> Trim start</button>
                                     <button type="button" class="ma-btn" id="maTrimEnd"><i class="ph ph-arrow-line-right"></i> Trim end</button>
+                                    <input type="file" id="maAudioFile" accept=".mp3" hidden>
+                                    <button type="button" class="ma-btn" id="maAudioUpload"><i class="ph ph-upload-simple"></i> Upload / replace</button>
                                 </div>
                             </div>
                             <div class="ma-trim-host" id="maTrimHost" hidden></div>

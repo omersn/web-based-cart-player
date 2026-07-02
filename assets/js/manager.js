@@ -196,6 +196,25 @@
         $('maPreview').addEventListener('click', toggleMaPreview);
         $('maTrimStart').addEventListener('click', () => openTrim('start'));
         $('maTrimEnd').addEventListener('click', () => openTrim('end'));
+        // Upload new audio into the slot (or replace what's there). Trims
+        // reset server-side — they belonged to the old file.
+        $('maAudioUpload').addEventListener('click', () => $('maAudioFile').click());
+        $('maAudioFile').addEventListener('change', async () => {
+            const f = $('maAudioFile').files[0];
+            if (!f) return;
+            const fd = new FormData();
+            fd.append('id', selId);
+            fd.append('audio', f);
+            try {
+                const r = await fetch('upload-audio.php', { method: 'POST', body: fd });
+                const resp = await r.json();
+                if (!resp.ok) { flash(resp.error || 'Upload failed'); return; }
+                Object.assign(cart(selId), { file: resp.file, name: resp.name, start: 0, end: null, empty: false });
+                selectCart(selId);
+                flash('Audio saved', true);
+            } catch (e) { flash('Upload failed'); }
+            $('maAudioFile').value = '';
+        });
         $('maMoveBtn').addEventListener('click', async () => {
             const to = +$('maMoveSlot').value;
             if (!to || to === selId) return;
