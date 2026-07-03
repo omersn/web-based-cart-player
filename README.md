@@ -66,6 +66,10 @@ and the upcoming schedule visible above it.
 chaining (with its own crossfade editor), move, and file replace.
 ![Audio manager](docs/screenshots/audio-manager.png)
 
+**Chain crossfade editor** — one lane per item in a chain, each with a draggable fade-in handle and
+a live cross-time readout; Play auditions the whole chain through the crossfades.
+![Chain crossfade editor](docs/screenshots/chain-crossfade-editor.png)
+
 **Settings — Station tab** — name, logo, ticker, section labels, and the two floating ID-window names.
 ![Settings — Station](docs/screenshots/settings-station.png)
 
