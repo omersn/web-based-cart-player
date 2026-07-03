@@ -277,6 +277,8 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         </div>
         <div class="iframe-content-0001">
             <iframe id="floater" src="grid.php?from=0&to=10&pagination=0&smalltext=15&smallbacktimer=1&btnh=76" scrolling="no" style="width: 100%; height: 100%; border: none;"></iframe>
+            <!-- Masks the grid's responsive reflow when this window reloads. -->
+            <div class="win-reload-mask" id="floatIdsMask"><div class="win-reload-bar"><i></i></div></div>
         </div>
     </div>
 
@@ -385,6 +387,8 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                         <button class="dock-undock" onclick="undock('ids')" title="Pop back out"><i class="ph ph-arrow-line-up"></i></button>
                     </div>
                     <iframe class="dock-ids-frame" id="dockIdsFrame" scrolling="no"></iframe>
+                    <!-- Masks the grid's responsive reflow when this window reloads. -->
+                    <div class="win-reload-mask" id="dockIdsMask"><div class="win-reload-bar"><i></i></div></div>
                 </div>
             </div>
         </div>
@@ -1077,6 +1081,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         });
         document.getElementById('ids-select').addEventListener('change', (e) => {
             document.getElementById('floater').src = e.target.value;
+            if (winState.ids.visible && !winState.ids.docked) maskIdSurface('float');
         });
         document.getElementById('clock-select').addEventListener('change', (e) => {
             const floatingContainer = document.querySelector('.floating-container-0002');
@@ -1347,6 +1352,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             if (layoutLocked) return; // don't reload the grid mid-playback
             dockIdsIndex = +e.target.value;
             document.getElementById('dockIdsFrame').src = idSectionUrls[dockIdsIndex];
+            maskIdSurface('dock');
         });
         const winState = (() => {
             // First visit (no saved state) starts with BOTH views docked.
@@ -1405,6 +1411,35 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             // DJ mode tucks a clock-only dock under the library column so the
             // three decks keep the full height (see player.css).
             document.body.classList.toggle('dock-clock-only', clockDock && !idsDock);
+
+            // Mask the Station-ID window while its surface changes (dock <->
+            // undock, hide -> show): the grid inside reflows responsively and
+            // that jank is hidden behind a black cover + progress bar.
+            const idsSurface = !winState.ids.visible ? 'none' : (winState.ids.docked ? 'dock' : 'float');
+            if (lastIdsSurface !== undefined && idsSurface !== lastIdsSurface && idsSurface !== 'none') {
+                maskIdSurface(idsSurface);
+            }
+            lastIdsSurface = idsSurface;
+        }
+        // Which ID surface the last render showed — so we only mask on a change.
+        let lastIdsSurface = undefined;
+        function maskIdSurface(kind) {
+            const mask = document.getElementById(kind === 'dock' ? 'dockIdsMask' : 'floatIdsMask');
+            if (!mask) return;
+            const bar = mask.querySelector('.win-reload-bar > i');
+            mask.style.display = 'flex';
+            bar.style.transition = 'none';
+            bar.style.width = '0%';
+            requestAnimationFrame(() => {
+                bar.style.transition = 'width 1.1s ease';
+                bar.style.width = '92%';
+            });
+            clearTimeout(mask._t);
+            mask._t = setTimeout(() => {
+                bar.style.transition = 'width 0.2s ease';
+                bar.style.width = '100%';
+                setTimeout(() => { mask.style.display = 'none'; }, 220);
+            }, 1150);
         }
 
         // Layout operations are locked while any cart is on air (see below).

@@ -1780,15 +1780,22 @@ body.dj-mode.dock-clock-only .dj-tree { margin-bottom: 200px; }
 /* LEFT: the library — fixed and slim (the decks get the room), the same
    paper-style tree as the planner. */
 .dj-tree {
-    flex: 0 0 340px; min-width: 0;
+    flex: 0 0 420px; min-width: 0;
     display: flex; flex-direction: column;
     border-right: 3px solid var(--hairline);
     background: #b7bec6; color: #111;
 }
+/* Tighter spacing in the DJ library so wide names get the room (the fire +
+   preview buttons sit in the flow permanently). Scoped to .dj-tree so the
+   planner tree keeps its roomier defaults. */
+.dj-tree .ptree-cart { gap: 4px; padding: 2px 8px 2px 4px; }
+.dj-tree .ptree-list { margin-left: 7px; padding-left: 5px; }
+.dj-tree .ptree-btn { width: 19px; height: 19px; }
+.dj-tree .ptree-len { margin: 0 2px; }
 /* Marker columns: chain link and favourite star get a fixed slot EACH, so
    they line up column-wise and the name always starts at the same x. */
 .dj-mark {
-    flex: 0 0 15px; display: flex; align-items: center; justify-content: center;
+    flex: 0 0 13px; display: flex; align-items: center; justify-content: center;
     font-size: 11px;
 }
 .dj-mark-chain { color: #1d7a44; }
@@ -2009,4 +2016,25 @@ body:has(.automation-panel.active) .dj-send-auto { display: flex; }
     background: rgba(0, 0, 0, 0.25);
     font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
     color: var(--text-tertiary);
+}
+
+/* ---- ID-window reload mask -------------------------------------------- */
+/* A black cover + slim progress bar over the Station-ID window while it
+   reloads (dock/undock/hide-reshow), hiding the grid's responsive reflow
+   for a cleaner transition. Its container (.iframe-content-0001 / .dock-pane)
+   is already position:relative. */
+.win-reload-mask {
+    display: none;
+    position: absolute; inset: 0; z-index: 8;
+    background: #0b0d11;
+    align-items: center; justify-content: center;
+}
+.win-reload-bar {
+    width: 62%; max-width: 240px; height: 5px;
+    border-radius: 3px; overflow: hidden;
+    background: rgba(255, 255, 255, 0.12);
+}
+.win-reload-bar > i {
+    display: block; height: 100%; width: 0;
+    background: var(--cyan); border-radius: 3px;
 }
