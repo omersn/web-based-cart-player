@@ -11,6 +11,7 @@
  * smallbacktimer (1 = compact back-timer).
  */
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/includes/helpers.php'; // asset_v() cache-buster
 
 header('Cache-Control: no-cache, no-store, must-revalidate');
 header('Pragma: no-cache');
@@ -234,6 +235,6 @@ $backtimerStyles   = ($smallbacktimer === '1')
 
         window.CARTWALL_CONFIG = { dataUrl: <?= json_encode(DATA_URL) ?>, itemsPerPage: <?= ITEMS_PER_PAGE ?> };
     </script>
-    <script src="assets/js/cartwall.js"></script>
+    <script src="<?= asset_v('assets/js/cartwall.js') ?>"></script>
 </body>
 </html>

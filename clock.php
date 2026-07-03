@@ -107,9 +107,12 @@
         body.dock .sec-ring .tick { width: 4px; height: 4px; margin-left: -2px; }
         body.dock .hour-marks .hour-mark { top: -75px; left: -1px; width: 2px; height: 10px; transform-origin: 1px 75px; }
         body.dock .readout .hm { font-size: 30px; }
+        /* ?nodigits=1 (the clock-only dock trio): the big digital clock sits
+           right beside this ring, so the centre readout is redundant there. */
+        body.nodigits .readout { display: none; }
     </style>
 </head>
-<body class="<?= isset($_GET['dock']) ? 'dock' : '' ?>">
+<body class="<?= isset($_GET['dock']) ? 'dock' : '' ?><?= isset($_GET['nodigits']) ? ' nodigits' : '' ?>">
     <div class="ring" id="ring">
         <div class="hour-marks" id="hourMarks"></div>
         <div class="sec-ring" id="secRing"></div>

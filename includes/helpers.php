@@ -55,12 +55,85 @@ function load_page_names(): array
     return file_exists($path) ? file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
 }
 
-/** Chain flags (data/cross.txt) as an array of ints — 1 = auto-play next. */
+/**
+ * Asset URL with an mtime cache-buster. Browsers happily serve week-old
+ * CSS/JS against a fresh page otherwise — a recurring QA trap (styles
+ * missing, buttons "not working") every time a file changes.
+ */
+function asset_v(string $path): string
+{
+    $f = BASE_DIR . '/' . $path;
+    return $path . '?v=' . (file_exists($f) ? filemtime($f) : 1);
+}
+
+/**
+ * Chain flags (data/cross.txt) as an array of ints — 1 = auto-play next.
+ * A line may carry a second field, "flag|fadeMs": the chain-crossfade editor's
+ * per-gap overlap in ms (the NEXT cart launches that early). intval() reads
+ * just the flag, so every legacy reader keeps working untouched.
+ */
 function load_cross_states(): array
 {
     $path  = data_path('cross.txt');
     $lines = file_exists($path) ? file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
     return array_map('intval', $lines);
+}
+
+/** Per-line chain-crossfade ms (cross.txt second field; 0 = butt joint). */
+function load_chain_fades(): array
+{
+    $path  = data_path('cross.txt');
+    $lines = file_exists($path) ? file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
+    return array_map(function ($l) {
+        $p = explode('|', $l);
+        return max(0, min(10000, (int) ($p[1] ?? 0)));
+    }, $lines);
+}
+
+/**
+ * Persist chain flags + fades together ("flag" or "flag|ms" per line — the
+ * ms field only appears where a fade exists, so an unused file keeps the
+ * plain legacy shape).
+ */
+function save_cross_data(array $flags, array $fades): bool
+{
+    $lines = [];
+    foreach ($flags as $i => $flag) {
+        $ms = max(0, min(10000, (int) ($fades[$i] ?? 0)));
+        $lines[] = $ms > 0 ? "$flag|$ms" : (string) $flag;
+    }
+    return file_put_contents(data_path('cross.txt'), implode("\n", $lines) . "\n", LOCK_EX) !== false;
+}
+
+/**
+ * Output routing (data/routing.txt, "key|out" per line) — which of the four
+ * SIMULATED stereo outputs each DJ player and the PFL (preview/pre-fade
+ * listen) bus feeds. GUI-level only until the appification phase maps them
+ * to real devices.
+ */
+function load_routing(): array
+{
+    $r = ['player1' => 1, 'player2' => 2, 'player3' => 3, 'pfl' => 4, 'carts' => 1, 'autoplayer' => 1];
+    $path  = data_path('routing.txt');
+    $lines = file_exists($path) ? file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
+    foreach ($lines as $line) {
+        $p = explode('|', $line);
+        $key = trim($p[0] ?? '');
+        $out = (int) ($p[1] ?? 0);
+        if (array_key_exists($key, $r) && $out >= 1 && $out <= 4) $r[$key] = $out;
+    }
+    return $r;
+}
+
+/** Persist the routing map. Returns false on failure. */
+function save_routing(array $r): bool
+{
+    $body = '';
+    foreach (load_routing() as $key => $def) {
+        $out = (int) ($r[$key] ?? $def);
+        $body .= $key . '|' . max(1, min(4, $out)) . "\n";
+    }
+    return file_put_contents(data_path('routing.txt'), $body, LOCK_EX) !== false;
 }
 
 /**

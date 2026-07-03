@@ -1,0 +1,6 @@
+player1|1
+player2|2
+player3|3
+pfl|4
+carts|1
+autoplayer|1

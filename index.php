@@ -31,6 +31,8 @@ $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : 
 // section selectors use, so a result can show its page and jump there.
 $allCarts  = [];
 $enabledStates = load_enabled_states();
+$crossStates   = load_cross_states();
+$chainFades    = load_chain_fades();
 foreach (load_carts() as $i => $line) {
     $p    = explode('|', $line);
     $name = trim($p[0] ?? '');
@@ -45,6 +47,10 @@ foreach (load_carts() as $i => $line) {
         'color'  => trim($p[3] ?? '1'),
         'end'    => (isset($p[4]) && $p[4] !== '') ? (float) $p[4] : null,
         'volume' => (isset($p[5]) && $p[5] !== '') ? (float) $p[5] : 1,
+        // Chain flag + the crossfade INTO the next cart (chain editor) —
+        // DJ decks and the board both honour these at playout.
+        'cross'     => (int) ($crossStates[$i] ?? 0),
+        'chainFade' => (int) ($chainFades[$i] ?? 0),
     ];
 }
 
@@ -56,7 +62,6 @@ $breaks = load_breaks();
 // anywhere.
 $managerCarts = [];
 if (is_admin()) {
-    $crossStates = load_cross_states();
     foreach (load_carts() as $i => $line) {
         $p = array_pad(explode('|', $line), 6, '');
         $name = trim($p[0]); $file = trim($p[1]);
@@ -69,6 +74,7 @@ if (is_admin()) {
             'end'     => trim($p[4]) !== '' ? (float) $p[4] : null,
             'volume'  => trim($p[5]) !== '' ? (float) $p[5] : 1,
             'cross'   => (int) ($crossStates[$i] ?? 0),
+            'chainFade' => (int) ($chainFades[$i] ?? 0),
             'enabled' => (int) ($enabledStates[$i] ?? 1),
             'empty'   => ($name === '' || $name === '-' || $file === '' || $file === '0.mp3'),
         ];
@@ -88,7 +94,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>Cart Player &mdash; <?= htmlspecialchars(STATION_NAME) ?></title>
     <link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg">
-    <link rel="stylesheet" href="assets/css/player.css">
+    <link rel="stylesheet" href="<?= asset_v('assets/css/player.css') ?>">
     <script>
         // Stable per-machine ID, generated once and kept in localStorage. Shared
         // with the keep-alive iframe (same origin), so every frontend stamps its
@@ -116,6 +122,12 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                     <div class="line2"><?= htmlspecialchars($brandSub) ?></div>
                 </div>
             </div>
+            <!-- Carts mode <-> DJ mode toggle. Sits BEFORE the page dropdown
+                 (which hides in DJ mode) so toggling never moves the button
+                 under the cursor. -->
+            <button type="button" class="icon-btn" id="chip-djmode" title="DJ mode / Carts mode" <?= $settings['dj_mode'] ? '' : 'disabled' ?>>
+                <i class="ph ph-squares-four"></i><span class="status-dot red"></span>
+            </button>
             <div class="topbar-select-wrap">
                 <select id="section-select" class="topbar-select">
                     <option value="grid.php?from=10&to=35&pagination=0"><?= htmlspecialchars($labels[0]) ?></option>
@@ -131,11 +143,6 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 </select>
                 <i class="ph ph-caret-down"></i>
             </div>
-            <!-- DJ layout placeholder (not wired yet): lives beside the page
-                 selector since it's a board-view mode, not a window/tool. -->
-            <button type="button" class="icon-btn" id="chip-djmode" title="DJ mode (coming soon)" <?= $settings['dj_mode'] ? '' : 'disabled' ?>>
-                <i class="ph ph-squares-four"></i>
-            </button>
         </div>
 
         <span class="topbar-divider"></span>
@@ -159,13 +166,16 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                      Feature switches (manager Options tab) disable buttons;
                      they stay visible even when off. -->
                 <button type="button" class="icon-btn is-active" id="chip-clock" onclick="toggleClockWindow();" title="Clock">
-                    <i class="ph ph-clock"></i><span class="status-dot red"></span>
+                    <!-- A small LCD "12:00" — distinct from the autoplayer's
+                         clock-with-a-note glyph. -->
+                    <svg class="icon-digiclock" viewBox="0 0 30 20" width="24" height="17" aria-hidden="true"><rect x="1.5" y="1.5" width="27" height="17" rx="3.5" fill="none" stroke="currentColor" stroke-width="2"/><text x="15" y="14" text-anchor="middle" font-family="'JetBrains Mono', monospace" font-size="9" font-weight="800" letter-spacing="0.5" fill="currentColor">12:00</text></svg>
+                    <span class="status-dot red"></span>
                 </button>
                 <button type="button" class="icon-btn is-active" id="chip-ids" onclick="toggleIdsWindow();" title="Station IDs" <?= $settings['ids_window'] ? '' : 'disabled' ?>>
                     <i class="ph ph-radio"></i><span class="status-dot red"></span>
                 </button>
                 <button type="button" class="icon-btn" id="chip-auto" onclick="window.Automation && window.Automation.toggle();" title="Automation playlist" <?= $settings['automation'] ? '' : 'disabled' ?>>
-                    <i class="ph ph-playlist"></i><span class="status-dot red"></span>
+                    <span class="icon-clocknote"><i class="ph ph-clock"></i><i class="ph-fill ph-music-note"></i></span><span class="status-dot red"></span>
                 </button>
                 <span class="icon-sep"></span>
                 <!-- Group B: admin tools, each its own overlay/window. Logged
@@ -286,6 +296,56 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 <iframe width="100%" height="100%" id="cartgrid" name="cartgrid"
                         src="grid.php?from=10&to=75&pagination=0&fit=1&mainbar=1&timestamp=<?= time() ?>"
                         frameborder="0" scrolling="no" allowfullscreen></iframe>
+
+                <!-- DJ mode: replaces the board (which stays loaded, just
+                     hidden) with a 60/40 split — the library tree on the
+                     left, two fully MANUAL player decks on the right. Built
+                     and driven by assets/js/dj.js from window.CARTS. -->
+                <div class="dj-mode" id="djMode" hidden>
+                    <div class="dj-tree">
+                        <div class="ptree-toolbar dj-toolbar">
+                            <div class="ma-search-wrap">
+                                <input type="text" class="ptree-search" id="djSearch" placeholder="Search carts&hellip;" autocomplete="off">
+                                <button type="button" class="ma-search-clear" id="djSearchClear" title="Clear" hidden><i class="ph ph-x"></i></button>
+                            </div>
+                            <button type="button" class="ptree-fav-filter" id="djFavFilter" title="Show favourites only"><i class="ph ph-star"></i></button>
+                        </div>
+                        <div class="ptree-scroller dj-tree-scroller" id="djTree"></div>
+                    </div>
+                    <div class="dj-decks">
+                        <?php foreach ([1, 2, 3] as $deckNo): ?>
+                        <div class="dj-deck" id="djDeck<?= $deckNo ?>" data-deck="<?= $deckNo ?>">
+                            <div class="dj-deck-head">
+                                <span class="dj-deck-num"><?= $deckNo ?></span>
+                                <span class="dj-deck-name"></span>
+                                <span class="dj-deck-onair">ON AIR</span>
+                                <span class="dj-deck-out" title="Assigned output (manager &rsaquo; Routing)"></span>
+                            </div>
+                            <div class="dj-deck-mid">
+                                <!-- Big square transport: THE button of the deck. -->
+                                <button type="button" class="dj-deck-play" disabled title="Play / pause"><i class="ph-fill ph-play"></i></button>
+                                <span class="dj-deck-empty">Fire a cart from the library</span>
+                                <!-- Waveform of the item on deck; the progress
+                                     wash sweeps OVER it while playing. -->
+                                <div class="dj-deck-wavebox" hidden>
+                                    <canvas class="dj-deck-wave"></canvas>
+                                    <div class="dj-deck-wash"></div>
+                                    <span class="dj-deck-chainpos" hidden></span>
+                                </div>
+                            </div>
+                            <div class="dj-deck-foot">
+                                <div class="dj-deck-btns">
+                                    <button type="button" class="dj-deck-stop" disabled title="Stop"><i class="ph-fill ph-stop"></i></button>
+                                    <button type="button" class="dj-deck-repeat" disabled title="Repeat"><i class="ph ph-repeat"></i></button>
+                                    <button type="button" class="dj-deck-eject" disabled title="Unload"><i class="ph ph-eject"></i></button>
+                                </div>
+                                <!-- Countdown: big, and red for the last 4 seconds. -->
+                                <span class="dj-deck-time"><b class="dj-deck-remain">0:00</b><span class="dj-deck-total">/ <span class="dj-deck-len">0:00</span></span></span>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
             </div>
 
             <!-- Bottom dock: the clock and/or Station-ID views can be docked here.
@@ -302,7 +362,19 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                         </div>
                         <button class="dock-undock" onclick="undock('clock')" title="Pop back out"><i class="ph ph-arrow-line-up"></i></button>
                     </div>
+                    <!-- Shared-dock (clock + IDs): one view, per the dropdown. -->
                     <iframe class="dock-clock-frame" id="dockClockFrame" scrolling="no"></iframe>
+                    <!-- Clock ALONE (carts mode): the full trio — big digital
+                         clock with seconds | the ring | time to end of hour —
+                         with the dropdown locked on "Clock" as the header.
+                         DJ mode slims it back to the ring (see player.css). -->
+                    <div class="dock-clock-multi" id="dockClockMulti" hidden>
+                        <div class="dock-clock-digital" id="dockClockDigital">--:--:--</div>
+                        <span class="dock-vsep"></span>
+                        <iframe class="dock-clock-ring" id="dockClockRing" scrolling="no"></iframe>
+                        <span class="dock-vsep"></span>
+                        <iframe class="dock-clock-count" id="dockClockCount2" scrolling="no"></iframe>
+                    </div>
                 </div>
                 <div class="dock-pane dock-ids" id="dockIds" style="display:none;">
                     <div class="dock-header">
@@ -422,6 +494,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 <div class="auto-mode-switch" id="autoModeSwitch">
                     <button data-mode="auto" id="autoModeAuto" class="active"><span class="auto-armed-dot" id="autoArmedDot"></span>AUTO</button>
                     <button data-mode="manual" id="autoModeManual">MANUAL</button>
+                    <span class="auto-out-badge" id="autoOutBadge" title="Assigned output (manager &rsaquo; Routing)"></span>
                 </div>
 
                 <div class="auto-auto-area" id="autoAutoArea">
@@ -561,6 +634,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                                     <span class="ma-name-text" id="maNameText"></span>
                                     <input type="text" id="maName" maxlength="60" autocomplete="off" hidden>
                                     <button type="button" class="pbreak-edit" id="maNameEdit" title="Rename"><i class="ph ph-pencil-simple"></i></button>
+                                    <button type="button" class="pbreak-edit" id="maFav" title="Favourite"><i class="ph ph-star"></i></button>
                                     <span class="ma-length-info" id="maLengthInfo" title="Full length &middot; trimmed length"></span>
                                 </div>
                             </div>
@@ -589,7 +663,10 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                             </div>
                             <hr class="ma-hr">
                             <!-- Group 3: chain + move -->
-                            <div class="ma-row"><label>Chain</label><label class="ma-chain"><input type="checkbox" class="opt-switch" id="maChain"><span>Auto-play the next cart when this one ends</span></label></div>
+                            <div class="ma-row"><label>Chain</label>
+                                <label class="ma-chain"><input type="checkbox" class="opt-switch" id="maChain"><span>Auto-play the next cart when this one ends</span></label>
+                                <button type="button" class="ma-btn" id="maChainEdit" hidden><i class="ph ph-flow-arrow"></i> Edit chain</button>
+                            </div>
                             <div class="ma-row"><label>Move</label>
                                 <div class="ma-audio-btns">
                                     <select class="ma-select" id="maMoveSlot"></select>
@@ -620,6 +697,29 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                     </div>
                 </div>
             </div>
+            <!-- Chain crossfade editor: EDIT CHAIN opens the chain run (up to
+                 5 items) as staggered waveform lanes — drag a lane left to
+                 deepen its fade into the previous item, ride each lane's
+                 volume line, preview the whole join. Fades save to cross.txt,
+                 volumes to the carts themselves. -->
+            <div class="chain-ed-modal" id="chainEditor" hidden>
+                <div class="chain-ed-box">
+                    <div class="chain-ed-head">
+                        <h4 id="chainEdTitle">Chain crossfade</h4>
+                        <span class="cross-readout" id="chainEdInfo"></span>
+                    </div>
+                    <div class="chain-lanes" id="chainLanes">
+                        <div class="cross-playhead" id="chainPlayhead" hidden></div>
+                    </div>
+                    <div class="chain-ed-btns">
+                        <button type="button" class="ma-btn" id="chainEdPlay"><i class="ph-fill ph-play"></i> Play</button>
+                        <span class="chain-ed-note" id="chainEdNote"></span>
+                        <button type="button" class="ma-btn chain-ed-save" id="chainEdSave" disabled><i class="ph ph-floppy-disk"></i> Save</button>
+                        <button type="button" class="ma-btn" id="chainEdCancel">Cancel</button>
+                    </div>
+                    <div class="cross-vu"><div class="cross-vu-fill" id="chainVuFill"></div></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -638,6 +738,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             <div class="mgr-tabs">
                 <button type="button" class="mgr-tab active" data-tab="station">Station</button>
                 <button type="button" class="mgr-tab" data-tab="options">Options</button>
+                <button type="button" class="mgr-tab" data-tab="routing">Routing</button>
                 <button type="button" class="mgr-tab" data-tab="maintenance">Maintenance</button>
             </div>
             <div class="mgr-body">
@@ -665,6 +766,16 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                     <div class="opt-actions">
                         <a class="opt-link" href="admin.php"><i class="ph ph-clock-counter-clockwise"></i> Legacy admin panel</a>
                     </div>
+                </div>
+                <!-- ROUTING: which of the four SIMULATED stereo outputs each
+                     DJ player and the PFL (preview) bus feeds. GUI-level
+                     until the appification phase maps them to real devices. -->
+                <div class="mgr-pane" id="mgrPaneRouting" hidden>
+                    <p class="mgr-stub-text">Four simulated stereo outputs (<b>OUT 1&ndash;4</b>) for GUI testing —
+                        assignments are stored and shown across the player, and will map to real sound
+                        devices in the desktop build. The <b>PFL channel</b> carries every single-play
+                        preview button (planner tree, audio manager, DJ library).</p>
+                    <div class="opt-list" id="routingList"></div>
                 </div>
                 <!-- MAINTENANCE: backup/restore (.cartdb, cross-compatible with any
                      station built on the same helpers), runtime logs, and the
@@ -781,6 +892,10 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
 
         // Feature switches (data/settings.txt) — UI-level button gating only.
         window.SETTINGS = <?= json_encode($settings) ?>;
+
+        // Output routing (data/routing.txt): which SIMULATED stereo out each
+        // DJ player and the PFL (preview) bus feeds. GUI-level for now.
+        window.ROUTING = <?= json_encode(load_routing()) ?>;
 <?php if (is_admin()): ?>
         // Manager data (admin): every slot incl. placeholders + chain flags,
         // and the Station tab's current values.
@@ -1131,6 +1246,14 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             });
         })();
 
+        // Big custom tooltips for the topbar buttons (the native title bubble
+        // is tiny and slow) — the title text moves to data-tip, rendered by
+        // a styled ::after in player.css.
+        document.querySelectorAll('.topbar .icon-btn[title]').forEach((b) => {
+            b.dataset.tip = b.getAttribute('title');
+            b.removeAttribute('title');
+        });
+
         // --- Toolbar actions.
         function stopAll() {
             ['cartgrid', 'floater', 'dockIdsFrame'].forEach(id => {
@@ -1138,6 +1261,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 if (iframe && iframe.src && !iframe.src.includes('about:blank')) iframe.src = iframe.src;
             });
             if (window.Automation) window.Automation.stop();
+            if (window.DJMode) window.DJMode.stopAll();
         }
         // Cart names/colours/enable-state/trims/labels can all change from the
         // Station manager or the Audio manager; both call this on close so the
@@ -1147,11 +1271,14 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         // overlay the startup kick uses — the bar rides to 90% on a timer and
         // completes when every reloaded frame has actually landed (with a
         // safety timeout so the mask can never get stuck).
-        window.refreshPlayerWindows = function () {
-            const frames = ['cartgrid', 'floater', 'floater2', 'dockIdsFrame', 'dockClockFrame']
+        // holdMs: extra time the (fully opaque) overlay lingers AFTER the
+        // frames have reloaded — managers pass 2500 so the fresh GUI is fully
+        // settled before it's revealed.
+        window.refreshPlayerWindows = function (holdMs) {
+            holdMs = holdMs || 0;
+            const frames = ['cartgrid', 'floater', 'floater2', 'dockIdsFrame', 'dockClockFrame', 'dockClockRing', 'dockClockCount2']
                 .map((id) => document.getElementById(id))
                 .filter((f) => f && f.src && !f.src.includes('about:blank'));
-            if (!frames.length) return;
             const overlay = document.getElementById('loadingOverlay');
             const bar = document.getElementById('progressBar');
             overlay.querySelector('.message').textContent = 'Refreshing';
@@ -1168,9 +1295,10 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 finished = true;
                 clearInterval(tick);
                 bar.style.width = '100%';
-                setTimeout(() => { overlay.style.display = 'none'; }, 350);
+                setTimeout(() => { overlay.style.display = 'none'; }, 350 + holdMs);
             };
             const done = () => { if (--pending <= 0) finish(); };
+            if (!frames.length) { finish(); return; } // still honour the hold with no frames
             frames.forEach((f) => {
                 f.addEventListener('load', done, { once: true });
                 f.src = f.src;
@@ -1249,11 +1377,22 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             }
             const clockDock = winState.clock.visible && winState.clock.docked;
             const idsDock   = winState.ids.visible && winState.ids.docked;
+            const clockOnly = clockDock && !idsDock;
 
+            // Clock ALONE: the trio (big digital | ring | end-of-hour) takes
+            // over and the dropdown locks on "Clock" as a plain header. Any
+            // other layout reverts to the remembered dropdown selection.
+            const clockSel = document.getElementById('dockClockSelect');
+            clockSel.disabled = clockOnly;
+            clockSel.value = clockOnly ? 0 : dockClockIndex;
             // Lazy-load / release the dock iframes so nothing runs while undocked/hidden.
-            document.getElementById('dockClockFrame').src = clockDock ? DOCK_SRC[dockClockIndex] : 'about:blank';
+            const singleFrame = document.getElementById('dockClockFrame');
+            singleFrame.src = (clockDock && !clockOnly) ? DOCK_SRC[dockClockIndex] : 'about:blank';
+            singleFrame.hidden = clockOnly || !clockDock;
+            document.getElementById('dockClockMulti').hidden = !clockOnly;
+            syncDockClockRing(clockOnly);
+            document.getElementById('dockClockCount2').src = clockOnly ? 'clock-progress.php?dock=1' : 'about:blank';
             document.getElementById('dockIdsFrame').src   = idsDock   ? idSectionUrls[dockIdsIndex] : 'about:blank';
-            document.getElementById('dockClockSelect').value = dockClockIndex;
             document.getElementById('dockIdsSelect').value = dockIdsIndex;
 
             document.getElementById('dockClock').style.display = clockDock ? 'flex' : 'none';
@@ -1263,6 +1402,9 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             bar.classList.toggle('ids-only',   idsDock && !clockDock);
             bar.classList.toggle('both',       clockDock && idsDock);
             bar.style.display = (clockDock || idsDock) ? 'flex' : 'none';
+            // DJ mode tucks a clock-only dock under the library column so the
+            // three decks keep the full height (see player.css).
+            document.body.classList.toggle('dock-clock-only', clockDock && !idsDock);
         }
 
         // Layout operations are locked while any cart is on air (see below).
@@ -1292,6 +1434,30 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         }
 
         renderWindows(); // apply persisted window state on load
+
+        // The trio's ring drops its centre digits (the big digital clock sits
+        // right beside it) — but in DJ mode the tucked dock shows the ring
+        // ALONE, so there the digits come back. Called from renderWindows and
+        // from the DJ mode toggle (dj.js).
+        function syncDockClockRing(show) {
+            const ring = document.getElementById('dockClockRing');
+            if (show === undefined) show = !document.getElementById('dockClockMulti').hidden;
+            if (!show) { ring.src = 'about:blank'; return; }
+            const want = document.body.classList.contains('dj-mode')
+                ? 'clock.php?dock=1'
+                : 'clock.php?dock=1&nodigits=1';
+            if (!ring.src.endsWith(want)) ring.src = want;
+        }
+        window.syncDockClockRing = syncDockClockRing;
+
+        // Big digital clock (with seconds) for the clock-only dock trio.
+        setInterval(() => {
+            const el = document.getElementById('dockClockDigital');
+            if (!el || document.getElementById('dockClockMulti').hidden) return;
+            const d = new Date();
+            const p = (n) => String(n).padStart(2, '0');
+            el.textContent = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+        }, 250);
 
         // --- Live-safety lock: disable layout ops while any cart is on air.
         // Each cart-wall iframe reports how many of its carts are playing; if the
@@ -1429,7 +1595,8 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             });
         }
     </script>
-    <script src="assets/js/automation.js"></script>
-    <?php if (is_admin()): ?><script src="assets/js/planner.js"></script><script src="assets/vendor/wavesurfer.min.js"></script><script src="assets/js/manager.js"></script><script src="assets/js/audio-manager.js"></script><?php endif; ?>
+    <script src="<?= asset_v('assets/js/automation.js') ?>"></script>
+    <script src="<?= asset_v('assets/js/dj.js') ?>"></script>
+    <?php if (is_admin()): ?><script src="<?= asset_v('assets/js/planner.js') ?>"></script><script src="assets/vendor/wavesurfer.min.js"></script><script src="<?= asset_v('assets/js/manager.js') ?>"></script><script src="<?= asset_v('assets/js/audio-manager.js') ?>"></script><?php endif; ?>
 </body>
 </html>

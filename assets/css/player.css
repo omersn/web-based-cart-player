@@ -161,6 +161,33 @@ body {
 }
 .dock-header-select:hover { color: var(--text-primary); }
 .dock-header-select-wrap i { position: absolute; right: 2px; font-size: 9px; color: var(--text-tertiary); pointer-events: none; }
+/* Locked dropdown (clock alone): reads as a plain header label. */
+.dock-header-select:disabled { opacity: 1; color: var(--text-secondary); cursor: default; }
+.dock-header-select-wrap:has(select:disabled) i { display: none; }
+
+/* Clock ALONE in the dock (carts mode): big digital clock with seconds |
+   the ring | time to end of hour, split by faded hairlines. DJ mode slims
+   it back to just the ring (the dock tucks under the narrow library). */
+.dock-clock-multi { flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch; }
+.dock-clock-multi[hidden] { display: none; }
+.dock-clock-digital {
+    flex: 1 1 0; min-width: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace; font-size: 62px; font-weight: 700;
+    letter-spacing: 0.04em; color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+.dock-vsep {
+    flex: 0 0 1px; margin: 18px 0;
+    background: linear-gradient(180deg, transparent, var(--hairline) 30%, var(--hairline) 70%, transparent);
+}
+.dock-clock-multi iframe { flex: 1 1 0; width: auto; min-width: 0; height: 100%; border: none; }
+.dock-clock-multi .dock-clock-ring { flex: 0 0 230px; }
+body.dj-mode .dock-clock-digital,
+body.dj-mode .dock-clock-multi .dock-vsep,
+body.dj-mode .dock-clock-multi .dock-clock-count { display: none; }
+/* …and the lone ring sits centred in the tucked 343px pane. */
+body.dj-mode .dock-clock-multi { justify-content: center; }
 .dock-undock {
     flex: 0 0 auto; width: 18px; height: 18px; border-radius: 5px; border: none; cursor: pointer;
     background: transparent; color: var(--text-tertiary);
@@ -534,7 +561,7 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .overlay {
     position: fixed;
     inset: 0;
-    background-color: rgba(11, 13, 17, 0.94);
+    background-color: #0b0d11;   /* fully opaque — conceal the GUI beneath */
     display: flex;
     justify-content: center;
     align-items: center;
@@ -1728,4 +1755,258 @@ button.opt-link { cursor: pointer; font-family: 'Assistant', sans-serif; width: 
     height: 100%; width: 0;
     background: var(--green-dot);
     box-shadow: 0 0 6px rgba(53, 196, 111, 0.7);
+}
+
+/* ---- DJ mode (Carts/DJ toggle beside the page selector) ---------------- */
+/* The board iframe stays loaded (audio-safe) but hidden; the page dropdown
+   makes no sense without the board. */
+body.dj-mode #cartgrid { display: none; }
+body.dj-mode .topbar-select-wrap { display: none; }
+/* A clock-only dock tucks UNDER the library column in DJ mode: pulled out of
+   the column flow (absolute), so the decks get the full vertical height; the
+   library gives up its bottom to make the room. */
+.stage-left { position: relative; }
+body.dj-mode.dock-clock-only .dock-bar {
+    position: absolute; left: 0; bottom: 0; z-index: 3;
+    width: 343px;                     /* the library column incl. its border */
+}
+body.dj-mode.dock-clock-only .dj-tree { margin-bottom: 200px; }
+.dj-mode {
+    position: absolute; inset: 0;
+    display: flex; min-height: 0;
+}
+.dj-mode[hidden] { display: none; }
+
+/* LEFT: the library — fixed and slim (the decks get the room), the same
+   paper-style tree as the planner. */
+.dj-tree {
+    flex: 0 0 340px; min-width: 0;
+    display: flex; flex-direction: column;
+    border-right: 3px solid var(--hairline);
+    background: #b7bec6; color: #111;
+}
+/* Marker columns: chain link and favourite star get a fixed slot EACH, so
+   they line up column-wise and the name always starts at the same x. */
+.dj-mark {
+    flex: 0 0 15px; display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+}
+.dj-mark-chain { color: #1d7a44; }
+.dj-mark-fav .ph-star { color: #d9a400; font-size: 10px; }
+/* Fire buttons: bold digits, one NEUTRAL hover for all three — coloured
+   hovers read as if they matched the deck/item colours (they don't). */
+.dj-fire { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; }
+.dj-fire:hover { background: #1c232b; border-color: #1c232b; color: #fff; }
+/* Send-to-autoplayer: only shown while the automation panel is open. */
+.dj-send-auto { display: none; }
+body:has(.automation-panel.active) .dj-send-auto { display: flex; }
+.dj-send-auto .icon-clocknote { font-size: 11px; }
+
+/* RIGHT: three stacked manual decks. */
+.dj-decks {
+    flex: 1 1 auto; min-width: 0;
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 10px;
+    background: var(--bg-app);
+}
+.dj-deck {
+    flex: 1 1 0; min-height: 0; overflow: hidden;
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 8px 14px;
+    background: var(--bg-panel);
+    border: 1px solid var(--hairline); border-radius: 12px;
+    border-left: 5px solid var(--deck-color, var(--hairline));
+}
+/* ON AIR: the whole deck glows red — unmistakable across the studio. */
+.dj-deck.playing {
+    border-color: rgba(240, 69, 63, 0.75);
+    box-shadow: 0 0 0 1px rgba(240, 69, 63, 0.55), 0 0 24px rgba(240, 69, 63, 0.3);
+}
+/* Head: big player number + big title, washed in the ITEM's colour once
+   something is loaded. Type scales with viewport height so three decks plus
+   a docked window can't squeeze the digits out of their cards. */
+.dj-deck-head {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 12px; min-width: 0;
+    padding: 3px 10px; border-radius: 8px;
+}
+.dj-deck.loaded .dj-deck-head {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 50%), var(--deck-color, #333);
+}
+.dj-deck-num {
+    flex: 0 0 auto; font-family: 'JetBrains Mono', monospace;
+    font-size: clamp(17px, 3vh, 30px); font-weight: 800; line-height: 1;
+    color: var(--deck-color, var(--text-tertiary));
+}
+.dj-deck.loaded .dj-deck-num { color: rgba(255, 255, 255, 0.8); }
+.dj-deck-name {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: clamp(15px, 2.7vh, 26px); font-weight: 800; line-height: 1.15; color: var(--text-primary);
+}
+.dj-deck.loaded .dj-deck-name { color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45); }
+.dj-deck.loaded .dj-deck-out { border-color: rgba(0, 0, 0, 0.35); color: rgba(255, 255, 255, 0.85); }
+.dj-deck-onair {
+    display: none; flex: 0 0 auto;
+    padding: 2px 9px; border-radius: 5px;
+    background: var(--red-grad); color: #fff;
+    font-size: 11px; font-weight: 800; letter-spacing: 0.1em;
+}
+.dj-deck.playing .dj-deck-onair { display: inline-block; }
+.dj-deck-out {
+    flex: 0 0 auto; padding: 2px 8px; border-radius: 5px;
+    border: 1px solid var(--hairline);
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
+    color: var(--text-tertiary);
+}
+/* Middle: the BIG square play button, then the current item's waveform with
+   the progress WASHING over it. */
+.dj-deck-mid { flex: 1 1 auto; min-height: 30px; display: flex; align-items: stretch; gap: 10px; }
+.dj-deck-play {
+    flex: 0 0 clamp(48px, 8vh, 76px); min-height: 30px;
+    border: 1px solid var(--hairline); border-radius: 12px; cursor: pointer;
+    background: var(--raised); color: var(--text-secondary); font-size: 30px;
+    display: flex; align-items: center; justify-content: center;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+.dj-deck-play:hover { background: var(--raised-hover); color: var(--text-primary); }
+.dj-deck-play:disabled { opacity: 0.3; pointer-events: none; }
+.dj-deck.loaded:not(.playing) .dj-deck-play { background: var(--green-dot); border-color: var(--green-dot); color: #06301a; }
+.dj-deck.playing .dj-deck-play { background: var(--red-grad); border-color: transparent; color: #fff; }
+.dj-deck-empty { align-self: center; color: var(--text-tertiary); font-size: 13px; }
+.dj-deck-empty[hidden] { display: none; }
+.dj-deck-wavebox {
+    position: relative; width: 100%; height: 100%; min-height: 34px;
+    background: rgba(0, 0, 0, 0.3); border: 1px solid var(--hairline); border-radius: 8px;
+    overflow: hidden;
+}
+.dj-deck-wavebox[hidden] { display: none; }
+.dj-deck-wave { position: absolute; inset: 0; width: 100%; height: 100%; }
+.dj-deck-wash {
+    position: absolute; top: 0; bottom: 0; left: 0; width: 0;
+    background: rgba(255, 255, 255, 0.22);
+    border-right: 2px solid rgba(255, 255, 255, 0.7);
+    transition: width 0.1s linear; pointer-events: none;
+}
+.dj-deck.playing .dj-deck-wash { background: rgba(240, 69, 63, 0.3); border-right-color: #ff8a86; }
+.dj-deck-chainpos {
+    position: absolute; top: 4px; right: 6px; z-index: 1;
+    padding: 1px 7px; border-radius: 4px;
+    background: rgba(0, 0, 0, 0.6); color: var(--text-secondary);
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
+}
+.dj-deck-chainpos[hidden] { display: none; }
+/* Foot: narrow secondaries left, the BIG countdown right — red for the
+   last 4 seconds on air. */
+.dj-deck-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; }
+.dj-deck-btns { flex: 0 0 auto; display: flex; gap: 8px; }
+.dj-deck-btns button {
+    flex: 0 0 54px; height: 30px;
+    border: 1px solid var(--hairline); border-radius: 8px; cursor: pointer;
+    background: var(--raised); color: var(--text-secondary); font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+.dj-deck-btns button:hover { background: var(--raised-hover); color: var(--text-primary); }
+.dj-deck-btns button:disabled { opacity: 0.3; pointer-events: none; }
+.dj-deck-btns .dj-deck-repeat.active { background: var(--cyan); border-color: var(--cyan); color: #06222a; }
+.dj-deck-time {
+    flex: 0 0 auto; margin-left: auto;
+    display: flex; align-items: baseline; gap: 8px;
+    font-family: 'JetBrains Mono', monospace; color: var(--text-secondary);
+}
+.dj-deck-time b { font-size: clamp(17px, 3.2vh, 32px); line-height: 1; color: var(--text-primary); font-weight: 700; font-variant-numeric: tabular-nums; }
+.dj-deck-total { font-size: 13px; color: var(--text-tertiary); }
+.dj-deck-time.ending b { color: #ff4a44; text-shadow: 0 0 10px rgba(240, 69, 63, 0.6); }
+
+/* Toast for deck refusals ("Player 1 is on air") — dead centre of DJ mode. */
+.dj-toast {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 5;
+    padding: 10px 20px; border-radius: 9px;
+    background: rgba(240, 69, 63, 0.96); color: #fff;
+    font-size: 14px; font-weight: 700;
+    opacity: 0; transition: opacity 0.2s ease; pointer-events: none;
+}
+.dj-toast.show { opacity: 1; }
+
+/* Autoplayer glyph: a clock with a small note riding its corner — used by
+   the topbar chip and the library's send-to-autoplayer button. */
+.icon-clocknote { position: relative; display: inline-flex; }
+.icon-clocknote .ph-music-note {
+    position: absolute; right: -0.32em; bottom: -0.22em;
+    font-size: 0.62em; text-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
+}
+
+/* Big custom tooltips for the topbar buttons (data-tip, set from title on
+   load — the native bubble is tiny and slow). */
+.icon-btn[data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute; top: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+    padding: 8px 15px; border-radius: 8px; white-space: nowrap;
+    background: #10141a; border: 1px solid var(--hairline);
+    font-family: 'Assistant', sans-serif; font-size: 14px; font-weight: 700; color: var(--text-primary);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55); z-index: 3000; pointer-events: none;
+}
+
+/* ---- Chain crossfade editor (audio manager > EDIT CHAIN) ---------------- */
+.chain-ed-modal {
+    position: fixed; inset: 0; z-index: 30;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(4, 6, 9, 0.72);
+}
+.chain-ed-modal[hidden] { display: none; }
+.chain-ed-box {
+    width: min(1000px, 94vw); height: min(640px, 86vh);
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 16px;
+    background: var(--bg-panel); border: 1px solid var(--hairline); border-radius: 12px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+.chain-ed-head { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.chain-ed-head h4 { font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-primary); margin: 0; }
+/* One lane per chain item, staggered like a timeline: each block starts where
+   the previous one hands over (its end minus the fade). */
+.chain-lanes {
+    position: relative; flex: 1 1 auto; min-height: 0;
+    display: flex; flex-direction: column;
+    background: rgba(0, 0, 0, 0.32); border: 1px solid var(--hairline); border-radius: 8px;
+    overflow: hidden;
+}
+.chain-lane { position: relative; flex: 1 1 0; min-height: 0; border-bottom: 1px dashed rgba(255, 255, 255, 0.07); }
+.chain-lane:last-child { border-bottom: none; }
+.chain-block {
+    position: absolute; top: 9%; bottom: 9%; border-radius: 6px; overflow: hidden;
+    cursor: grab; touch-action: none;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0) 45%),
+        var(--blk, #333);
+}
+.chain-block:active { cursor: grabbing; }
+.chain-block[data-k="0"] { cursor: default; }
+/* The waveform canvas must fill its block — without this it renders at the
+   canvas default 300x150, unpositioned (the "broken box" bug). */
+.chain-block .cross-wave { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.chain-block-name {
+    position: absolute; top: 4px; left: 8px; right: 8px; z-index: 1;
+    font-size: 11px; font-weight: 700; color: #fff; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+.chain-fade-label {
+    position: absolute; bottom: 4px; left: 8px; z-index: 1;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
+    color: #ffd646; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85); pointer-events: none;
+}
+.chain-ed-btns { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
+.chain-ed-note { flex: 1 1 auto; text-align: center; font-size: 12px; color: var(--text-tertiary); }
+.chain-ed-save.dirty { background: var(--cyan); color: #06222a; border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-tint); }
+.chain-ed-save.dirty:hover { filter: brightness(1.08); }
+
+/* Autoplayer's assigned output (manager > Routing): a passive third segment
+   on the AUTO/MANUAL pill. */
+.auto-out-badge {
+    flex: 0 0 auto; align-self: stretch;
+    display: flex; align-items: center;
+    padding: 0 9px; border-left: 1px solid var(--hairline);
+    background: rgba(0, 0, 0, 0.25);
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
+    color: var(--text-tertiary);
 }

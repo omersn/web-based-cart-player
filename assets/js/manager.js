@@ -88,7 +88,7 @@
     const SWITCHES = [
         ['ids_window', 'Station IDs / sweepers window', 'The floating ID-wall toggle in the topbar'],
         ['automation', 'Automation playlist & planner', 'The playlist toggle and the break planner'],
-        ['dj_mode',    'DJ mode', 'Placeholder — the layout itself is coming'],
+        ['dj_mode',    'DJ mode', 'The Carts/DJ layout toggle beside the page selector'],
         ['download',   'Download button', 'Bulk audio download from the topbar'],
         ['mobile',     'Mobile access (QR)', 'The QR popup for phones on the LAN'],
     ];
@@ -128,6 +128,49 @@
     }
     function wireOptionsTab() {
         $('optRegenQr').addEventListener('click', () => flash('QR regeneration is parked — coming later'));
+    }
+
+    // ---- Routing tab --------------------------------------------------------
+    // Assign each DJ player + the PFL (preview) bus to one of the four
+    // simulated stereo outs. Saved immediately; the DJ decks' OUT badges
+    // follow live.
+    const ROUTES = [
+        ['carts',      'Cart board', 'Every cart fired from the wall or the ID windows'],
+        ['autoplayer', 'Autoplayer', 'The automation playlist engine (breaks)'],
+        ['player1', 'Player 1 (DJ mode)', 'The top deck'],
+        ['player2', 'Player 2 (DJ mode)', 'The middle deck'],
+        ['player3', 'Player 3 (DJ mode)', 'The bottom deck'],
+        ['pfl',     'PFL channel', 'All single-play preview buttons — planner, audio manager, DJ library'],
+    ];
+    async function saveRoute(key, out) {
+        const resp = await post('save-routing.php', { routing: { [key]: out } });
+        if (resp) {
+            window.ROUTING = resp.routing;
+            if (window.DJMode) window.DJMode.applyRouting();
+            const badge = $('autoOutBadge');
+            if (badge) badge.textContent = 'OUT ' + (window.ROUTING.autoplayer || 1);
+        }
+    }
+    function renderRouting() {
+        const host = $('routingList');
+        host.innerHTML = '';
+        ROUTES.forEach(([key, label, hint]) => {
+            const row = document.createElement('div');
+            row.className = 'opt-row';
+            row.innerHTML = `<span class="opt-text"><b></b><small></small></span><select class="ma-select routing-out"></select>`;
+            row.querySelector('b').textContent = label;
+            row.querySelector('small').textContent = hint;
+            const sel = row.querySelector('select');
+            for (let n = 1; n <= 4; n++) {
+                const o = document.createElement('option');
+                o.value = n;
+                o.textContent = `OUT ${n} (stereo)`;
+                sel.appendChild(o);
+            }
+            sel.value = (window.ROUTING || {})[key] || 1;
+            sel.addEventListener('change', () => saveRoute(key, +sel.value));
+            host.appendChild(row);
+        });
     }
 
     // ---- Maintenance tab --------------------------------------------------------
@@ -190,11 +233,13 @@
         document.querySelectorAll('.mgr-tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
         $('mgrPaneStation').hidden = name !== 'station';
         $('mgrPaneOptions').hidden = name !== 'options';
+        $('mgrPaneRouting').hidden = name !== 'routing';
         $('mgrPaneMaintenance').hidden = name !== 'maintenance';
         if (name !== 'maintenance') closeLogModal();
     }
     function open() {
         renderOptions();
+        renderRouting();
         renderStation();
         showTab('station'); // Station is the manager's home tab (Audio moved to its own window)
         $('managerOverlay').hidden = false;
@@ -205,8 +250,9 @@
         $('managerOverlay').hidden = true;
         document.removeEventListener('keydown', onKey);
         // Station name/logo/labels or a feature switch may have changed —
-        // refresh what's behind (board, ID windows, clock).
-        if (window.refreshPlayerWindows) window.refreshPlayerWindows();
+        // refresh what's behind (board, ID windows, clock), holding the
+        // opaque overlay 2.5s longer so it's fully settled on reveal.
+        if (window.refreshPlayerWindows) window.refreshPlayerWindows(2500);
     }
     function onKey(e) {
         if (e.key !== 'Escape' || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;

@@ -1828,6 +1828,9 @@
         buildPickerCombos();
         initListDragDrop();
         wireCross();
+        // Assigned output (manager > Routing; simulated for now).
+        const outBadge = el('autoOutBadge');
+        if (outBadge) outBadge.textContent = 'OUT ' + ((window.ROUTING || {}).autoplayer || 1);
         el('autoHeader').addEventListener('click', () => togglePop());
         el('autoAnchorToggle').addEventListener('click', (e) => { e.stopPropagation(); toggleAnchor(); });
         el('autoPopOk').addEventListener('click', () => commitDraft());

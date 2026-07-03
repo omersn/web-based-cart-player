@@ -219,10 +219,18 @@
     }
 
     const chainedAt = (bn) => specialBoxes.some(box => box.boxNumber === bn && box.flag === 1);
+    // Chain-crossfade ms (cross.txt's second field, set by the audio manager's
+    // chain editor): how early the NEXT cart launches while this one's tail
+    // rings out to its own end point.
+    const chainFadeAt = (bn) => {
+        const box = specialBoxes.find(b => b.boxNumber === bn && b.flag === 1);
+        return box ? Math.max(0, box.seconds || 0) : 0;
+    };
 
     function buildButton(line, pageIndex, index, pageDiv, sectionFrom) {
         const boxNumber = pageIndex * itemsPerPage + index + 1;
         const isChained = chainedAt(boxNumber);
+        const chainFadeMs = chainFadeAt(boxNumber);
         const buttonClass = isChained ? 'buttonext' : 'button';
 
         const [name, audioPath, startPoint, colorCode, endPoint, volumePoint] = line.split('|').map(part => part.trim());
@@ -291,6 +299,7 @@
         button._audio = audio;
         button._endAt = endAt;       // hard stop point, for the shared countdown
         button._startAt = startAt;   // start point, for chain-total durations
+        button._fadeMs = chainFadeMs; // chain-crossfade into the NEXT cart
         // Full cart record, used when right-clicking to send it to automation.
         button._cart = { name, file: audioFilename, start: startAt, end: endAt, color: colorCode, volume };
 
@@ -462,6 +471,14 @@
             fetch('', { method: 'POST', body: `${new Date().toLocaleString()} - ${name} - stopped` });
         });
 
+        // Fire the chained successor exactly once per play — with a crossfade
+        // the launch happens EARLY (fade ms before this cart's end, while its
+        // tail keeps ringing), so both the hard-stop timer and the 'ended'
+        // listener must know the handover already happened.
+        const clickNext = () => {
+            const nextButton = button.nextElementSibling;
+            if (nextButton && nextButton.tagName === 'BUTTON') nextButton.click();
+        };
         audio.addEventListener('ended', () => {
             stopVu();
             button.classList.remove('playing');
@@ -474,14 +491,12 @@
 
             // Chain: auto-play the next button (which adds its own .playing before
             // we refresh, so the countdown carries straight over without a blink).
-            if (button.classList.contains('buttonext')) {
-                const nextButton = button.nextElementSibling;
-                if (nextButton && nextButton.tagName === 'BUTTON') nextButton.click();
-            }
+            if (button.classList.contains('buttonext') && !button._chainFired) clickNext();
             refreshBackTimer();
         });
 
         let playbackTimer = null;
+        let chainTimer = null;
         button.onclick = () => {
             const playDuration = endAt - startAt;
 
@@ -489,17 +504,24 @@
                 audio.currentTime = startAt;
                 audio.play();
                 button.classList.add('playing');
+                button._chainFired = false;
 
                 if (playbackTimer) clearTimeout(playbackTimer);
+                if (chainTimer) clearTimeout(chainTimer);
 
-                // Hard stop at the end point, then chain if applicable.
+                // Crossfade: launch the next cart fade-ms early; this one keeps
+                // playing its tail until its own hard stop below.
+                if (button.classList.contains('buttonext') && chainFadeMs > 0) {
+                    chainTimer = setTimeout(() => {
+                        button._chainFired = true;
+                        clickNext();
+                    }, Math.max(0, playDuration * 1000 - chainFadeMs));
+                }
+                // Hard stop at the end point, then chain if it didn't already.
                 playbackTimer = setTimeout(() => {
                     audio.pause();
                     button.classList.remove('playing');
-                    if (button.classList.contains('buttonext')) {
-                        const nextButton = button.nextElementSibling;
-                        if (nextButton && nextButton.tagName === 'BUTTON') nextButton.click();
-                    }
+                    if (button.classList.contains('buttonext') && !button._chainFired) clickNext();
                 }, playDuration * 1000);
             } else {
                 audio.pause();
@@ -507,6 +529,10 @@
                 if (playbackTimer) {
                     clearTimeout(playbackTimer);
                     playbackTimer = null;
+                }
+                if (chainTimer) {
+                    clearTimeout(chainTimer);
+                    chainTimer = null;
                 }
             }
         };
@@ -539,11 +565,13 @@
         let total = Math.max(0, end - a.currentTime);
         let node = btn;
         while (node && node.classList.contains('buttonext')) {
+            // Each hop's crossfade overlaps the join, shortening the chain total.
+            const fade = (node._fadeMs || 0) / 1000;
             node = node.nextElementSibling;
             if (!node || node.tagName !== 'BUTTON') break;
-            total += fullDuration(node);
+            total += fullDuration(node) - fade;
         }
-        return total;
+        return Math.max(0, total);
     }
     function refreshBackTimer() {
         const backtimer = document.getElementById('backtimer');
@@ -637,8 +665,13 @@
             const buttons = gatherChain(button);
             const grouped = buttons.length > 1;
             try {
-                window.parent.postMessage({ source: 'cartwall', cmd: 'automation-add',
-                    items: buttons.map(itemFor), grouped }, '*');
+                // Each item carries the chain-crossfade INTO it (stored on the
+                // PREVIOUS button's line) so the autoplayer keeps the plan.
+                const items = buttons.map((b, k) => ({
+                    ...itemFor(b),
+                    overlapIn: k > 0 ? (buttons[k - 1]._fadeMs || 0) : 0,
+                }));
+                window.parent.postMessage({ source: 'cartwall', cmd: 'automation-add', items, grouped }, '*');
             } catch (e) { /* no parent */ }
         });
 
