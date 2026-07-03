@@ -74,7 +74,7 @@ a live cross-time readout; Play auditions the whole chain through the crossfades
 ![Settings — Station](docs/screenshots/settings-station.png)
 
 **Settings — Routing tab** — assign the board, the autoplayer, each DJ deck, and the PFL preview
-bus to one of four simulated outputs.
+bus to one of four simulated outputs (will be tested on real multitrack audio devices soon).
 ![Settings — Routing](docs/screenshots/settings-routing.png)
 
 ---
