@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /**
  * Player shell. A full-screen background cart wall (grid.php in an iframe) plus
  * a draggable "Station ID" window, a draggable clock, the keep-alive heartbeat,
@@ -17,8 +17,18 @@ header('Expires: 0');
 
 ensure_session();
 
+// Shown in the "Server ping" log popup header so an operator checking
+// connectivity across several frontends can tell which backend they're
+// actually hitting. SERVER_ADDR/SERVER_PORT are what PHP's own built-in
+// server (or whatever's fronting it) reports itself as; HTTP_HOST is a
+// fallback for setups where SERVER_ADDR isn't populated.
+$serverAddr = $_SERVER['SERVER_ADDR'] ?? '';
+$serverPort = $_SERVER['SERVER_PORT'] ?? '';
+$serverLabel = $serverAddr !== '' ? $serverAddr . ($serverPort !== '' ? ':' . $serverPort : '') : ($_SERVER['HTTP_HOST'] ?? '');
+
 $labels     = load_section_labels();
 $settings   = load_settings();   // feature switches (manager Options tab)
+purge_old_logs();                // drop log lines past the configured retention (Maintenance > Logs)
 $idSectionNames = load_id_section_names(); // the two ID-window section names (manager Station tab)
 $statusFile = data_path('status.txt');
 $statusText = file_exists($statusFile) ? trim(file_get_contents($statusFile)) : '';
@@ -298,6 +308,8 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 <iframe width="100%" height="100%" id="cartgrid" name="cartgrid"
                         src="grid.php?from=10&to=75&pagination=0&fit=1&mainbar=1&timestamp=<?= time() ?>"
                         frameborder="0" scrolling="no" allowfullscreen></iframe>
+                <!-- Masks the board's responsive reflow on a forced reload (Stop all). -->
+                <div class="win-reload-mask" id="boardMask"><div class="win-reload-bar"><i></i></div></div>
 
                 <!-- DJ mode: replaces the board (which stays loaded, just
                      hidden) with a 60/40 split — the library tree on the
@@ -313,7 +325,22 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                             <button type="button" class="ptree-fav-filter" id="djFavFilter" title="Show favourites only"><i class="ph ph-star"></i></button>
                         </div>
                         <div class="ptree-scroller dj-tree-scroller" id="djTree"></div>
+                        <!-- Small full-width PFL (preview) player, docked under the
+                             tree: the library's per-row preview button and each
+                             deck's PFL button both send a single cart here. Gated
+                             by the manager Routing tab's "Allow PFL player" switch. -->
+                        <div class="dj-pfl" id="djPfl">
+                            <span class="dj-pfl-label">PFL</span>
+                            <span class="dj-pfl-name">-</span>
+                            <div class="dj-pfl-bar"><i></i></div>
+                            <span class="dj-pfl-out" title="Assigned output (manager &rsaquo; Routing)"></span>
+                            <button type="button" class="dj-pfl-stop" id="djPflStop" disabled title="Stop"><i class="ph-fill ph-stop"></i></button>
+                        </div>
                     </div>
+                    <!-- Drag to widen the library tree (Options tab's "Allow
+                         panel resize", off by default). Severely capped span —
+                         min is the tree's own default width, can't shrink it. -->
+                    <div class="panel-resize-handle" id="treeResizeHandle" title="Drag to resize" hidden></div>
                     <div class="dj-decks">
                         <?php foreach ([1, 2, 3] as $deckNo): ?>
                         <div class="dj-deck" id="djDeck<?= $deckNo ?>" data-deck="<?= $deckNo ?>">
@@ -334,12 +361,15 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                                     <div class="dj-deck-wash"></div>
                                     <span class="dj-deck-chainpos" hidden></span>
                                 </div>
+                                <!-- Audio-reactive VU meter, full height of the player area. -->
+                                <div class="dj-deck-vu"><div class="dj-deck-vu-fill"></div></div>
                             </div>
                             <div class="dj-deck-foot">
                                 <div class="dj-deck-btns">
                                     <button type="button" class="dj-deck-stop" disabled title="Stop"><i class="ph-fill ph-stop"></i></button>
                                     <button type="button" class="dj-deck-repeat" disabled title="Repeat"><i class="ph ph-repeat"></i></button>
                                     <button type="button" class="dj-deck-eject" disabled title="Unload"><i class="ph ph-eject"></i></button>
+                                    <button type="button" class="dj-deck-pfl" disabled title="PREVIEW (PFL)"><span class="pfl-icon"><i class="ph ph-speaker-simple-high"></i></span></button>
                                 </div>
                                 <!-- Countdown: big, and red for the last 4 seconds. -->
                                 <span class="dj-deck-time"><b class="dj-deck-remain">0:00</b><span class="dj-deck-total">/ <span class="dj-deck-len">0:00</span></span></span>
@@ -350,6 +380,15 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 </div>
             </div>
 
+            <!-- Bottom dock resize handle: drag to resize the dock's height. A
+                 ghost line previews the drop point without live-resizing;
+                 it turns red past the min/max and snaps to that limit if
+                 released there. -->
+            <div class="dock-resize-handle" id="dockResizeHandle" title="Drag to resize" hidden></div>
+            <div class="dock-resize-ghost" id="dockResizeGhost" hidden></div>
+            <!-- Shared vertical ghost line for the DJ tree / automation
+                 sidebar width-resize handles (see panel-resize-handle below). -->
+            <div class="panel-resize-ghost" id="panelResizeGhost" hidden></div>
             <!-- Bottom dock: the clock and/or Station-ID views can be docked here.
                  The layout adapts to what's docked (see renderDock below). -->
             <div class="dock-bar" id="dockBar">
@@ -392,6 +431,11 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 </div>
             </div>
         </div>
+
+        <!-- Drag to widen the automation sidebar (Options tab's "Allow panel
+             resize", off by default). Severely capped span — min is the
+             panel's own default width, can't shrink it. -->
+        <div class="panel-resize-handle" id="autoResizeHandle" title="Drag to resize" hidden></div>
 
         <!-- Automation Playlist: scheduled auto-playback queue. Hidden until an
              item is sent here (right-click a cart); managed by automation.js. -->
@@ -525,9 +569,11 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         </aside>
     </div>
 
-    <!-- AGPL: offer the Corresponding Source to network users (section 13). -->
-    <a href="<?= htmlspecialchars(SOURCE_URL) ?>" target="_blank" rel="noopener"
-       style="position: fixed; bottom: 52px; left: 9px; z-index: 1002110; font-size: 10px; color: #5a6b75; text-decoration: none;">
+    <!-- Attribution link back to the source repo (view-only license — see
+         LICENSE). Sits just above the footer ticker; when the ticker is
+         hidden (see .source-link below) it moves to the opposite corner
+         instead of crowding the minimized status pill. -->
+    <a href="<?= htmlspecialchars(SOURCE_URL) ?>" target="_blank" rel="noopener" class="source-link">
         Source (<?= htmlspecialchars(LICENSE_NAME) ?>)
     </a>
 
@@ -579,12 +625,24 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         <?php endif; ?>
         <span class="status-pill" id="connectionPill" role="button" tabindex="0"><span class="pulse-dot"></span><span class="status-label" id="connectionLabel">CONNECTED</span></span>
         <span class="status-pill audio" id="audioPill" role="button" tabindex="0"><span class="pulse-dot"></span><span class="status-label" id="audioLabel">AUDIO ENGINE KEEP-ALIVE ON</span></span>
-        <span class="ticker-msg"><?= $statusText !== '' ? htmlspecialchars($statusText, ENT_QUOTES, 'UTF-8') : 'Welcome to the Web-based Cart Player demo &mdash; right-click a cart to schedule it for the top of the hour.' ?></span>
+        <span class="ticker-msg" id="tickerMsg"><?= $statusText !== '' ? htmlspecialchars($statusText, ENT_QUOTES, 'UTF-8') : 'Welcome to the Web-based Cart Player demo &mdash; right-click a cart to schedule it for the top of the hour.' ?></span>
+        <?php if (is_admin()): ?>
+        <!-- In-GUI ticker edit (admin-only): pencil swaps the message for a
+             single-line input; Enter/blur saves, Escape discards. -->
+        <input type="text" class="ticker-edit-input" id="tickerEditInput" maxlength="200" autocomplete="off" hidden>
+        <button type="button" class="ticker-edit-btn" id="tickerEditBtn" title="Edit ticker"><i class="ph ph-pencil-simple"></i></button>
+        <?php endif; ?>
     </div>
 
     <!-- Small log popups opened by clicking the footer status dots. -->
     <div class="log-popup" id="pingLog" hidden>
-        <div class="log-popup-head"><span class="log-popup-title">Server ping</span><button type="button" class="log-popup-x" aria-label="Close"><i class="ph ph-x"></i></button></div>
+        <div class="log-popup-head">
+            <span class="log-popup-title">Server ping</span>
+            <?php if ($serverLabel !== ''): ?>
+            <span class="log-popup-server" title="The backend this frontend is pinging"><?= htmlspecialchars($serverLabel) ?></span>
+            <?php endif; ?>
+            <button type="button" class="log-popup-x" aria-label="Close"><i class="ph ph-x"></i></button>
+        </div>
         <div class="log-popup-body" id="pingLogBody"></div>
     </div>
     <div class="log-popup" id="heartbeatLog" hidden>
@@ -596,16 +654,32 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     <!-- Audio manager overlay (admin): its own window, separate from the
          Station manager below — every slot (incl. empty/disabled) in a
          sections list + one detail panel. Rendered by audio-manager.js from
-         MANAGER_DATA. -->
+         MANAGER_DATA. Field edits (enable/name/volume/chain/colour/trim, and
+         the chain crossfade editor's own Save) are a draft, committed only on
+         Save & Close — Move/Delete/Upload are immediate, structural actions
+         (like Maintenance's danger zone) and silently flush any pending draft
+         edits first so nothing is lost or left inconsistent with the server. -->
     <div class="planner-overlay" id="audioManagerOverlay" hidden>
         <div class="planner-frame">
             <header class="planner-head">
                 <h2><i class="ph ph-waveform"></i> Audio manager</h2>
                 <div class="planner-head-actions">
                     <span class="planner-msg" id="audioManagerMsg"></span>
-                    <button type="button" class="planner-cancel" id="audioManagerClose" title="Close (Esc)">Close</button>
+                    <button type="button" class="planner-save" id="audioManagerSave"><i class="ph ph-floppy-disk"></i> Save &amp; Close</button>
+                    <button type="button" class="planner-cancel" id="audioManagerCancel" title="Discard changes (Esc)">Cancel</button>
                 </div>
             </header>
+            <!-- Styled discard-confirmation (replaces the native confirm()). -->
+            <div class="planner-confirm" id="audioManagerConfirm" hidden>
+                <div class="planner-confirm-box">
+                    <i class="ph ph-warning-circle"></i>
+                    <p>Discard unsaved changes to the audio library?</p>
+                    <div class="planner-confirm-actions">
+                        <button type="button" id="audioManagerConfirmDiscard" class="pc-discard">Discard changes</button>
+                        <button type="button" id="audioManagerConfirmKeep" class="pc-keep">Keep editing</button>
+                    </div>
+                </div>
+            </div>
             <div class="mgr-body">
                 <div class="mgr-pane mgr-audio" id="mgrPaneAudio">
                     <div class="ma-list-col">
@@ -661,20 +735,15 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                                     <div class="ma-audio-btns">
                                         <button type="button" class="ma-btn" id="maPlayFull"><i class="ph-fill ph-play"></i> Play</button>
                                         <button type="button" class="ma-btn" id="maPlayTrim"><i class="ph ph-brackets-square"></i> Play trimmed</button>
-                                        <button type="button" class="ma-btn" id="maTrimSave" disabled><i class="ph ph-floppy-disk"></i> Save trim</button>
                                     </div>
                                 </div>
                             </div>
                             <hr class="ma-hr">
-                            <!-- Group 3: chain + move -->
+                            <!-- Group 3: chain -->
                             <div class="ma-row"><label>Chain</label>
-                                <label class="ma-chain"><input type="checkbox" class="opt-switch" id="maChain"><span>Auto-play the next cart when this one ends</span></label>
-                                <button type="button" class="ma-btn" id="maChainEdit" hidden><i class="ph ph-flow-arrow"></i> Edit chain</button>
-                            </div>
-                            <div class="ma-row"><label>Move</label>
-                                <div class="ma-audio-btns">
-                                    <select class="ma-select" id="maMoveSlot"></select>
-                                    <button type="button" class="ma-btn" id="maMoveBtn"><i class="ph ph-arrows-down-up"></i> Move</button>
+                                <div class="ma-chain-group">
+                                    <label class="ma-chain"><input type="checkbox" class="opt-switch" id="maChain"><span>Auto-play the next cart when this one ends</span></label>
+                                    <button type="button" class="ma-btn" id="maChainEdit" hidden><i class="ph ph-flow-arrow"></i> Edit chain</button>
                                 </div>
                             </div>
                             <hr class="ma-hr">
@@ -687,7 +756,13 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                                 </div>
                             </div>
                             <hr class="ma-hr">
-                            <!-- Group 5: clear (danger, two-step confirm) -->
+                            <!-- Group 5: move, right above clear (danger, two-step confirm) -->
+                            <div class="ma-row"><label>Move</label>
+                                <div class="ma-audio-btns">
+                                    <select class="ma-select" id="maMoveSlot"></select>
+                                    <button type="button" class="ma-btn" id="maMoveBtn"><i class="ph ph-arrows-down-up"></i> Move</button>
+                                </div>
+                            </div>
                             <div class="ma-row ma-danger-row">
                                 <label></label>
                                 <button type="button" class="ma-btn danger" id="maDelete"><i class="ph ph-trash"></i> Clear this slot</button>
@@ -717,6 +792,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                     </div>
                     <div class="chain-ed-btns">
                         <button type="button" class="ma-btn" id="chainEdPlay"><i class="ph-fill ph-play"></i> Play</button>
+                        <span class="chain-ed-out auto-out-badge" id="chainEdOut" title="Assigned output (manager &rsaquo; Routing)"></span>
                         <span class="chain-ed-note" id="chainEdNote"></span>
                         <button type="button" class="ma-btn chain-ed-save" id="chainEdSave" disabled><i class="ph ph-floppy-disk"></i> Save</button>
                         <button type="button" class="ma-btn" id="chainEdCancel">Cancel</button>
@@ -727,18 +803,32 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         </div>
     </div>
 
-    <!-- Station manager overlay (admin): Station | Options | Maintenance.
-         Reuses the planner's frame styling for unity. The Options tab drives
-         the feature switches live. -->
+    <!-- Station manager overlay (admin): Station | Options | Routing | Maintenance.
+         Reuses the planner's frame styling for unity. Station/Options/Routing are
+         a draft, committed only on Save & Close (Cancel discards, confirming first
+         if dirty) — Maintenance stays action-based (logs, backup/restore, danger
+         zone all take effect immediately). -->
     <div class="planner-overlay" id="managerOverlay" hidden>
         <div class="planner-frame">
             <header class="planner-head">
                 <h2><i class="ph ph-gear"></i> Station manager</h2>
                 <div class="planner-head-actions">
                     <span class="planner-msg" id="managerMsg"></span>
-                    <button type="button" class="planner-cancel" id="managerClose" title="Close (Esc)">Close</button>
+                    <button type="button" class="planner-save" id="managerSave"><i class="ph ph-floppy-disk"></i> Save &amp; Close</button>
+                    <button type="button" class="planner-cancel" id="managerCancel" title="Discard changes (Esc)">Cancel</button>
                 </div>
             </header>
+            <!-- Styled discard-confirmation (replaces the native confirm()). -->
+            <div class="planner-confirm" id="managerConfirm" hidden>
+                <div class="planner-confirm-box">
+                    <i class="ph ph-warning-circle"></i>
+                    <p>Discard unsaved changes to the station settings?</p>
+                    <div class="planner-confirm-actions">
+                        <button type="button" id="managerConfirmDiscard" class="pc-discard">Discard changes</button>
+                        <button type="button" id="managerConfirmKeep" class="pc-keep">Keep editing</button>
+                    </div>
+                </div>
+            </div>
             <div class="mgr-tabs">
                 <button type="button" class="mgr-tab active" data-tab="station">Station</button>
                 <button type="button" class="mgr-tab" data-tab="options">Options</button>
@@ -758,10 +848,10 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                         </div>
                     </div>
                     <div class="ma-row"><label>Ticker</label><input type="text" id="stTicker" maxlength="200" autocomplete="off"></div>
+                    <div class="ma-row"><label>Show ticker</label><input type="checkbox" class="opt-switch" id="stShowTicker" title="Show the scrolling status message in the footer bar"></div>
                     <div class="ma-row"><label>Sections</label><div class="st-labels" id="stLabels"></div></div>
                     <div class="ma-row"><label>ID window 1</label><input type="text" id="stIdName1" maxlength="30" autocomplete="off" placeholder="Station IDs"></div>
                     <div class="ma-row"><label>ID window 2</label><input type="text" id="stIdName2" maxlength="30" autocomplete="off" placeholder="Sweepers &amp; FX"></div>
-                    <div class="ma-row"><label></label><button type="button" class="planner-save" id="stSave"><i class="ph ph-floppy-disk"></i> Save station</button></div>
                     <p class="mgr-stub st-note">Name &amp; ticker apply on the next reload of each screen.</p>
                 </div>
                 <div class="mgr-pane" id="mgrPaneOptions" hidden>
@@ -777,9 +867,17 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 <div class="mgr-pane" id="mgrPaneRouting" hidden>
                     <p class="mgr-stub-text">Four simulated stereo outputs (<b>OUT 1&ndash;4</b>) for GUI testing —
                         assignments are stored and shown across the player, and will map to real sound
-                        devices in the desktop build. The <b>PFL channel</b> carries every single-play
-                        preview button (planner tree, audio manager, DJ library).</p>
+                        devices in the desktop build.</p>
                     <div class="opt-list" id="routingList"></div>
+                    <hr class="ma-hr">
+                    <!-- PFL (preview): the small mini-player docked under the DJ
+                         library, its per-row/per-deck send buttons, and the
+                         output every single-play preview (planner tree, audio
+                         manager, DJ library) carries. -->
+                    <div class="mnt-section">
+                        <h3>PFL (preview)</h3>
+                        <div class="opt-list" id="pflOptList"></div>
+                    </div>
                 </div>
                 <!-- MAINTENANCE: backup/restore (.cartdb, cross-compatible with any
                      station built on the same helpers), runtime logs, and the
@@ -802,23 +900,35 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                     <hr class="ma-hr">
                     <div class="mnt-section">
                         <h3>Logs</h3>
-                        <div class="mnt-log-tabs">
-                            <button type="button" class="mnt-log-tab" data-log="keepalive">Keep-alive</button>
-                            <button type="button" class="mnt-log-tab" data-log="playback">Playback</button>
+                        <div class="opt-row">
+                            <span class="opt-text"><b>Keep logs for</b><small>Older entries are purged automatically whenever the player page loads</small></span>
+                            <select class="ma-select" id="mntLogRetention">
+                                <option value="30">30 days</option>
+                                <option value="60">60 days</option>
+                                <option value="90">90 days</option>
+                                <option value="180">180 days</option>
+                                <option value="0">Forever</option>
+                            </select>
                         </div>
-                    </div>
-                    <!-- Log content opens as its own modal (the inline scroller read
-                         as cramped/jittery); Clear wipes the file server-side. -->
-                    <div class="mnt-log-modal" id="mntLogModal" hidden>
-                        <div class="mnt-log-box">
-                            <div class="mnt-log-box-head">
-                                <h4 id="mntLogTitle">Log</h4>
-                                <div class="mnt-log-box-actions">
-                                    <button type="button" class="ma-btn danger" id="mntLogClear"><i class="ph ph-trash"></i> Clear</button>
-                                    <button type="button" class="planner-cancel" id="mntLogClose">Close</button>
+                        <!-- Two small always-on scrollable panes, no popover — each with
+                             its own file-size readout and an immediate "Clear now". -->
+                        <div class="mnt-log-panes">
+                            <div class="mnt-log-pane">
+                                <div class="mnt-log-pane-head">
+                                    <h4>Keep-alive</h4>
+                                    <span class="mnt-log-size" id="mntLogSize-keepalive">&ndash;</span>
+                                    <button type="button" class="ma-btn danger" data-log="keepalive"><i class="ph ph-trash"></i> Clear now</button>
                                 </div>
+                                <pre class="mnt-log-view" id="mntLogView-keepalive">Loading&hellip;</pre>
                             </div>
-                            <pre class="mnt-log-view" id="mntLogView">Loading&hellip;</pre>
+                            <div class="mnt-log-pane">
+                                <div class="mnt-log-pane-head">
+                                    <h4>Playback</h4>
+                                    <span class="mnt-log-size" id="mntLogSize-playback">&ndash;</span>
+                                    <button type="button" class="ma-btn danger" data-log="playback"><i class="ph ph-trash"></i> Clear now</button>
+                                </div>
+                                <pre class="mnt-log-view" id="mntLogView-playback">Loading&hellip;</pre>
+                            </div>
                         </div>
                     </div>
                     <hr class="ma-hr">
@@ -896,6 +1006,11 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
 
         // Feature switches (data/settings.txt) — UI-level button gating only.
         window.SETTINGS = <?= json_encode($settings) ?>;
+        // Set before any OUT badge / ticker paints, so there's no on/off flash.
+        document.body.classList.toggle('hide-out-labels', !window.SETTINGS.show_out_labels);
+        document.body.classList.toggle('hide-ticker', !window.SETTINGS.show_ticker);
+        document.body.classList.toggle('dock-resize-off', !window.SETTINGS.dock_resize);
+        document.body.classList.toggle('panel-resize-off', !window.SETTINGS.panel_resize);
 
         // Output routing (data/routing.txt): which SIMULATED stereo out each
         // DJ player and the PFL (preview) bus feeds. GUI-level for now.
@@ -1077,6 +1192,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         document.getElementById('section-select').addEventListener('change', (e) => {
             let url = e.target.value;
             if (!/[?&]fit=1/.test(url)) url += '&fit=1&mainbar=1';
+            showReloadMask('boardMask'); // same responsive-reflow jank as Stop all
             document.getElementById('cartgrid').src = url;
         });
         document.getElementById('ids-select').addEventListener('change', (e) => {
@@ -1184,7 +1300,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             }
             function stopPreview() {
                 if (preview) { try { preview.pause(); } catch (e) {} preview = null; }
-                if (previewBtn) { previewBtn.classList.remove('playing'); previewBtn.innerHTML = '<i class="ph-fill ph-play"></i>'; previewBtn = null; }
+                if (previewBtn) { previewBtn.classList.remove('playing'); previewBtn = null; }
             }
             function togglePreview(cart, btn) {
                 if (previewBtn === btn) { stopPreview(); return; }  // same one -> stop
@@ -1192,7 +1308,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 preview = new Audio(`uploads/${cart.file}`);
                 try { preview.currentTime = cart.start || 0; } catch (e) {}
                 preview.play().catch(() => {});
-                previewBtn = btn; btn.classList.add('playing'); btn.innerHTML = '<i class="ph-fill ph-pause"></i>';
+                previewBtn = btn; btn.classList.add('playing'); // static speaker-in-brackets icon, same as everywhere else
                 preview.addEventListener('timeupdate', () => { if (cart.end != null && preview && preview.currentTime >= cart.end) stopPreview(); });
                 preview.addEventListener('ended', stopPreview);
             }
@@ -1204,6 +1320,18 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 const hits = carts.filter((c) => c.name.toLowerCase().includes(needle)).slice(0, 12);
                 sel = -1;
                 if (!hits.length) { box.innerHTML = '<div class="search-empty">No matching jingles</div>'; box.hidden = false; rows = []; return; }
+                // Extra fire buttons mirror whatever's actually on screen right
+                // now: the DJ decks (however many are allowed/visible) and/or the
+                // autoplayer (only while its panel is open) — none of either when
+                // neither is showing. Preview stays PFL-gated, same as everywhere else.
+                const djOn = !!(window.DJMode && window.DJMode.isActive());
+                const djCount = djOn ? window.DJMode.playerCount() : 0;
+                const autoPanel = document.getElementById('automationPanel');
+                const autoOn = !!(autoPanel && autoPanel.classList.contains('active'));
+                const pflOn = !!(window.SETTINGS && window.SETTINGS.pfl_player && window.SETTINGS.pfl_buttons_search);
+                const extraBtns = Array.from({ length: djCount }, (_, k) => k + 1).map((n) =>
+                        `<button type="button" class="search-btn search-fire" data-deck="${n}" title="Fire into Player ${n}">${n}</button>`).join('') +
+                    (autoOn ? `<button type="button" class="search-btn search-auto" title="Send to autoplayer"><span class="icon-clocknote"><i class="ph ph-clock"></i><i class="ph-fill ph-music-note"></i></span></button>` : '');
                 box.innerHTML = hits.map((c) => {
                     const sec = sectionFor(c.i);
                     const crumb = sec ? esc(sec.label) : '&mdash;';
@@ -1211,14 +1339,26 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                         `<span class="search-dot" style="background:${CAT[c.color] || CAT['1']}"></span>` +
                         `<span class="search-name">${esc(c.name)}</span>` +
                         `<span class="search-crumb">${crumb}</span>` +
-                        `<button type="button" class="search-play" title="Preview"><i class="ph-fill ph-play"></i></button></div>`;
+                        (pflOn ? `<button type="button" class="search-play" title="Preview (PFL)"><span class="pfl-icon"><i class="ph ph-speaker-simple-high"></i></span></button>` : '') +
+                        extraBtns + `</div>`;
                 }).join('');
                 box.hidden = false;
                 rows = [...box.querySelectorAll('.search-row')];
                 rows.forEach((row) => {
                     const cart = carts.find((c) => c.i === +row.dataset.i);
                     const playBtn = row.querySelector('.search-play');
-                    playBtn.addEventListener('click', (e) => { e.stopPropagation(); togglePreview(cart, playBtn); });
+                    if (playBtn) playBtn.addEventListener('click', (e) => { e.stopPropagation(); togglePreview(cart, playBtn); });
+                    row.querySelectorAll('.search-fire').forEach((b) => b.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        window.DJMode.loadDeck(+b.dataset.deck, cart);
+                        close();
+                    }));
+                    const autoBtn = row.querySelector('.search-auto');
+                    if (autoBtn) autoBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        window.DJMode && window.DJMode.sendToAuto(cart);
+                        close();
+                    });
                     row.addEventListener('click', () => { navigate(sectionFor(cart.i), cart); close(); });
                 });
             }
@@ -1251,6 +1391,45 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             });
         })();
 
+        // --- In-GUI ticker edit (admin-only): pencil -> single-line input,
+        // Enter/blur saves (POST save-station.php), Escape discards.
+        (() => {
+            const btn = document.getElementById('tickerEditBtn');
+            if (!btn) return; // not admin
+            const msg = document.getElementById('tickerMsg');
+            const inp = document.getElementById('tickerEditInput');
+            let cancelled = false;
+            function startEdit() {
+                cancelled = false;
+                inp.value = msg.textContent;
+                msg.hidden = true;
+                inp.hidden = false;
+                inp.focus();
+                inp.select();
+            }
+            async function commit() {
+                inp.hidden = true;
+                msg.hidden = false;
+                if (cancelled) return;
+                const value = inp.value.trim();
+                if (value === msg.textContent) return; // unchanged
+                try {
+                    const r = await fetch('save-station.php', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ticker: value }),
+                    });
+                    const resp = await r.json();
+                    if (resp.ok) msg.textContent = value;
+                } catch (e) { /* best-effort — the field just reverts to the last saved text */ }
+            }
+            btn.addEventListener('click', startEdit);
+            inp.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+                else if (e.key === 'Escape') { cancelled = true; inp.blur(); }
+            });
+            inp.addEventListener('blur', commit);
+        })();
+
         // Big custom tooltips for the topbar buttons (the native title bubble
         // is tiny and slow) — the title text moves to data-tip, rendered by
         // a styled ::after in player.css.
@@ -1261,6 +1440,11 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
 
         // --- Toolbar actions.
         function stopAll() {
+            // Both cart walls (the main board and whichever ID-window surface
+            // is live) force-reload and visibly reflow — mask each one that's
+            // actually on screen.
+            showReloadMask('boardMask');
+            if (winState.ids.visible) maskIdSurface(winState.ids.docked ? 'dock' : 'float');
             ['cartgrid', 'floater', 'dockIdsFrame'].forEach(id => {
                 const iframe = document.getElementById(id);
                 if (iframe && iframe.src && !iframe.src.includes('about:blank')) iframe.src = iframe.src;
@@ -1343,23 +1527,45 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 sel.appendChild(opt);
             });
         })();
+        // Dragging the resize handle sits right next to these dropdowns —
+        // lock them out for a few seconds after each drag so an imprecise
+        // release doesn't land on (and accidentally change) one of them.
+        let dockDropdownsLocked = false;
+        let dockDropdownsLockTimer = null;
+        function lockDockDropdowns() {
+            dockDropdownsLocked = true;
+            clearTimeout(dockDropdownsLockTimer);
+            dockDropdownsLockTimer = setTimeout(() => {
+                dockDropdownsLocked = false;
+                renderWindows(); // restores each select's normal disabled state
+            }, 3000);
+            renderWindows();
+        }
         document.getElementById('dockClockSelect').addEventListener('change', (e) => {
-            if (layoutLocked) return; // don't reload the frame mid-playback
+            if (layoutLocked || dockDropdownsLocked) return; // don't reload the frame mid-playback
             dockClockIndex = +e.target.value;
             document.getElementById('dockClockFrame').src = DOCK_SRC[dockClockIndex];
         });
         document.getElementById('dockIdsSelect').addEventListener('change', (e) => {
-            if (layoutLocked) return; // don't reload the grid mid-playback
+            if (layoutLocked || dockDropdownsLocked) return; // don't reload the grid mid-playback
             dockIdsIndex = +e.target.value;
             document.getElementById('dockIdsFrame').src = idSectionUrls[dockIdsIndex];
             maskIdSurface('dock');
         });
+        // Comfortably fits each pane's 24px header + a legible minimum of
+        // actual content (clock ring / a row of ID tiles) so shrinking the
+        // dock never squashes them into an unreadable sliver.
+        const DOCK_MIN_H = 160;
+        const DOCK_MAX_H = 500;
         const winState = (() => {
             // First visit (no saved state) starts with BOTH views docked.
-            const def = { clock: { docked: true, visible: true }, ids: { docked: true, visible: true } };
+            const def = { clock: { docked: true, visible: true }, ids: { docked: true, visible: true }, dockHeight: 200 };
             try {
                 const saved = JSON.parse(localStorage.getItem(WIN_STORE));
-                if (saved && saved.clock && saved.ids) return saved;
+                if (saved && saved.clock && saved.ids) {
+                    if (!saved.dockHeight) saved.dockHeight = 200;
+                    return saved;
+                }
             } catch (e) { /* ignore corrupt storage */ }
             return def;
         })();
@@ -1388,9 +1594,12 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             // Clock ALONE: the trio (big digital | ring | end-of-hour) takes
             // over and the dropdown locks on "Clock" as a plain header. Any
             // other layout reverts to the remembered dropdown selection.
+            // Both also lock out briefly right after a dock-resize drag (see
+            // lockDockDropdowns) since they sit so close to the handle.
             const clockSel = document.getElementById('dockClockSelect');
-            clockSel.disabled = clockOnly;
+            clockSel.disabled = clockOnly || dockDropdownsLocked;
             clockSel.value = clockOnly ? 0 : dockClockIndex;
+            document.getElementById('dockIdsSelect').disabled = dockDropdownsLocked;
             // Lazy-load / release the dock iframes so nothing runs while undocked/hidden.
             const singleFrame = document.getElementById('dockClockFrame');
             singleFrame.src = (clockDock && !clockOnly) ? DOCK_SRC[dockClockIndex] : 'about:blank';
@@ -1408,6 +1617,8 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             bar.classList.toggle('ids-only',   idsDock && !clockDock);
             bar.classList.toggle('both',       clockDock && idsDock);
             bar.style.display = (clockDock || idsDock) ? 'flex' : 'none';
+            bar.style.height = winState.dockHeight + 'px';
+            document.getElementById('dockResizeHandle').hidden = !(clockDock || idsDock);
             // DJ mode tucks a clock-only dock under the library column so the
             // three decks keep the full height (see player.css).
             document.body.classList.toggle('dock-clock-only', clockDock && !idsDock);
@@ -1419,12 +1630,29 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             if (lastIdsSurface !== undefined && idsSurface !== lastIdsSurface && idsSurface !== 'none') {
                 maskIdSurface(idsSurface);
             }
+            // The docked ids pane doesn't reload its SRC when the clock docks/
+            // undocks alongside it, but the dock-bar width class flips (both <->
+            // ids-only) and the grid inside reflows to the new width — same
+            // jank, same mask, even though idsSurface itself didn't change.
+            else if (idsSurface === 'dock' && lastClockDock !== undefined && clockDock !== lastClockDock) {
+                maskIdSurface('dock');
+            }
             lastIdsSurface = idsSurface;
+            lastClockDock = clockDock;
         }
-        // Which ID surface the last render showed — so we only mask on a change.
+        // Which ID surface / clock-dock state the last render showed — so we
+        // only mask on an actual change.
         let lastIdsSurface = undefined;
+        let lastClockDock = undefined;
         function maskIdSurface(kind) {
-            const mask = document.getElementById(kind === 'dock' ? 'dockIdsMask' : 'floatIdsMask');
+            showReloadMask(kind === 'dock' ? 'dockIdsMask' : 'floatIdsMask');
+        }
+        // Generic reload mask (black cover + progress bar) for any surface
+        // that's about to force-reload and visibly reflow: the board (Stop
+        // all) and the Station-ID window (dock/undock, section change, or
+        // the clock docking/undocking alongside it).
+        function showReloadMask(maskId) {
+            const mask = document.getElementById(maskId);
             if (!mask) return;
             const bar = mask.querySelector('.win-reload-bar > i');
             mask.style.display = 'flex';
@@ -1470,6 +1698,193 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
 
         renderWindows(); // apply persisted window state on load
 
+        // Bottom dock resize: drag the thin handle to change the dock's
+        // height. A fixed ghost line follows the cursor (clamped to
+        // [DOCK_MIN_H, DOCK_MAX_H]) without live-resizing the dock itself —
+        // the resize only applies on release, so the iframes inside don't
+        // reflow/jank on every mousemove. Dragging past either limit turns
+        // the ghost red; releasing there snaps to that limit rather than
+        // wherever the cursor happened to be. Gated by the Options tab's
+        // "Allow dock resize" switch (off by default).
+        (() => {
+            const handle = document.getElementById('dockResizeHandle');
+            const ghost = document.getElementById('dockResizeGhost');
+            const bar = document.getElementById('dockBar');
+            let dragging = false, lockedDuringDrag = false, startY = 0, startHeight = 0, finalHeight = 0;
+
+            function positionGhost(height) {
+                const rect = bar.getBoundingClientRect();
+                const bottom = rect.bottom;
+                ghost.style.top = (bottom - height) + 'px';
+            }
+
+            handle.addEventListener('mousedown', (e) => {
+                if (!window.SETTINGS.dock_resize) return;
+                dragging = true;
+                // Still on-air, or within the 3s grace right after — rather
+                // than silently doing nothing, show a ghost line frozen in
+                // place and red, so attempting to drag actually explains why
+                // nothing is happening instead of just going nowhere.
+                lockedDuringDrag = resizeLocked();
+                startY = e.clientY;
+                startHeight = winState.dockHeight;
+                handle.classList.add('active');
+                ghost.hidden = false;
+                ghost.classList.toggle('blocked', lockedDuringDrag);
+                positionGhost(startHeight);
+                // The dock's panes are iframes: without an overlay above them,
+                // a fast mouse move crossing into an iframe stops reaching
+                // this (parent) document's mousemove listener entirely and
+                // the drag "drops". Same fix as the floating-window drag.
+                dragOverlay.classList.add('resize-v', 'active');
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!dragging) return;
+                if (lockedDuringDrag) { positionGhost(startHeight); return; } // frozen in place, stays red
+                const raw = startHeight + (startY - e.clientY);
+                const blocked = raw < DOCK_MIN_H || raw > DOCK_MAX_H;
+                finalHeight = Math.max(DOCK_MIN_H, Math.min(DOCK_MAX_H, raw));
+                ghost.classList.toggle('blocked', blocked);
+                positionGhost(finalHeight);
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (!dragging) return;
+                dragging = false;
+                handle.classList.remove('active');
+                ghost.hidden = true;
+                ghost.classList.remove('blocked');
+                dragOverlay.classList.remove('resize-v', 'active');
+                if (!lockedDuringDrag) {
+                    winState.dockHeight = finalHeight;
+                    bar.style.height = finalHeight + 'px';
+                    saveWinState();
+                    lockDockDropdowns();
+                }
+            });
+        })();
+
+        // DJ tree / automation sidebar width-resize: drag either handle to
+        // widen its panel. Gated by the Options tab's "Allow panel resize"
+        // switch (off by default); span is deliberately narrow — the panel
+        // can only grow, never shrink below its own default width, and the
+        // max growth is capped at PANEL_MAX_GROWTH.
+        (() => {
+            const PANEL_MAX_GROWTH = 160;
+
+            const treeEl = document.querySelector('.dj-tree');
+            const autoEl = document.getElementById('automationPanel');
+
+            // The permanent floor/ceiling for each panel — measured ONCE,
+            // before any saved resize is applied, so it reflects the panel's
+            // true CSS default and never ratchets up across drags (a
+            // previous version re-measured "current width" at the START of
+            // EVERY drag, which meant growing once permanently raised the
+            // floor too — dragging back down toward the ORIGINAL default was
+            // then impossible, always reported as "blocked"). Both panels can
+            // be hidden at this point (Carts mode / automation not open),
+            // which would measure 0 — briefly reveal to get a real number.
+            function measureNaturalWidth(el, hiddenAncestorSelector) {
+                const ancestor = hiddenAncestorSelector ? el.closest(hiddenAncestorSelector) : null;
+                const ancestorWasHidden = ancestor ? ancestor.hidden : false;
+                if (ancestorWasHidden) ancestor.hidden = false;
+                const prevDisplay = el.style.display;
+                const elWasHiddenByDisplay = getComputedStyle(el).display === 'none';
+                if (elWasHiddenByDisplay) el.style.display = 'flex';
+                const width = el.getBoundingClientRect().width;
+                if (elWasHiddenByDisplay) el.style.display = prevDisplay;
+                if (ancestorWasHidden) ancestor.hidden = true;
+                return width;
+            }
+            const DEFAULT_TREE_WIDTH = measureNaturalWidth(treeEl, '#djMode');
+            const DEFAULT_AUTO_WIDTH = measureNaturalWidth(autoEl, null);
+
+            // max-width overridden too — .automation-panel's own CSS caps it
+            // at 460px, which would otherwise silently clip any resize past
+            // that regardless of the flex-basis set here.
+            if (winState.treeWidth) { treeEl.style.flexBasis = winState.treeWidth + 'px'; treeEl.style.maxWidth = winState.treeWidth + 'px'; }
+            if (winState.autoWidth) { autoEl.style.flexBasis = winState.autoWidth + 'px'; autoEl.style.maxWidth = winState.autoWidth + 'px'; }
+
+            function updatePanelResizeHandles() {
+                const allowed = !!(window.SETTINGS && window.SETTINGS.panel_resize);
+                const treeHandle = document.getElementById('treeResizeHandle');
+                const autoHandle = document.getElementById('autoResizeHandle');
+                const djOn = document.body.classList.contains('dj-mode');
+                const autoOn = autoEl.classList.contains('active');
+                if (treeHandle) treeHandle.hidden = !(djOn && allowed);
+                if (autoHandle) autoHandle.hidden = !(autoOn && allowed);
+            }
+            updatePanelResizeHandles();
+            // Re-checked after a Settings save (manager.js) and whenever DJ
+            // mode or the automation panel's own visibility changes.
+            window.updatePanelResizeHandles = updatePanelResizeHandles;
+            new MutationObserver(updatePanelResizeHandles)
+                .observe(document.body, { attributes: true, attributeFilter: ['class'] });
+            new MutationObserver(updatePanelResizeHandles)
+                .observe(autoEl, { attributes: true, attributeFilter: ['class'] });
+
+            // dir=+1: the handle sits on the panel's trailing edge and
+            // dragging AWAY from it grows the panel (the tree). dir=-1: the
+            // handle sits on the panel's leading edge and dragging TOWARD it
+            // grows the panel (the automation sidebar).
+            function makeResizer(handleId, panelEl, dir, storeKey, defaultWidth) {
+                const handle = document.getElementById(handleId);
+                const ghost = document.getElementById('panelResizeGhost');
+                if (!handle || !panelEl) return;
+                // Fixed for every drag (not "current width at drag start") —
+                // the whole resizable band is always [defaultWidth,
+                // defaultWidth + PANEL_MAX_GROWTH], so shrinking back toward
+                // the original default is always possible, no matter how
+                // large a PREVIOUS drag grew it.
+                const minWidth = defaultWidth;
+                const maxWidth = defaultWidth + PANEL_MAX_GROWTH;
+                let dragging = false, startX = 0, startWidth = 0, finalWidth = 0;
+
+                function positionGhost(width) {
+                    const rect = panelEl.getBoundingClientRect();
+                    ghost.style.left = (dir > 0 ? rect.left + width : rect.right - width) + 'px';
+                }
+
+                handle.addEventListener('mousedown', (e) => {
+                    if (layoutLocked || !(window.SETTINGS && window.SETTINGS.panel_resize)) return;
+                    dragging = true;
+                    startX = e.clientX;
+                    startWidth = panelEl.getBoundingClientRect().width;
+                    handle.classList.add('active');
+                    ghost.hidden = false;
+                    positionGhost(startWidth);
+                    dragOverlay.classList.add('resize-h', 'active');
+                    e.preventDefault();
+                });
+
+                document.addEventListener('mousemove', (e) => {
+                    if (!dragging) return;
+                    const raw = startWidth + dir * (e.clientX - startX);
+                    const blocked = raw < minWidth || raw > maxWidth;
+                    finalWidth = Math.max(minWidth, Math.min(maxWidth, raw));
+                    ghost.classList.toggle('blocked', blocked);
+                    positionGhost(finalWidth);
+                });
+
+                document.addEventListener('mouseup', () => {
+                    if (!dragging) return;
+                    dragging = false;
+                    handle.classList.remove('active');
+                    ghost.hidden = true;
+                    ghost.classList.remove('blocked');
+                    dragOverlay.classList.remove('resize-h', 'active');
+                    panelEl.style.flexBasis = finalWidth + 'px';
+                    panelEl.style.maxWidth = finalWidth + 'px';
+                    winState[storeKey] = finalWidth;
+                    saveWinState();
+                });
+            }
+            makeResizer('treeResizeHandle', treeEl, 1, 'treeWidth', DEFAULT_TREE_WIDTH);
+            makeResizer('autoResizeHandle', autoEl, -1, 'autoWidth', DEFAULT_AUTO_WIDTH);
+        })();
+
         // The trio's ring drops its centre digits (the big digital clock sits
         // right beside it) — but in DJ mode the tucked dock shows the ring
         // ALONE, so there the digits come back. Called from renderWindows and
@@ -1504,11 +1919,18 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         // actually RUNNING — not merely queued/scheduled. While automation is
         // idle (armed but not yet firing), the ID/Clock windows can still be
         // docked/toggled/dragged freely; the lock only bites once it's live.
+        // Resize handles (dock height, DJ tree/automation width) stay locked
+        // a little LONGER than the rest of the layout: the instant playback
+        // clears, they'd otherwise unlock right under the cursor — confusing
+        // if the operator was still reaching toward something else nearby.
+        let resizeGraceUntil = 0;
+        function resizeLocked() { return layoutLocked || Date.now() < resizeGraceUntil; }
         function recomputeLock() {
             const anyPlaying = [...framePlaying.values()].some((n) => n > 0);
             const autoRunning = !!(window.Automation && window.Automation.isRunning());
             const locked = anyPlaying || autoRunning;
             if (locked !== layoutLocked) {
+                if (!locked) resizeGraceUntil = Date.now() + 3000;
                 layoutLocked = locked;
                 document.body.classList.toggle('layout-locked', layoutLocked);
             }

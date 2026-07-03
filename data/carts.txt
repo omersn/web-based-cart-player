@@ -1,4 +1,4 @@
-[ID] Station Opener 1|demo01.mp3|0.005|2|4.995
+[ID] Station Opener 1|demo01.mp3|0|2|4.995
 [ID] Station Opener 2|demo02.mp3|0.005|2|4.995
 [ID] Station Opener 3|demo03.mp3|0.005|2|4.995
 Hourly Transition|demo04.mp3|0.005|5|4.995
@@ -8,11 +8,11 @@ News Bumper|demo09.mp3|0.005|4|4.995
 Sponsor Tag|demo12.mp3|0.005|1|4.995
 - | 0.mp3|0|1
 - | 0.mp3|0|1
-Morning Show Open|demo07.mp3|2.614|1|3.992
+Morning Show Open|demo07.mp3|0.84731857183019|1|3.992
 Morning Show Bed|demo08.mp3|0.005|2|4.995
 Drivetime Sweeper|demo10.mp3|0.005|3|4.995
 Weekend Jingle|demo11.mp3|0.005|4|4.995
-Top of Hour Stinger|demo12.mp3|0.005|5|4.995
+Top of Hour Stinger|demo12.mp3|0|5|5
 Weather Bumper|demo02.mp3|0.005|1|4.995
 Traffic Bed|demo08.mp3|0.005|2|4.995
 Interview Intro|demo01.mp3|0.005|3|4.995

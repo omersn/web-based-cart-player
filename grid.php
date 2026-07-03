@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /**
  * The cart wall grid. Embedded as an iframe by index.php (and linked directly
  * from the mobile page). The heavy lifting — loading carts, the audio preload
@@ -35,6 +35,7 @@ $paginationDisplay = ($pagination === '0') ? 'none' : 'block';
 $backtimerStyles   = ($smallbacktimer === '1')
     ? 'left: 14px; width: 80px; height: 40px; font-size: 20px;'
     : 'left: 15px; width: 300px; height: 150px; font-size: 88px;';
+$settings = load_settings(); // gates the per-tile PFL preview button + mini-player below
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -44,6 +45,7 @@ $backtimerStyles   = ($smallbacktimer === '1')
     <title>Cart Wall</title>
     <link href="assets/fonts/fonts.css" rel="stylesheet">
     <style>
+        @import url('assets/vendor/phosphor/regular/style.css'); /* speaker-in-brackets PFL icon */
         :root {
             --bg-app: #0b0d11;
             --raised: rgba(255, 255, 255, 0.05);
@@ -82,7 +84,7 @@ $backtimerStyles   = ($smallbacktimer === '1')
         .page.active { height: 100%; box-sizing: border-box; grid-auto-rows: 1fr; }
 <?php endif; ?>
 
-        .button, .buttonext {
+        .button, .buttonext, .cart-slot {
             position: relative; padding: 12px; color: rgba(255, 255, 255, 0.96); border: none; outline: none;
             border-radius: 12px; text-align: center; cursor: pointer; font-size: <?= htmlspecialchars($smalltext) ?>px;
             font-family: 'Assistant', Arial, sans-serif; font-weight: 700;
@@ -92,6 +94,15 @@ $backtimerStyles   = ($smallbacktimer === '1')
         }
         .button:active { transform: scale(0.98); }
         .button.disabled { cursor: not-allowed; }
+        /* A cart with a PFL strip is wrapped in .cart-slot (the actual grid
+           item, sized exactly like a bare .button used to be); the button
+           itself just fills the slot. Keeping the strip as .cart-slot's
+           sibling (not the button's child) means pressing it can never also
+           trigger the button's own native :active depress. */
+        .cart-slot { padding: 0; cursor: default; overflow: visible; }
+        .cart-slot > .button, .cart-slot > .buttonext {
+            width: 100%; height: 100%; min-height: 0; min-width: 0;
+        }
 
         /* Category fills: soft top highlight over the base colour, per the design tokens. */
         .button.cat-1 { background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0) 42%), var(--cat-blue); }
@@ -166,6 +177,13 @@ $backtimerStyles   = ($smallbacktimer === '1')
         .chain-mid   { border-radius: 0; }
         .chain-end   { border-radius: 0 12px 12px 0; }
         .chain-mid, .chain-end { margin-left: -12px; }
+        /* A PFL-eligible chained cart is wrapped in a .cart-slot, which is
+           then the actual grid cell — the margin above only shifts the
+           button around inside its already-flush slot, so it needs its own
+           copy at the grid level (see cartwall.js) instead, with the
+           button's own copy cancelled (both would otherwise double-shift). */
+        .cart-slot-chain-mid, .cart-slot-chain-end { margin-left: -12px; }
+        .cart-slot > .chain-mid, .cart-slot > .chain-end { margin-left: 0; }
 
         /* On-air countdown status bar (sub-windows): slides up along the bottom. */
         #backtimer {
@@ -191,6 +209,66 @@ $backtimerStyles   = ($smallbacktimer === '1')
         .pagination { display: <?= $paginationDisplay ?>; margin: 16px; text-align: center; }
         .pagination button { margin: 4px; padding: 8px 14px; background: var(--raised); border: 1px solid var(--hairline); color: #eef1f5; border-radius: 8px; cursor: pointer; min-width: 70px; font-family: 'Assistant', Arial, sans-serif; font-weight: 700; font-size: 13px; }
         .pagination button.active { background: rgba(52, 195, 212, 0.2); border-color: rgba(52, 195, 212, 0.4); color: #7fe3ef; }
+
+        /* Shared "speaker in brackets" PFL icon (same mark used in the DJ
+           tree/deck/search — CSS-drawn corner brackets scale cleanly, unlike
+           literal '[' ']' text characters). */
+        .pfl-icon {
+            position: relative; display: inline-flex; align-items: center; justify-content: center;
+            height: 100%; padding: 0 5px;
+        }
+        .pfl-icon::before, .pfl-icon::after {
+            content: ''; position: absolute; top: 18%; bottom: 18%; width: 3px;
+            border-top: 1.4px solid currentColor; border-bottom: 1.4px solid currentColor;
+        }
+        .pfl-icon::before { left: 0; border-left: 1.4px solid currentColor; }
+        .pfl-icon::after { right: 0; border-right: 1.4px solid currentColor; }
+
+        /* Hover PFL (preview): the tile's own bottom edge contracts (ease-in)
+           via clip-path — paint-only, so its internal flex layout (and the
+           name/duration text position) never reflows — while the strip
+           slides up into the vacated sliver, leaving a 5% gap between them
+           (20% clipped away, 15% is the strip's own height). A sibling of
+           the button (see .cart-slot above) so pressing it never depresses
+           the tile underneath. Suppressed on tiles too small to fit it (e.g.
+           the Station-IDs window) via a ResizeObserver in cartwall.js, which
+           toggles .pfl-eligible on the button. */
+        /* "round 12px" matches the button's own border-radius — without it
+           the clip shape's corners are square, which hard-clips the
+           now-playing state's white glow ring into a mismatched, glitchy
+           corner instead of following the tile's actual rounded edge. */
+        .pfl-eligible { clip-path: inset(0 0 0 0 round 12px); transition: clip-path 0.15s ease-in; }
+        .cart-slot:hover > .pfl-eligible,
+        .pfl-eligible.pfl-shrunk { clip-path: inset(0 0 20% 0 round 12px); }
+        .cart-pfl-strip {
+            position: absolute; z-index: 5; left: 0; right: 0; bottom: 0; height: 15%; min-height: 16px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+            background: rgba(58, 66, 78, 0.88); color: #fff; border: 1px solid rgba(255, 255, 255, 0.4);
+            border-radius: 0 0 10px 10px; cursor: pointer;
+            opacity: 0; pointer-events: none; transform: translateY(8px);
+            transition: opacity 0.15s ease-in, transform 0.15s ease-in, background 0.12s ease;
+        }
+        .cart-slot:hover > .pfl-eligible ~ .cart-pfl-strip { opacity: 1; pointer-events: auto; transform: translateY(0); }
+        .cart-pfl-strip.active { opacity: 1; pointer-events: auto; transform: translateY(0); background: #f4c542; color: #5a4300; border-color: #c69a17; }
+
+        /* Small PFL mini-player, docked to the bottom of this cartwall
+           instance. Gated entirely by window.SETTINGS.pfl_player/pfl_buttons_carts
+           (manager Routing tab). */
+        .cart-pfl {
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 999;
+            display: flex; align-items: center; gap: 10px;
+            height: 34px; padding: 0 12px; box-sizing: border-box;
+            background: #171b21; border-top: 1px solid var(--hairline);
+            font-family: 'Assistant', Arial, sans-serif; font-size: 13px; color: #eef1f5;
+        }
+        .cart-pfl[hidden] { display: none; }
+        .cart-pfl-label { font-weight: 700; color: #f4c542; letter-spacing: 0.05em; font-size: 11px; }
+        .cart-pfl-name { flex: 0 0 auto; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .cart-pfl-bar { flex: 1 1 auto; height: 5px; background: rgba(255, 255, 255, 0.12); border-radius: 3px; overflow: hidden; }
+        .cart-pfl-bar > i { display: block; height: 100%; width: 0%; background: #f4c542; }
+        .cart-pfl-stop { flex: 0 0 auto; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--hairline); color: #eef1f5; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; font-family: inherit; }
+        .cart-pfl-stop:disabled { opacity: 0.4; cursor: not-allowed; }
     </style>
 </head>
 <body style="background-color: var(--bg-app);">
@@ -219,6 +297,17 @@ $backtimerStyles   = ($smallbacktimer === '1')
 
     <button id="self-check-button" style="position: fixed; bottom: 5px; left: 5px; display: none; z-index: 1000; padding: 3px; font-size: 8px; cursor: pointer; background-color: #007bff; color: #fff; border: none; border-radius: 4px;">⟳</button>
 
+    <!-- Small PFL (preview) mini-player: a hover-revealed sliding strip on
+         each cart tile (see cartwall.js) sends its cart here. Docked to the
+         bottom of this cartwall instance; gated entirely by
+         window.SETTINGS.pfl_player/pfl_buttons_carts. -->
+    <div class="cart-pfl" id="cartPfl" hidden>
+        <span class="cart-pfl-label">PFL</span>
+        <span class="cart-pfl-name">-</span>
+        <div class="cart-pfl-bar"><i></i></div>
+        <button type="button" class="cart-pfl-stop" id="cartPflStop" disabled title="Stop">Stop</button>
+    </div>
+
     <script>
         // Message-log expand/collapse.
         (() => {
@@ -234,6 +323,11 @@ $backtimerStyles   = ($smallbacktimer === '1')
         })();
 
         window.CARTWALL_CONFIG = { dataUrl: <?= json_encode(DATA_URL) ?>, itemsPerPage: <?= ITEMS_PER_PAGE ?> };
+        window.SETTINGS = <?= json_encode($settings) ?>;
+        // Which simulated OUT the board's own plays carry — tagged onto the
+        // playback log (manager > Maintenance) so it can later be checked
+        // against real per-output audio hardware.
+        window.ROUTING = <?= json_encode(load_routing()) ?>;
     </script>
     <script src="<?= asset_v('assets/js/cartwall.js') ?>"></script>
 </body>

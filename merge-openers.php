@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /**
  * Concatenate the first three real jingle MP3s into one "station opener" file
  * and serve it for download. Shows a short merge animation, then triggers the

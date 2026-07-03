@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /** Reset every chain flag (data/cross.txt) back to "0", then return to maintenance. */
 require_once __DIR__ . '/config.php';
 

@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /** Admin maintenance hub: log viewers, cleanup, recalc, backup, chain reset, info. */
 require_once __DIR__ . '/auth.php';
 require_admin();
@@ -175,8 +175,9 @@ $unreferenced     = getUnreferencedFiles();
         echo htmlspecialchars(APP_NAME) . ' &mdash; ' . htmlspecialchars(STATION_NAME) . '<br>'
             . htmlspecialchars(COPYRIGHT) . ' &middot; '
             . '<a href="' . htmlspecialchars(SOURCE_URL) . '">Source code</a> '
-            . '&middot; ' . htmlspecialchars(LICENSE_NAME) . '. This program comes with '
-            . 'ABSOLUTELY NO WARRANTY; it is free software you may redistribute under the AGPL.';
+            . '&middot; ' . htmlspecialchars(LICENSE_NAME) . '. Source-available for personal/'
+            . 'noncommercial evaluation only &mdash; comes with ABSOLUTELY NO WARRANTY, and may not '
+            . 'be redistributed or modified. See LICENSE for the full terms.';
         ?>
     </div>
 

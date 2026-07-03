@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /*
  * Break planner (admin-only overlay).
  *
@@ -189,7 +189,7 @@
             `<button type="button" class="pbreak-edit" title="Rename"><i class="ph ph-pencil-simple"></i></button>` +
             `<span class="pbreak-meta">${b.items.length} items · ${fmtDur(breakLength(b))}</span>` +
             `<button type="button" class="pbreak-copy" title="Duplicate break"><i class="ph ph-copy"></i></button>` +
-            `<button type="button" class="pbreak-mode" title="${isManual ? 'Manual — DJ fires it by hand. Click for scheduled' : 'Scheduled — fires on its time. Click for manual'}"><i class="ph ${isManual ? 'ph-hand-palm' : 'ph-clock'}"></i></button>` +
+            `<button type="button" class="pbreak-mode" title="${isManual ? 'Manual — DJ fires it by hand. Click for scheduled' : 'Scheduled — fires on its time. Click for manual'}"><i class="ph ${isManual ? 'ph-hand-tap' : 'ph-clock'}"></i></button>` +
             `<button type="button" class="pbreak-power" title="${isOff ? 'Enable' : 'Disable (park as template)'}"><i class="ph ph-power"></i></button>` +
             `<button type="button" class="pbreak-del" title="Delete break"><i class="ph ph-trash"></i></button>`;
         row.querySelector('.pbreak-name-text').textContent = b.name || 'Break';
@@ -387,7 +387,18 @@
         $('ptreeSearch').value = '';
         $('ptreeFavFilter').classList.remove('active');
         const panel = $('automationPanel');
-        panelHome = { parent: panel.parentElement, next: panel.nextElementSibling };
+        panelHome = {
+            parent: panel.parentElement, next: panel.nextElementSibling,
+            // The panel carries its own resize-saved inline width (see
+            // index.php's panel-resize handles) — an inline style beats the
+            // planner's ".planner-editor .automation-panel { max-width: none }"
+            // override, leaving the editor stranded at its sidebar width
+            // instead of filling the pane. Clear it here; doClose() restores
+            // it for the live sidebar.
+            flexBasis: panel.style.flexBasis, maxWidth: panel.style.maxWidth,
+        };
+        panel.style.flexBasis = '';
+        panel.style.maxWidth = '';
         $('plannerEditor').appendChild(panel);
         $('plannerOverlay').hidden = false;
         renderTree();
@@ -409,6 +420,8 @@
         $('plannerOverlay').hidden = true;
         const panel = $('automationPanel');
         panelHome.parent.insertBefore(panel, panelHome.next);
+        panel.style.flexBasis = panelHome.flexBasis;
+        panel.style.maxWidth = panelHome.maxWidth;
         window.Automation.setPlannerMode(false);
     }
     function onKey(e) {

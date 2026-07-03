@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /** Replace (or, for an empty slot, add) the audio of a cart. */
 require_once __DIR__ . '/includes/helpers.php';
 

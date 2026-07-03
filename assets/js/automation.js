@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /*
  * Automation Playlist
  * ===================
@@ -19,6 +19,16 @@
     const FIT_BUFFER = 5;  // seconds of slack allowed when checking "will this fit before start"
     const CAT = { '1': '#2f6fd6', '2': '#2f9e5f', '3': '#b0479e', '4': '#c98a2b', '5': '#2aa7bf' };
     const el = (id) => document.getElementById(id);
+    // Tags the shared playback log (manager > Maintenance) with which player
+    // fired the cart and which (simulated) output it carries — lets the log
+    // double as a check that different players are actually routed to
+    // different real devices, once there's real multi-output hardware
+    // behind OUT 1-4. Runs in the parent document, not grid.php's iframe, so
+    // it posts to grid.php explicitly.
+    function logPlayback(name, action) {
+        const out = (window.ROUTING || {}).autoplayer || 1;
+        fetch('grid.php', { method: 'POST', body: `${new Date().toLocaleString()} - ${name} - ${action} - Autoplayer -> OUT ${out}` });
+    }
 
     const ICON = {
         start: '<svg viewBox="0 0 40 22" width="36" height="20"><circle cx="8" cy="11" r="6.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 11V6.6M8 11h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M18 11h16M30 7l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -185,6 +195,16 @@
     function actualStart() { return state.anchorMode === 'end' ? new Date(state.anchorTime.getTime() - totalRuntime() * 1000) : state.anchorTime; }
     function actualEnd() { return state.anchorMode === 'end' ? state.anchorTime : new Date(state.anchorTime.getTime() + totalRuntime() * 1000); }
     function secsToStart() { return (actualStart().getTime() - Date.now()) / 1000; }
+    // Flipping From<->To this close to the batch's own start point can make
+    // the OTHER direction impossible to honor without overrunning (e.g.
+    // flipping a 30s batch to "To" 5s before its "From" time would need it
+    // to have already started 25s ago). LOCK_LEAD (10s) is fine for adding
+    // items/reordering, but a lead shorter than the batch itself isn't
+    // enough here — freeze the toggle once we're within one full
+    // batch-length of the schedule's actual start.
+    function anchorToggleLocked() {
+        return state.mode === 'auto' && state.items.length > 0 && secsToStart() <= totalRuntime();
+    }
     function itemEnd(it) { return (it.end != null ? it.end : (it.audio && it.audio.duration)) || (it.start + it.runtime); }
 
     function remainingRuntime() {
@@ -205,10 +225,16 @@
         if (!Array.isArray(list) || list.length === 0) return;
         const sumNew = list.reduce((a, d) => a + (Number(d.runtime) || 0), 0);
         if (state.locked || state.running) return toast('Playlist locked');
-        // Schedule guards don't apply in the planner: it edits any break —
-        // including ones whose air time has already passed today. The hour cap
-        // stays on (a break longer than an hour is a mistake in any mode).
-        if (!plannerMode) {
+        // Schedule guards only mean anything in AUTO mode (they protect a
+        // scheduled auto-start from being edited out from under itself) —
+        // MANUAL has no start time to guard, so secsToStart() is meaningless
+        // there (and can be a stale negative number left over from an old
+        // AUTO schedule the tick already flipped us out of), which used to
+        // block every add with "Too close to start". Also skipped in the
+        // planner: it edits any break, including ones whose air time has
+        // already passed today. The hour cap stays on regardless (a break
+        // longer than an hour is a mistake in any mode).
+        if (!plannerMode && state.mode === 'auto') {
             if (secsToStart() <= LOCK_LEAD) return toast('Too close to start');
             if (sumNew > secsToStart() + FIT_BUFFER) return toast("Won't fit before start");
         }
@@ -349,9 +375,10 @@
             let tailMs = 0;
             if (fading) {
                 tailMs = Math.max(0, (itemEnd(prev) - prevAudio.currentTime) * 1000);
-                tailOut = { audio: prevAudio, timer: setTimeout(() => { try { prevAudio.pause(); } catch (e) {} tailOut = null; }, tailMs) };
+                tailOut = { audio: prevAudio, timer: setTimeout(() => { try { prevAudio.pause(); } catch (e) {} tailOut = null; logPlayback(prev.name, 'stopped'); }, tailMs) };
             } else {
                 try { prevAudio.pause(); } catch (e) {}
+                logPlayback(prev.name, 'stopped');
             }
             // Finished items shrink out of the live queue — but the planner's
             // transport is just a PREVIEW: the break keeps its items. Removal
@@ -368,6 +395,7 @@
         try { a.currentTime = it.start; } catch (e) {}
         a.volume = it.volume;
         a.play().catch(() => {});
+        logPlayback(it.name, 'played');
         clearTimeout(it._timer);
         it._timer = setTimeout(() => playNext(), Math.max(0, (itemEnd(it) - it.start) * 1000 - advanceLeadMs(state.playingIndex + 1)));
         render();
@@ -377,17 +405,26 @@
     function pause() {
         killTail(); // a manual pause mid-fade silences the outgoing tail too
         const it = state.items[state.playingIndex];
-        if (it) { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); }
+        if (it) { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); logPlayback(it.name, 'stopped'); }
         render();
     }
     function resume() {
         const it = state.items[state.playingIndex];
         if (!it) { playNext(); return; }
         it.audio.play().catch(() => {});
+        logPlayback(it.name, 'played');
         it._timer = setTimeout(() => playNext(), Math.max(0, (itemEnd(it) - it.audio.currentTime) * 1000 - advanceLeadMs(state.playingIndex + 1)));
         render();
     }
     function endPlayback() {
+        // Interrupted (forceStop) mid-item: playingIndex still points at
+        // whatever was on air, so log its stop here. The natural-completion
+        // path (queue exhausted, called from inside playNext()) already
+        // logged the last item's stop via playNext()'s own prev-handling,
+        // and by then playingIndex has moved past the end — nothing to
+        // double-log here in that case.
+        const cur = state.items[state.playingIndex];
+        if (cur) logPlayback(cur.name, 'stopped');
         state.running = false; state.playingIndex = -1;
         killTail();
         state.items.forEach(it => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
@@ -403,10 +440,20 @@
     // Stop reachable from either mode (the dedicated AUTO-mode Stop button, the
     // MANUAL transport's Stop, or the shell's "Stop all"). Interrupting like
     // this does NOT auto-remove the interrupted item (only natural completion,
-    // in playNext, does that).
+    // in playNext, does that) — MANUAL keeps its queue so it can be resumed.
     function forceStop() {
         if (!state.running) return;
         endPlayback();
+        // AUTO has no "resume" affordance once stopped — leaving the (now
+        // stale) items sitting in the queue kept the header's countdown
+        // ticking against an interrupted schedule, and firedForThisSchedule
+        // being already true meant it could never re-arm. Reset it clean.
+        if (state.mode === 'auto') {
+            state.items.forEach((it) => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
+            state.items = [];
+            resetSchedule();
+            saveState();
+        }
         render();
     }
 
@@ -464,6 +511,7 @@
     // too — the header stays interactive there, just muted.
     function toggleAnchor() {
         if (state.locked || state.running) return;
+        if (anchorToggleLocked()) return toast('Too close to start — From/To is locked');
         // Deliberately does NOT close an open picker — you can flip From/To with
         // the picker still up (the picker only edits the time; the anchor is
         // independent). Its own listener stopPropagation-s, so the outside-click
@@ -651,7 +699,10 @@
         }
     }
     function clearQueue() {
-        if (state.running) return;
+        // Clear always wins — if something is still on air, stop it first
+        // rather than silently refusing (that left the header's countdown
+        // ticking against a schedule Clear was supposed to wipe).
+        if (state.running) forceStop();
         state.items.forEach(it => { try { it.audio.pause(); } catch (e) {} clearTimeout(it._timer); });
         state.items = [];
         resetSchedule();
@@ -838,7 +889,10 @@
         // is disabled — there's no schedule to edit until AUTO comes back.
         const hand = state.mode === 'manual';
         el('autoHeaderRow').classList.toggle('hand-mode', hand);
-        el('autoHeaderIcon').innerHTML = hand ? '<i class="ph ph-hand-palm"></i>' : (state.anchorMode === 'end' ? ICON.end : ICON.start);
+        // The toggle's own .locked class (batch-length-aware) is kept in sync
+        // inside updateTimes() instead — that one runs every tick, not just
+        // when render() happens to fire, so it freezes in real time.
+        el('autoHeaderIcon').innerHTML = hand ? '<i class="ph ph-hand-tap"></i>' : (state.anchorMode === 'end' ? ICON.end : ICON.start);
         el('autoHeaderRow').classList.toggle('end-mode', !hand && state.anchorMode === 'end');
         el('autoTimeLabel').textContent = hand ? '' : (state.anchorMode === 'end' ? 'To' : 'From');
         // autoTime itself is set inside updateTimes() (below), since it needs
@@ -913,6 +967,10 @@
             startsBlock.classList.toggle('imminent', secs <= 30);
         }
         fitTimes();
+        // Runs every tick (unlike render()) so the toggle visibly freezes in
+        // real time as the countdown crosses into the batch-length window,
+        // not just the next time some other action happens to repaint.
+        el('autoAnchorToggle').classList.toggle('locked', anchorToggleLocked());
     }
     // Both "Starts in" / "Ends at" read-outs share ONE font size, shrunk just
     // enough that the WIDER of the two fits its half-box (a countdown with hours
@@ -1141,7 +1199,7 @@
                 chip.className = 'break-chip manual';
                 chip.title = `${b.name || 'Break'} — click to load, then press play`;
                 chip.innerHTML =
-                    `<i class="ph ph-hand-palm"></i>` +
+                    `<i class="ph ph-hand-tap"></i>` +
                     `<span class="bc-len">${fmtDur(breakLength(b))}</span>` +
                     `<span class="bc-name"></span>`;
             }
@@ -1658,9 +1716,11 @@
     }
 
     // -- preview: play the joint as it would air — item A's tail, item B
-    //    launching crossMs early — under a read-only playhead. Touching the
-    //    lanes (or dragging, or any close path) stops it.
+    //    launching crossMs early. The playhead is scrubbable: dragging or
+    //    clicking the lanes seeks both items to the clicked point instead
+    //    of stopping playback.
     let crossPrev = null; // { audA, audB?, t0, timer, ts0, ts1, win, vu nodes }
+    let crossScrub = false; // true while the pointer is down scrubbing a live preview
     function crossStopPreview() {
         if (!crossPrev) return;
         const p = crossPrev;
@@ -1723,11 +1783,11 @@
             wireVu(p, [aud]);
             aud.play().catch(() => {});
             p.timer = setInterval(() => {
-                const t = (performance.now() - p.t0) / 1000;
-                if (t >= win) { crossStopPreview(); return; }
+                const t = p.ts0 + (performance.now() - p.t0) / 1000;
+                if (t >= p.ts1) { crossStopPreview(); return; }
                 const ph = el('crossPlayhead');
                 ph.hidden = false;
-                ph.style.left = Math.round((t / win) * (el('crossLanes').clientWidth || 1)) + 'px';
+                ph.style.left = Math.round((t / p.win) * (el('crossLanes').clientWidth || 1)) + 'px';
             }, 40);
             crossPrev = p;
             el('crossPlay').innerHTML = '<i class="ph-fill ph-stop"></i> Stop';
@@ -1739,11 +1799,17 @@
         const overlap = crossMs / 1000;
         const startB = tail - overlap;                       // window-seconds where B launches
         const endB = startB + head;
-        // Preview just the joint: 1.5 s before the active overlap begins (B's
-        // launch) to 1.5 s after it ends (A's tail-out) — not the full lanes.
+        // Smart start: 1.5 s before the active overlap begins (B's launch) —
+        // skips the boring lead-in of A's tail instead of making every
+        // preview sit through it. It used to ALSO auto-stop 1.5 s after the
+        // joint (a "just the joint" window), but that left as little as ~3 s
+        // to click/drag before the preview died on its own — effectively
+        // impossible to scrub. Now it plays through to the true end; a scrub
+        // (crossSeekTo) already widens ts1 to the full window anyway, so this
+        // just means untouched playback gets the same room.
         const PAD = 1.5;
         const ts0 = Math.max(0, startB - PAD);
-        const ts1 = Math.min(tail + PAD, Math.max(tail, endB));
+        const ts1 = win;
         const audA = new Audio('uploads/' + a.file);
         const audB = new Audio('uploads/' + b.file);
         // Volume-line drafts apply to the preview — that's what they're for.
@@ -1757,7 +1823,7 @@
         if (ts0 < tail) audA.play().catch(() => {});
         p.startBTimer = setTimeout(() => { if (crossPrev === p) audB.play().catch(() => {}); }, Math.max(0, (startB - ts0) * 1000));
         p.timer = setInterval(() => {
-            const t = ts0 + (performance.now() - p.t0) / 1000; // window-seconds
+            const t = p.ts0 + (performance.now() - p.t0) / 1000; // window-seconds (p.ts0 tracks seeks; the local ts0 above is only the initial value)
             if (t >= p.ts1) { crossStopPreview(); return; }
             if (t >= tail) { try { audA.pause(); } catch (e) {} }             // A's window is over
             if (t >= endB) { try { audB.pause(); } catch (e) {} }
@@ -1769,13 +1835,66 @@
         crossPrev = p;
         el('crossPlay').innerHTML = '<i class="ph-fill ph-stop"></i> Stop';
     }
+    // Reposition a live preview to window-seconds tSec: re-times both items'
+    // currentTime/play state as if playback had reached tSec naturally, and
+    // hands the rest of the window over to the user (ts1 -> win, so a manual
+    // seek is never immediately cut short by the joint's ±1.5s auto-stop pad).
+    function crossSeekTo(tSec) {
+        if (!crossPrev) return;
+        const p = crossPrev;
+        tSec = Math.max(0, Math.min(p.win, tSec));
+        clearTimeout(p.startBTimer);
+        p.ts0 = tSec;
+        p.ts1 = p.win;
+        p.t0 = performance.now();
+        if (crossSolo >= 0) {
+            try { p.audA.currentTime = tSec; } catch (e) {}
+            p.audA.play().catch(() => {});
+            return;
+        }
+        const a = state.items[crossGap], b = state.items[crossGap + 1];
+        if (!a || !b) return;
+        const tail = crossTail(a), head = crossHead(b);
+        const startB = tail - crossMs / 1000, endB = startB + head;
+        const endA = itemEnd(a);
+        if (tSec < tail) {
+            try { p.audA.currentTime = Math.max(a.start, endA - tail) + tSec; } catch (e) {}
+            p.audA.play().catch(() => {});
+        } else {
+            try { p.audA.pause(); } catch (e) {}
+        }
+        if (tSec >= startB && tSec < endB) {
+            try { p.audB.currentTime = b.start + (tSec - startB); } catch (e) {}
+            p.audB.play().catch(() => {});
+        } else {
+            try { p.audB.pause(); } catch (e) {}
+            if (tSec < startB) {
+                try { p.audB.currentTime = b.start; } catch (e) {}
+                p.startBTimer = setTimeout(() => { if (crossPrev === p) p.audB.play().catch(() => {}); }, (startB - tSec) * 1000);
+            }
+        }
+    }
+    // Window-seconds for a given clientX over #crossLanes.
+    function crossXToTime(clientX) {
+        if (!crossPrev) return 0;
+        const lanes = el('crossLanes');
+        const r = lanes.getBoundingClientRect();
+        const frac = Math.max(0, Math.min(1, (clientX - r.left) / (r.width || 1)));
+        return frac * crossPrev.win;
+    }
 
     function wireCross() {
         const blkB = el('crossBlockB');
         if (!blkB) return; // markup not present (shouldn't happen, but never fatal)
-        // Touching the lanes while previewing STOPS the preview (read-only
-        // playhead); the same touch never starts a drag.
-        el('crossLanes').addEventListener('pointerdown', () => { if (crossPrev) crossStopPreview(); }, true);
+        // Touching the lanes while previewing scrubs the playhead instead of
+        // starting a fade/volume drag (both of those handlers already bail
+        // out while crossPrev is set, so there's no conflict).
+        el('crossLanes').addEventListener('pointerdown', (e) => {
+            if (!crossPrev) return;
+            e.preventDefault();
+            crossScrub = true;
+            crossSeekTo(crossXToTime(e.clientX));
+        }, true);
         blkB.addEventListener('pointerdown', (e) => {
             if (crossGap < 0 || crossPrev) return;
             e.preventDefault();
@@ -1800,6 +1919,7 @@
             });
         });
         document.addEventListener('pointermove', (e) => {
+            if (crossScrub) { crossSeekTo(crossXToTime(e.clientX)); return; }
             if (!crossActive()) return;
             if (crossVolDrag && crossVol) {
                 const blk = el(crossVolDrag === 'a' ? 'crossBlockA' : 'crossBlockB');
@@ -1815,7 +1935,7 @@
             crossMs = Math.round(Math.max(0, Math.min(crossDrag.maxMs, val)));
             updateCrossUI();
         });
-        document.addEventListener('pointerup', () => { crossDrag = null; crossVolDrag = null; });
+        document.addEventListener('pointerup', () => { crossDrag = null; crossVolDrag = null; crossScrub = false; });
         el('crossPlay').addEventListener('click', crossPlayToggle);
         el('crossClear').addEventListener('click', () => { if (crossSolo >= 0) commitSolo(true); else commitCross(0, false); });
         el('crossSave').addEventListener('click', () => { if (crossSolo >= 0) commitSolo(false); else commitCross(crossMs, true); });

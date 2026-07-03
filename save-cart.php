@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /**
  * Unified cart editor endpoint (manager Audio tab). One endpoint, four ops —
  * all on the 1-based carts.txt line id:

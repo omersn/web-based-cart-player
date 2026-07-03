@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /**
  * Save the planner's favourite carts (starred in the tree -> data/favorites.txt).
  *

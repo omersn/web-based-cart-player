@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /**
  * Save the Station tab (manager): ticker, section labels, the two ID-window
  * names and the station name override.

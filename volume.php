@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /**
  * Per-cart playback volume editor (6th field of a cart line). Shown inside a
  * small popup iframe from the admin list; saves over fetch() with a debounce.

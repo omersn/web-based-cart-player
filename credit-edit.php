@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /** Edit the per-day on-air credits (data/credits/day1..7.txt). */
 require_once __DIR__ . '/auth.php';
 

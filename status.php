@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /** Edit the scrolling status ticker shown at the bottom of the player. */
 require_once __DIR__ . '/auth.php';
 require_admin();

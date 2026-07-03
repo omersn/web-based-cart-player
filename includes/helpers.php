@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /**
  * Web-based Cart Player — shared data helpers.
  *
@@ -113,14 +113,18 @@ function save_cross_data(array $flags, array $fades): bool
  */
 function load_routing(): array
 {
-    $r = ['player1' => 1, 'player2' => 2, 'player3' => 3, 'pfl' => 4, 'carts' => 1, 'autoplayer' => 1];
+    // manager_preview: the audio-manager chain editor's own Play button.
+    // Unlike the others it may also be 0 ("PFL output") rather than only 1-4.
+    $r = ['player1' => 1, 'player2' => 2, 'player3' => 3, 'pfl' => 4, 'carts' => 1, 'autoplayer' => 1, 'manager_preview' => 0];
     $path  = data_path('routing.txt');
     $lines = file_exists($path) ? file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
     foreach ($lines as $line) {
         $p = explode('|', $line);
         $key = trim($p[0] ?? '');
         $out = (int) ($p[1] ?? 0);
-        if (array_key_exists($key, $r) && $out >= 1 && $out <= 4) $r[$key] = $out;
+        if (!array_key_exists($key, $r)) continue;
+        $min = $key === 'manager_preview' ? 0 : 1;
+        if ($out >= $min && $out <= 4) $r[$key] = $out;
     }
     return $r;
 }
@@ -131,7 +135,8 @@ function save_routing(array $r): bool
     $body = '';
     foreach (load_routing() as $key => $def) {
         $out = (int) ($r[$key] ?? $def);
-        $body .= $key . '|' . max(1, min(4, $out)) . "\n";
+        $min = $key === 'manager_preview' ? 0 : 1;
+        $body .= $key . '|' . max($min, min(4, $out)) . "\n";
     }
     return file_put_contents(data_path('routing.txt'), $body, LOCK_EX) !== false;
 }
@@ -261,16 +266,42 @@ function breaks_referencing(array $ids): array
  *   download    Download button
  *   automation  Automation playlist + break planner buttons
  *   ids_window  Station-ID / sweepers window button
- *   dj_mode     DJ layout button (placeholder — layout not built yet)
+ *   dj_mode     DJ layout button — on by default, DJ mode is the out-of-box layout
+ *   dj_players  How many of the 3 DJ decks are shown/allowed (1-3, not 0/1)
+ *   pfl_player  The small PFL (preview) mini-player docked under the DJ library
+ *   pfl_buttons_carts   Hover preview icon on cart-board tiles
+ *   pfl_buttons_players Preview button on each DJ deck
+ *   pfl_buttons_tree    Preview button in the DJ library tree
+ *   pfl_buttons_search  Preview button in the topbar search results
+ *   show_out_labels  The "OUT N" output badges on DJ decks, PFL and the autoplayer
+ *   show_ticker Shows the scrolling status message in the footer bar
+ *   dock_resize  Allow dragging the bottom dock's height (off by default)
+ *   panel_resize Allow widening the DJ tree / automation sidebar (off by default)
+ *   log_retention Days of keep-alive/playback log history to keep (30/60/90/180, 0 = forever)
  */
 function load_settings(): array
 {
-    $s = ['mobile' => 0, 'download' => 0, 'automation' => 1, 'ids_window' => 1, 'dj_mode' => 0];
+    $s = [
+        'mobile' => 0, 'download' => 0, 'automation' => 1, 'ids_window' => 1, 'dj_mode' => 1,
+        'dj_players' => 2, 'pfl_player' => 1,
+        'pfl_buttons_carts' => 1, 'pfl_buttons_players' => 1, 'pfl_buttons_tree' => 1, 'pfl_buttons_search' => 1,
+        'show_out_labels' => 0, 'show_ticker' => 1, 'dock_resize' => 0, 'panel_resize' => 0,
+        'log_retention' => 90,
+    ];
+    $logRetentionOptions = [30, 60, 90, 180, 0];
     $path  = data_path('settings.txt');
     $lines = file_exists($path) ? file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
     foreach ($lines as $line) {
         [$k, $v] = array_pad(explode('|', $line, 2), 2, '');
-        if (array_key_exists(trim($k), $s)) $s[trim($k)] = trim($v) === '1' ? 1 : 0;
+        $k = trim($k);
+        if (!array_key_exists($k, $s)) continue;
+        if ($k === 'dj_players') { $s[$k] = max(1, min(3, (int) trim($v) ?: 3)); continue; }
+        if ($k === 'log_retention') {
+            $iv = (int) trim($v);
+            $s[$k] = in_array($iv, $logRetentionOptions, true) ? $iv : 90;
+            continue;
+        }
+        $s[$k] = trim($v) === '1' ? 1 : 0;
     }
     return $s;
 }
@@ -298,11 +329,62 @@ function station_logo(): string
 /** Persist the switches. Returns false on failure. */
 function save_settings(array $s): bool
 {
+    $logRetentionOptions = [30, 60, 90, 180, 0];
     $lines = [];
     foreach (load_settings() as $k => $def) {
-        $lines[] = $k . '|' . ((isset($s[$k]) ? $s[$k] : $def) ? '1' : '0');
+        $v = isset($s[$k]) ? $s[$k] : $def;
+        if ($k === 'dj_players') { $lines[] = $k . '|' . (string) max(1, min(3, (int) $v)); continue; }
+        if ($k === 'log_retention') {
+            $iv = (int) $v;
+            $lines[] = $k . '|' . (string) (in_array($iv, $logRetentionOptions, true) ? $iv : 90);
+            continue;
+        }
+        $lines[] = $k . '|' . ($v ? '1' : '0');
     }
     return file_put_contents(data_path('settings.txt'), implode("\n", $lines) . "\n", LOCK_EX) !== false;
+}
+
+/**
+ * Drop keep-alive/playback log lines older than the configured retention
+ * (Maintenance > Logs; 0 = forever, a no-op). Called once per index.php
+ * load. Each log has its own timestamp shape, so parsing is per-file; a
+ * line the parser can't date is always kept — this only ever removes lines
+ * it's sure about.
+ */
+function purge_old_logs(): void
+{
+    $days = load_settings()['log_retention'];
+    if ($days <= 0) return;
+    $cutoff = time() - $days * 86400;
+
+    // [2026-06-29T20:33:53.069Z] IP: ... — ISO 8601, unambiguous.
+    purge_log_file(BASE_DIR . '/keep-alive.log', $cutoff, function (string $line): ?int {
+        if (!preg_match('/^\[([^\]]+)\]/', $line, $m)) return null;
+        $ts = strtotime($m[1]);
+        return $ts !== false ? $ts : null;
+    });
+    // "03/07/2026, 23:36:30 - ..." — day/month/year, 24h (from toLocaleString()).
+    purge_log_file(BASE_DIR . '/playback-log.log', $cutoff, function (string $line): ?int {
+        if (!preg_match('/^(\d{1,2}\/\d{1,2}\/\d{4}, \d{1,2}:\d{2}:\d{2})/', $line, $m)) return null;
+        $d = DateTime::createFromFormat('d/m/Y, H:i:s', $m[1]);
+        return $d !== false ? $d->getTimestamp() : null;
+    });
+}
+
+/** Rewrite $path keeping only lines whose parsed timestamp is >= $cutoff (or
+ *  undated, per $parseTs returning null) — skips the write entirely when
+ *  nothing would change. */
+function purge_log_file(string $path, int $cutoff, callable $parseTs): void
+{
+    if (!file_exists($path)) return;
+    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if (!$lines) return;
+    $kept = array_filter($lines, function (string $line) use ($parseTs, $cutoff): bool {
+        $ts = $parseTs($line);
+        return $ts === null || $ts >= $cutoff;
+    });
+    if (count($kept) === count($lines)) return;
+    file_put_contents($path, $kept ? implode("\n", $kept) . "\n" : '', LOCK_EX);
 }
 
 /**

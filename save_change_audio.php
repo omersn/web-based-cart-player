@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /** Replace the audio file for a cart (uploads/<id>.mp3) and return to admin. */
 require_once __DIR__ . '/config.php';
 

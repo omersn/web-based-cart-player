@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /*
  * Audio manager (admin-only overlay): its own window, separate from the
  * Station manager.
@@ -8,6 +8,15 @@
  * drag-handle waveform trimmer (wavesurfer.js, no iframe), chain, move,
  * download, upload, clear-slot (two-step confirm). Search has a clear-X and
  * a favourites filter sharing window.FAVORITES with the planner.
+ *
+ * Field edits (enable/name/volume/chain/colour/trim, and the chain crossfade
+ * editor's own Save) are a local draft, committed to the server only on
+ * Save & Close — Cancel discards them (confirming first if dirty), just like
+ * the Station manager and the planner. Move/Delete/Upload stay immediate,
+ * structural actions (reordering carts.txt lines, replacing audio content) —
+ * the same way Maintenance's backup/restore/danger-zone stay immediate in the
+ * Station manager — and each silently flushes any pending draft edits first
+ * so the server is never left inconsistent with what's on screen.
  */
 (() => {
     if (!window.IS_ADMIN) return;
@@ -30,10 +39,25 @@
             const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             const resp = await r.json();
             if (!resp.ok) { flash(resp.error || 'Save failed'); return null; }
-            flash('Saved', true);
             return resp;
         } catch (e) { flash('Save failed — server unreachable'); return null; }
     }
+
+    // ---- draft --------------------------------------------------------------
+    // draftCarts is the working copy the whole UI reads/writes while the
+    // overlay is open; baseline is the last server-confirmed state (refreshed
+    // on open, on Save & Close, and after any immediate structural action).
+    // Diffing draftCarts against baseline (by id) at Save & Close time is what
+    // decides which save-cart.php calls to make.
+    let draftCarts = null;
+    let baseline = null;
+    let dirty = false;
+    // Move/Delete/Upload are immediate (structural) — they hit the server
+    // regardless of Save vs Cancel, so a Cancel afterward still needs the
+    // board/DJ/ID windows refreshed even though no "save" happened.
+    let structuralChange = false;
+    function markDirty() { dirty = true; }
+    function isDirty() { return dirty; }
 
     // ID-window sections (Station IDs, Sweepers & FX) come FIRST — they're
     // distinct floating-window sections, not board pages, so they get their
@@ -52,10 +76,12 @@
             { label: L[6] || '7', from: 170, to: 195 }, { label: L[7] || '8', from: 195, to: 220 },
             { label: L[8] || '9', from: 220, to: 245 }, { label: L[9] || '10', from: 245, to: 270 },
         ];
-        return [...ids, ...board].filter((s) => s.from < M().carts.length);
+        return [...ids, ...board].filter((s) => s.from < draftCarts.length);
     }
     let selId = 0, maQuery = '', favOnly = false;
     const isFav = (id) => (window.FAVORITES || []).includes(id);
+    // Favourites are a station-wide "like" list, not a station setting — kept
+    // immediate (saved as it's clicked) exactly like the planner tree does.
     async function toggleFav(id) {
         const set = new Set(window.FAVORITES || []);
         if (set.has(id)) set.delete(id); else set.add(id);
@@ -73,7 +99,7 @@
         const q = maQuery.trim().toLowerCase();
         const filtering = q !== '' || favOnly;
         audioSections().forEach((sec) => {
-            let slots = M().carts.slice(sec.from, Math.min(sec.to, M().carts.length));
+            let slots = draftCarts.slice(sec.from, Math.min(sec.to, draftCarts.length));
             if (q) slots = slots.filter((c) => !c.empty && c.name.toLowerCase().includes(q));
             if (favOnly) slots = slots.filter((c) => isFav(c.id));
             if (!slots.length) return;
@@ -121,16 +147,9 @@
             host.appendChild(box);
         });
     }
-    function cart(id) { return M().carts.find((c) => c.id === id); }
-    // The LIVE player islands (window.CARTS drives the board, DJ decks and
-    // the autoplayer) must follow manager edits immediately — a stale island
-    // was why fresh chain fades seemed ignored until a full reload.
-    function syncLiveCart(id, patch) {
-        const live = (window.CARTS || []).find((x) => x.i === id - 1);
-        if (live) Object.assign(live, patch);
-    }
+    function cart(id) { return draftCarts.find((c) => c.id === id); }
 
-    // -- Inline waveform trimmer (replaces the old iframe trimmer pages) --------
+    // ---- Inline waveform trimmer (replaces the old iframe trimmer pages) ------
     let ws = null, wsHandlesWired = false, dragging = null; // 'start' | 'end' | null
     let trimStart = 0, trimEnd = 0, trimDur = 0, savedStart = 0, savedEnd = 0;
     function destroyWs() {
@@ -160,16 +179,6 @@
         $('maTStart').textContent = fmtT(trimStart);
         $('maTEnd').textContent = fmtT(trimEnd);
         $('maTLen').textContent = fmtT(trimEnd - trimStart);
-        updateTrimSaveState();
-    }
-    // Save trim starts disabled; it only enables (with a glowing highlight,
-    // never a size/visibility change so it can't shove neighbouring buttons
-    // around) once the handles actually differ from what's saved.
-    function updateTrimSaveState() {
-        const btn = $('maTrimSave');
-        const dirty = Math.abs(trimStart - savedStart) > 0.01 || Math.abs(trimEnd - savedEnd) > 0.01;
-        btn.disabled = !dirty;
-        btn.classList.toggle('dirty', dirty);
     }
     function wireHandleDrag() {
         if (wsHandlesWired) return;
@@ -187,7 +196,11 @@
             trimEnd = Math.min(trimDur, trimEnd);
             updateHandlePositions();
         };
-        const onUp = () => { dragging = null; };
+        // No separate "Save trim" step — releasing the handle commits straight
+        // into the draft (like every other field here), so it survives
+        // switching to another cart and only the outer Save & Close/Cancel
+        // decide whether it actually lands on the server.
+        const onUp = () => { if (dragging) saveTrim(); dragging = null; };
         $('maHandleStart').addEventListener('pointerdown', () => { dragging = 'start'; });
         $('maHandleEnd').addEventListener('pointerdown', () => { dragging = 'end'; });
         document.addEventListener('pointermove', onMove);
@@ -229,14 +242,14 @@
         ws.play(trimStart, trimEnd);
         $('maPlayTrim').innerHTML = '<i class="ph-fill ph-stop"></i> Stop';
     }
-    async function saveTrim() {
-        if (await post('save-cart.php', { op: 'update', id: selId, start: trimStart, end: trimEnd })) {
-            Object.assign(cart(selId), { start: trimStart, end: trimEnd });
-            syncLiveCart(selId, { start: trimStart, end: trimEnd });
-            savedStart = trimStart; savedEnd = trimEnd;
-            updateTrimSaveState();
-            updateLengthInfo();
-        }
+    // Commits a finished drag into the draft (not the server) — the outer
+    // Save & Close persists it, Cancel discards it along with everything else.
+    function saveTrim() {
+        if (Math.abs(trimStart - savedStart) < 0.01 && Math.abs(trimEnd - savedEnd) < 0.01) return; // handle released without moving
+        Object.assign(cart(selId), { start: trimStart, end: trimEnd });
+        markDirty();
+        savedStart = trimStart; savedEnd = trimEnd;
+        updateLengthInfo();
     }
 
     // ---- chain crossfade editor -----------------------------------------------
@@ -244,16 +257,18 @@
     // opens the run — capped at 5 items — as staggered waveform lanes, one per
     // cart. Dragging a lane LEFT deepens its crossfade into the previous item
     // (capped at 30% of the shorter neighbour); each lane carries the same
-    // volume line as the planner's cross editor. Save writes the fades onto
-    // cross.txt (flag|ms) and the volumes onto the carts themselves — the
-    // detail panel's volume slider follows. Board playout and the DJ decks
-    // both honour the saved plan.
+    // volume line as the planner's cross editor. Its own Save commits the
+    // fades + volumes into the draft (not the server) — the outer Save &
+    // Close writes them to cross.txt / the carts themselves; its own Cancel
+    // (chainEdClose) already discarded transient edits without touching
+    // anything, so that half needed no change.
     const CHAIN_MAX = 5;
     let edCtx = null;              // shared decode/VU context
     const edBufs = {};             // file -> AudioBuffer | Promise
     let ed = null;                 // { run, fades[], vols[], openFades, openVols }
     let edDrag = null;             // { type:'fade'|'vol', k, startX?, startMs? }
     let edPrev = null;             // preview { audios, t0, timer, vuTimer, srcs, analyser }
+    let edScrub = false;           // true while the pointer is down scrubbing a live preview
     function edBuffer(file) {
         if (edBufs[file] instanceof AudioBuffer) return Promise.resolve(edBufs[file]);
         if (!edBufs[file]) {
@@ -301,7 +316,7 @@
     // The chain run containing cart `id`: walk back over predecessors that
     // chain into us, forward while we chain onward. Empty slots end a run.
     function chainRunFor(id) {
-        const carts = M().carts;
+        const carts = draftCarts;
         let s = id;
         while (s > 1 && carts[s - 2] && !carts[s - 2].empty && carts[s - 2].cross === 1 && !carts[s - 1].empty) s--;
         let e = id;
@@ -346,6 +361,9 @@
         ed.openVols = [...ed.vols];
         $('chainEdNote').textContent = note;
         $('chainEdTitle').textContent = `Chain crossfade — ${run.length} items`;
+        // Assigned output (manager > Routing): 0 = the PFL bus, 1-4 = OUT N.
+        const out = (window.ROUTING || {}).manager_preview || 0;
+        $('chainEdOut').textContent = out ? `OUT ${out}` : 'PFL';
         buildChainLanes();
         $('chainEditor').hidden = false;
         run.forEach((c) => edBuffer(c.file).then(() => { if (ed) layoutChainLanes(); }));
@@ -359,7 +377,16 @@
     }
     function buildChainLanes() {
         const host = $('chainLanes');
-        host.querySelectorAll('.chain-lane').forEach((n) => n.remove());
+        host.querySelectorAll('.chain-lane, .chain-overlap-track').forEach((n) => n.remove());
+        // One gray overlap strip per junction (k = 1..run.length-1), straddling
+        // the border between lane k-1 and lane k — same visual language as the
+        // planner cross editor's overlap track.
+        for (let k = 1; k < ed.run.length; k++) {
+            const track = document.createElement('div');
+            track.className = 'chain-overlap-track';
+            track.dataset.k = k;
+            host.appendChild(track);
+        }
         ed.run.forEach((c, k) => {
             const lane = document.createElement('div');
             lane.className = 'chain-lane';
@@ -375,16 +402,18 @@
             const blk = lane.querySelector('.chain-block');
             blk.style.setProperty('--blk', CAT[c.color] || CAT['1']);
             lane.querySelector('.chain-block-name').textContent = c.name;
-            // Volume handle: vertical drag (never starts a fade drag).
+            // Volume handle: vertical drag (never starts a fade drag). While a
+            // preview is running, the lane-level capture listener (below)
+            // already turns this touch into a scrub — no editing mid-preview.
             lane.querySelector('.cross-vol-handle').addEventListener('pointerdown', (e) => {
-                if (edPrev) { chainEdStop(); return; }
+                if (edPrev) return;
                 e.preventDefault();
                 e.stopPropagation();
                 edDrag = { type: 'vol', k };
             });
             // Fade drag: the lane block itself, from the second lane on.
             blk.addEventListener('pointerdown', (e) => {
-                if (edPrev) { chainEdStop(); return; } // touching stops the preview
+                if (edPrev) return; // scrubbing handled by the lane-level listener
                 if (k === 0) return;
                 e.preventDefault();
                 edDrag = { type: 'fade', k, startX: e.clientX, startMs: ed.fades[k - 1] };
@@ -416,6 +445,16 @@
                 const buf = edBufs[c.file] instanceof AudioBuffer ? edBufs[c.file] : null;
                 edDrawWave(blk.querySelector('canvas'), buf, c.start || 0, (c.start || 0) + edLen(c));
             }
+        });
+        // Overlap strips: lanes are equal-height flex rows, so the border
+        // between lane k-1 and lane k sits at k/run.length of the host height.
+        const laneH = (host.clientHeight || 1) / ed.run.length;
+        host.querySelectorAll('.chain-overlap-track').forEach((trk) => {
+            const k = +trk.dataset.k;
+            const prevEnd = xs[k - 1] + edLen(ed.run[k - 1]);
+            trk.style.top = Math.round(k * laneH) + 'px';
+            trk.style.left = px(xs[k]) + 'px';
+            trk.style.width = Math.max(0, px(prevEnd) - px(xs[k])) + 'px';
         });
         $('chainEdInfo').textContent = `chain total ${fmtT(total)}`;
         const dirty = JSON.stringify(ed.fades) !== JSON.stringify(ed.openFades) ||
@@ -481,25 +520,52 @@
         edPrev = p;
         $('chainEdPlay').innerHTML = '<i class="ph-fill ph-stop"></i> Stop';
     }
-    async function chainEdSave() {
+    // Reposition a live preview to tSec (seconds into the whole chain run):
+    // re-times every item's currentTime/play state as if playback had
+    // reached tSec naturally. Lets click/drag on the lanes scrub instead of
+    // only stopping the preview.
+    function chainSeekTo(tSec) {
+        if (!edPrev || !ed) return;
+        const p = edPrev;
+        const xs = edStarts(), total = edTotal();
+        tSec = Math.max(0, Math.min(total, tSec));
+        p.t0 = performance.now() - tSec * 1000;
+        ed.run.forEach((c, k) => {
+            const start = xs[k], end = start + edLen(c);
+            const a = p.audios[k];
+            if (tSec >= start && tSec < end) {
+                p.started[k] = true;
+                try { a.currentTime = (c.start || 0) + (tSec - start); } catch (e) {}
+                a.play().catch(() => {});
+            } else {
+                try { a.pause(); } catch (e) {}
+                p.started[k] = tSec >= end;
+            }
+        });
+        const ph = $('chainPlayhead');
+        ph.hidden = false;
+        ph.style.left = Math.round((tSec / total) * ($('chainLanes').clientWidth || 1)) + 'px';
+    }
+    // Window-seconds for a given clientX over #chainLanes.
+    function chainXToTime(clientX) {
+        if (!ed) return 0;
+        const lanes = $('chainLanes');
+        const r = lanes.getBoundingClientRect();
+        const frac = Math.max(0, Math.min(1, (clientX - r.left) / (r.width || 1)));
+        return frac * edTotal();
+    }
+    // Commits into the draft only — the outer Save & Close writes fades to
+    // cross.txt and volumes to the carts.
+    function chainEdSave() {
         if (!ed) return;
         chainEdStop();
-        // Volume changes belong to the CARTS (permanent, everywhere).
         for (let k = 0; k < ed.run.length; k++) {
-            if (ed.vols[k] !== ed.openVols[k]) {
-                if (!await post('save-cart.php', { op: 'update', id: ed.run[k].id, volume: ed.vols[k] })) return;
-                ed.run[k].volume = ed.vols[k];
-                syncLiveCart(ed.run[k].id, { volume: ed.vols[k] });
-            }
+            if (ed.vols[k] !== ed.openVols[k]) ed.run[k].volume = ed.vols[k];
         }
-        // Fades belong to the chain (cross.txt's second field).
         if (JSON.stringify(ed.fades) !== JSON.stringify(ed.openFades)) {
-            if (!await post('save-cart.php', { op: 'chainfades', id: ed.run[0].id, fades: ed.fades })) return;
-            ed.fades.forEach((ms, k) => {
-                ed.run[k].chainFade = ms;
-                syncLiveCart(ed.run[k].id, { chainFade: ms });
-            });
+            ed.fades.forEach((ms, k) => { ed.run[k].chainFade = ms; });
         }
+        markDirty();
         // "Update the volume slider in the previous page": the detail panel
         // may be showing one of the run's carts.
         const cur = cart(selId);
@@ -515,7 +581,18 @@
         $('chainEdPlay').addEventListener('click', chainEdPlayToggle);
         $('chainEdSave').addEventListener('click', chainEdSave);
         $('chainEdCancel').addEventListener('click', chainEdClose);
+        // Touching the lanes while a preview is running scrubs the playhead
+        // instead of starting a fade/volume drag (both those handlers already
+        // bail out while edPrev is set, so there's no conflict). Capture
+        // phase so it fires before any per-block listener.
+        $('chainLanes').addEventListener('pointerdown', (e) => {
+            if (!edPrev) return;
+            e.preventDefault();
+            edScrub = true;
+            chainSeekTo(chainXToTime(e.clientX));
+        }, true);
         document.addEventListener('pointermove', (e) => {
+            if (edScrub) { chainSeekTo(chainXToTime(e.clientX)); return; }
             if (!edDrag || !ed) return;
             if (edDrag.type === 'vol') {
                 const blk = $('chainLanes').querySelectorAll('.chain-block')[edDrag.k];
@@ -532,6 +609,7 @@
         document.addEventListener('pointerup', () => {
             if (edDrag && ed) layoutChainLanes(false);
             edDrag = null;
+            edScrub = false;
         });
         window.addEventListener('resize', () => { if (ed) layoutChainLanes(false); });
     }
@@ -577,12 +655,11 @@
             b.type = 'button';
             b.className = 'ma-swatch' + (code === active ? ' active' : '');
             b.style.background = hex;
-            b.addEventListener('click', async () => {
-                if (await post('save-cart.php', { op: 'update', id: selId, color: code })) {
-                    cart(selId).color = code;
-                    renderSwatches(code);
-                    renderAudioList();
-                }
+            b.addEventListener('click', () => {
+                cart(selId).color = code;
+                markDirty();
+                renderSwatches(code);
+                renderAudioList();
             });
             host.appendChild(b);
         });
@@ -593,7 +670,7 @@
         audioSections().forEach((sec) => {
             const g = document.createElement('optgroup');
             g.label = sec.label;
-            M().carts.slice(sec.from, sec.to).forEach((c) => {
+            draftCarts.slice(sec.from, sec.to).forEach((c) => {
                 const o = document.createElement('option');
                 o.value = c.id;
                 o.textContent = `${c.id} — ${c.empty ? '(empty)' : c.name}`;
@@ -611,6 +688,47 @@
         const on = isFav(selId);
         btn.innerHTML = `<i class="${on ? 'ph-fill' : 'ph'} ph-star"></i>`;
         btn.classList.toggle('faved', on);
+    }
+
+    // ---- draft commit ------------------------------------------------------------
+    // Diffs draftCarts against baseline and posts exactly the ops needed;
+    // re-baselines on success. Used by Save & Close, and by Move/Delete/Upload
+    // as a pre-step so a pending draft is never silently lost or left
+    // inconsistent with a structural change that's already gone live.
+    async function flushDraft() {
+        for (const c of draftCarts) {
+            const b = baseline.find((x) => x.id === c.id);
+            if (!b) continue;
+            const upd = {};
+            if (c.name !== b.name) upd.name = c.name;
+            if (c.color !== b.color) upd.color = c.color;
+            if (c.volume !== b.volume) upd.volume = c.volume;
+            if (c.start !== b.start) upd.start = c.start;
+            if (c.end !== b.end) upd.end = c.end;
+            if (Object.keys(upd).length && !(await post('save-cart.php', { op: 'update', id: c.id, ...upd }))) return false;
+            if ((c.enabled !== 0) !== (b.enabled !== 0) && !(await post('save-cart.php', { op: 'enable', id: c.id, enabled: c.enabled !== 0 ? 1 : 0 }))) return false;
+            if (!!c.cross !== !!b.cross && !(await post('save-cart.php', { op: 'chain', id: c.id, cross: c.cross ? 1 : 0 }))) return false;
+        }
+        // Chain-fade runs: any contiguous chained run whose chainFade values
+        // changed gets ONE 'chainfades' call, keyed on the run's first id.
+        const postedRuns = new Set();
+        for (const c of draftCarts) {
+            if (c.empty || postedRuns.has(c.id)) continue;
+            const run = chainRunFor(c.id);
+            run.forEach((rc) => postedRuns.add(rc.id));
+            if (run.length < 2) continue;
+            const changed = run.slice(0, -1).some((rc) => {
+                const b = baseline.find((x) => x.id === rc.id);
+                return b && (rc.chainFade || 0) !== (b.chainFade || 0);
+            });
+            if (!changed) continue;
+            const fades = run.slice(0, -1).map((rc) => rc.chainFade || 0);
+            if (!(await post('save-cart.php', { op: 'chainfades', id: run[0].id, fades }))) return false;
+        }
+        window.MANAGER_DATA.carts = draftCarts;
+        baseline = draftCarts.map((c) => ({ ...c }));
+        dirty = false;
+        return true;
     }
 
     function wireAudioTab() {
@@ -634,12 +752,10 @@
             e.currentTarget.classList.toggle('active', favOnly);
             renderAudioList();
         });
-        $('maEnabled').addEventListener('change', async () => {
-            const on = $('maEnabled').checked;
-            if (await post('save-cart.php', { op: 'enable', id: selId, enabled: on ? 1 : 0 })) {
-                cart(selId).enabled = on ? 1 : 0;
-                renderAudioList();
-            }
+        $('maEnabled').addEventListener('change', () => {
+            cart(selId).enabled = $('maEnabled').checked ? 1 : 0;
+            markDirty();
+            renderAudioList();
         });
         // Name: plain text + pencil (matches the planner's rename pattern).
         $('maNameEdit').addEventListener('click', () => {
@@ -648,42 +764,46 @@
             $('maName').focus(); $('maName').select();
         });
         $('maName').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('maName').blur(); });
-        $('maName').addEventListener('blur', async () => {
+        $('maName').addEventListener('blur', () => {
             const name = $('maName').value.trim();
-            if (await post('save-cart.php', { op: 'update', id: selId, name })) {
-                cart(selId).name = name || '-';
-                $('maNameText').textContent = cart(selId).name;
-                renderAudioList();
-            }
+            cart(selId).name = name || '-';
+            $('maNameText').textContent = cart(selId).name;
+            markDirty();
+            renderAudioList();
             $('maName').hidden = true; $('maNameText').hidden = false;
         });
         $('maVolume').addEventListener('input', () => { $('maVolVal').textContent = $('maVolume').value + '%'; });
-        $('maVolume').addEventListener('change', async () => {
-            const v = (+$('maVolume').value) / 100;
-            if (await post('save-cart.php', { op: 'update', id: selId, volume: v })) {
-                cart(selId).volume = v;
-                syncLiveCart(selId, { volume: v });
-            }
+        $('maVolume').addEventListener('change', () => {
+            cart(selId).volume = (+$('maVolume').value) / 100;
+            markDirty();
         });
-        $('maChain').addEventListener('change', async () => {
+        $('maChain').addEventListener('change', () => {
             const on = $('maChain').checked;
-            if (await post('save-cart.php', { op: 'chain', id: selId, cross: on ? 1 : 0 })) {
-                cart(selId).cross = on ? 1 : 0;
-                if (!on) cart(selId).chainFade = 0; // server zeroes the fade too
-                syncLiveCart(selId, { cross: on ? 1 : 0, ...(on ? {} : { chainFade: 0 }) });
-                updateChainEditBtn();
-                renderAudioList();
+            const c = cart(selId);
+            if (on) {
+                c.cross = 1;
+                // Mirror the server's 5-item chain cap client-side, since this
+                // no longer hits save-cart.php right away.
+                if (chainRunFor(selId).length > CHAIN_MAX) {
+                    c.cross = 0;
+                    $('maChain').checked = false;
+                    flash(`A chain can hold at most ${CHAIN_MAX} items`);
+                    return;
+                }
             } else {
-                // Refused (e.g. the 5-item chain cap) — snap the switch back.
-                $('maChain').checked = !on;
+                c.cross = 0;
+                c.chainFade = 0; // an unchained joint has no fade
             }
+            markDirty();
+            updateChainEditBtn();
+            renderAudioList();
         });
         $('maPlayFull').addEventListener('click', playFull);
         $('maPlayTrim').addEventListener('click', playTrimmed);
-        $('maTrimSave').addEventListener('click', saveTrim);
-        // Upload new audio into the slot (or replace what's there). Trims
-        // reset server-side — they belonged to the old file. Client-side
-        // gate on type/size too, so a bad pick fails fast with a clear reason.
+        // Upload new audio into the slot (or replace what's there): immediate
+        // (structural, like Move/Delete below), flushing any pending draft
+        // edits first. Trims reset server-side — they belonged to the old
+        // file. Client-side gate on type/size too, so a bad pick fails fast.
         $('maAudioUpload').addEventListener('click', () => $('maAudioFile').click());
         $('maEmptyUploadBtn').addEventListener('click', () => $('maAudioFile').click());
         $('maAudioFile').addEventListener('change', async () => {
@@ -691,6 +811,7 @@
             if (!f) return;
             if (!/\.mp3$/i.test(f.name) && f.type !== 'audio/mpeg') { flash('Only .mp3 files are accepted'); $('maAudioFile').value = ''; return; }
             if (f.size > 30 * 1024 * 1024) { flash('Too big — max 30 MB (~30 min)'); $('maAudioFile').value = ''; return; }
+            if (!(await flushDraft())) { $('maAudioFile').value = ''; return; }
             const fd = new FormData();
             fd.append('id', selId);
             fd.append('audio', f);
@@ -699,28 +820,44 @@
                 const resp = await r.json();
                 if (!resp.ok) { flash(resp.error || 'Upload failed'); return; }
                 Object.assign(cart(selId), { file: resp.file, name: resp.name, start: 0, end: null, empty: false });
+                window.MANAGER_DATA.carts = draftCarts;
+                baseline = draftCarts.map((c) => ({ ...c }));
+                dirty = false;
+                structuralChange = true;
                 selectCart(selId);
                 flash('Audio saved', true);
             } catch (e) { flash('Upload failed'); }
             $('maAudioFile').value = '';
         });
+        // Move: immediate (structural — reorders carts.txt lines and remaps
+        // breaks/favourites), flushing any pending draft edits first.
         $('maMoveBtn').addEventListener('click', async () => {
             const to = +$('maMoveSlot').value;
             if (!to || to === selId) return;
+            if (!(await flushDraft())) return;
             if (await post('save-cart.php', { op: 'move', id: selId, to })) {
-                const carts = M().carts;
-                const moved = carts.splice(selId - 1, 1)[0];
-                carts.splice(to - 1, 0, moved);
-                carts.forEach((c, i) => { c.id = i + 1; });
+                const moved = draftCarts.splice(selId - 1, 1)[0];
+                draftCarts.splice(to - 1, 0, moved);
+                draftCarts.forEach((c, i) => { c.id = i + 1; });
+                window.MANAGER_DATA.carts = draftCarts;
+                baseline = draftCarts.map((c) => ({ ...c }));
+                dirty = false;
+                structuralChange = true;
                 selectCart(to);
             }
         });
-        // Clear this slot: two-step "are you sure" instead of a modal.
+        // Clear this slot: two-step "are you sure" instead of a modal. Also
+        // immediate/structural, flushing any pending draft edits first.
         $('maDelete').addEventListener('click', () => { $('maDelete').hidden = true; $('maDeleteConfirm').hidden = false; });
         $('maDeleteNo').addEventListener('click', () => { $('maDeleteConfirm').hidden = true; $('maDelete').hidden = false; });
         $('maDeleteYes').addEventListener('click', async () => {
+            if (!(await flushDraft())) return;
             if (await post('save-cart.php', { op: 'delete', id: selId })) {
                 Object.assign(cart(selId), { name: '-', file: '0.mp3', start: 0, end: null, volume: 1, color: '1', cross: 0, enabled: 1, empty: true });
+                window.MANAGER_DATA.carts = draftCarts;
+                baseline = draftCarts.map((c) => ({ ...c }));
+                dirty = false;
+                structuralChange = true;
                 selectCart(selId);
             }
         });
@@ -728,11 +865,29 @@
 
     // ---- shell ------------------------------------------------------------------
     function open() {
+        draftCarts = M().carts.map((c) => ({ ...c }));
+        baseline = draftCarts.map((c) => ({ ...c }));
+        dirty = false;
+        structuralChange = false;
         renderAudioList();
         $('audioManagerOverlay').hidden = false;
         document.addEventListener('keydown', onKey);
     }
-    function close() {
+    /** Persists the draft; returns true once the server has accepted it. */
+    async function save() {
+        if (!(await flushDraft())) return false;
+        flash('Saved', true);
+        return true;
+    }
+    // Closing with unsaved changes asks first — via a styled in-overlay
+    // dialog (not the browser's native confirm). A plain Cancel never
+    // touched the server on its own, so it doesn't need to refresh what's
+    // behind — UNLESS a Move/Delete/Upload already went live this session.
+    function close(didSave) {
+        if (isDirty()) { $('audioManagerConfirm').hidden = false; return; }
+        doClose(didSave);
+    }
+    function doClose(didSave) {
         chainEdClose();
         if (ws && ws.isPlaying()) ws.pause();
         destroyWs();
@@ -744,13 +899,15 @@
         $('maForm').hidden = true;
         $('maEmptyUpload').hidden = true;
         $('maEmptyHint').hidden = false;
+        $('audioManagerConfirm').hidden = true;
         $('audioManagerOverlay').hidden = true;
         document.removeEventListener('keydown', onKey);
+        if (!didSave && !structuralChange) return; // nothing actually changed on the server
         // Rebuild the live island (drives the DJ library + decks, the board
         // and the autoplayer) from the manager's now-authoritative data, so
-        // EVERY edit — name, colour, trim, volume, chain, enable, move,
-        // delete — shows without a page reload. Mirrors index.php's filter:
-        // only real, enabled carts appear.
+        // EVERY committed edit — name, colour, trim, volume, chain, enable,
+        // move, delete, upload — shows without a page reload.
+        // Mirrors index.php's filter: only real, enabled carts appear.
         window.CARTS = M().carts
             .filter((c) => !c.empty && c.enabled !== 0)
             .map((c) => ({
@@ -766,13 +923,20 @@
     function onKey(e) {
         if (e.key !== 'Escape' || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         if (!$('chainEditor').hidden) { chainEdClose(); return; } // one Esc closes the editor first
-        close();
+        if (!$('audioManagerConfirm').hidden) { $('audioManagerConfirm').hidden = true; return; } // then the discard dialog
+        close(false);
     }
 
     function init() {
         const openBtn = $('chip-audiomgr');
         if (openBtn) openBtn.addEventListener('click', open);
-        $('audioManagerClose').addEventListener('click', close);
+        $('audioManagerCancel').addEventListener('click', () => close(false)); // discard (confirms if dirty)
+        $('audioManagerConfirmDiscard').addEventListener('click', () => doClose(false));
+        $('audioManagerConfirmKeep').addEventListener('click', () => { $('audioManagerConfirm').hidden = true; });
+        // Save & Close: after a successful save the draft matches the server,
+        // so close() proceeds without the discard prompt; a failed save stays
+        // open with the error showing.
+        $('audioManagerSave').addEventListener('click', async () => { if (await save()) close(true); });
         wireAudioTab();
         wireChainEditor();
     }

@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* License: PolyForm-Strict-1.0.0 (see LICENSE) */
 /*
  * Web-based Cart Player — player shell (index.php) styles.
  * "Studio" dark design system — see design_handoff_cartwall_player/README.md
@@ -10,6 +10,21 @@
 @import url('../fonts/fonts.css');
 @import url('../vendor/phosphor/regular/style.css');
 @import url('../vendor/phosphor/fill/style.css');
+
+/* Shared "speaker in brackets" PFL (preview) icon — every PFL button (DJ
+   tree, deck, search results, cart board) uses this same mark for
+   uniformity. CSS-drawn corner brackets scale cleanly at any button size;
+   literal '[' ']' text characters didn't line up with the icon glyph. */
+.pfl-icon {
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    height: 100%; padding: 0 5px;
+}
+.pfl-icon::before, .pfl-icon::after {
+    content: ''; position: absolute; top: 18%; bottom: 18%; width: 3px;
+    border-top: 1.4px solid currentColor; border-bottom: 1.4px solid currentColor;
+}
+.pfl-icon::before { left: 0; border-left: 1.4px solid currentColor; }
+.pfl-icon::after { right: 0; border-right: 1.4px solid currentColor; }
 
 :root {
     /* Surfaces & neutrals */
@@ -118,6 +133,48 @@ body {
 .window-minimize:hover, .window-dock:hover { background: var(--raised-hover); color: var(--text-primary); }
 .window-close:hover { background: rgba(240, 69, 63, 0.9); color: #fff; }
 .window-dock i, .window-close i { font-size: 12px; }
+
+/* ---- Bottom dock resize ------------------------------------------------ */
+/* A thin strip just above .dock-bar — drag it up/down to resize the dock.
+   A ghost line (fixed, full-width) previews the drop point while dragging;
+   the dock itself only actually resizes on release. */
+.dock-resize-handle {
+    flex: 0 0 5px; margin-top: -5px; position: relative; z-index: 20;
+    cursor: ns-resize; background: transparent;
+}
+.dock-resize-handle:hover, .dock-resize-handle.active { background: var(--cyan-tint); }
+.dock-resize-handle[hidden] { display: none; }
+/* Resize disallowed (Options tab, off by default): the thin divider stays put
+   as a plain static line — no hover highlight, no resize cursor, since it
+   isn't actually draggable. */
+body.dock-resize-off .dock-resize-handle { cursor: default; }
+body.dock-resize-off .dock-resize-handle:hover, body.dock-resize-off .dock-resize-handle.active { background: transparent; }
+.dock-resize-ghost {
+    position: fixed; left: 0; width: 100%; height: 3px; z-index: 9000;
+    background: var(--cyan); pointer-events: none; box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
+}
+.dock-resize-ghost.blocked { background: #f0453f; }
+.dock-resize-ghost[hidden] { display: none; }
+
+/* ---- DJ tree / automation panel width-resize --------------------------- */
+/* A thin vertical strip beside the DJ library tree / automation sidebar —
+   drag it left/right to widen the panel. Severely capped span (see the JS):
+   the panel can only grow, never shrink below its own default width. */
+.panel-resize-handle {
+    flex: 0 0 5px; position: relative; z-index: 20;
+    cursor: ew-resize; background: transparent;
+}
+.panel-resize-handle:hover, .panel-resize-handle.active { background: var(--cyan-tint); }
+.panel-resize-handle[hidden] { display: none; }
+/* Resize disallowed (Options tab, off by default): plain static divider. */
+body.panel-resize-off .panel-resize-handle { cursor: default; }
+body.panel-resize-off .panel-resize-handle:hover, body.panel-resize-off .panel-resize-handle.active { background: transparent; }
+.panel-resize-ghost {
+    position: fixed; top: 0; height: 100%; width: 3px; z-index: 9000;
+    background: var(--cyan); pointer-events: none; box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
+}
+.panel-resize-ghost.blocked { background: #f0453f; }
+.panel-resize-ghost[hidden] { display: none; }
 
 /* ---- Bottom dock ----------------------------------------------------- */
 /* A flex row between the board and the ticker; when a view is docked the board
@@ -342,6 +399,10 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 }
 .auto-anchor-toggle:hover { background: var(--raised); color: var(--text-primary); }
 .auto-header.end-mode .auto-anchor-toggle { color: var(--amber); }
+/* Within one batch-length of the schedule's actual start — flipping From/To
+   could no longer be honored either way, so the toggle itself freezes even
+   though the rest of the header may still be interactive. */
+.auto-anchor-toggle.locked { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
 /* Fixed height matching the From/To SVG (20px) so the hand icon (a font glyph,
    not an SVG) can't make the header a few px taller in MANUAL mode — that
    growth was pushing the queue/total/switch/transport down underneath it. */
@@ -620,7 +681,7 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 /* Live search results — a Spotlight-style dropdown under the search box. */
 .search-results {
     position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
-    width: 380px; max-width: calc(100vw - 32px); z-index: 6000;
+    width: 520px; max-width: calc(100vw - 32px); z-index: 6000;
     max-height: min(62vh, 440px); overflow-y: auto; padding: 6px;
     background: #12161c; border: 1px solid var(--hairline); border-radius: 12px;
     box-shadow: 0 22px 50px rgba(0, 0, 0, 0.6);
@@ -634,14 +695,20 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .search-crumb { flex: 0 0 auto; font-size: 11px; color: var(--text-tertiary); background: rgba(255,255,255,0.05); border: 1px solid var(--hairline); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
 .search-play { flex: 0 0 auto; width: 26px; height: 26px; border: none; border-radius: 6px; cursor: pointer; background: var(--raised-hover); color: var(--text-secondary); display: flex; align-items: center; justify-content: center; font-size: 13px; }
 .search-play:hover { color: #fff; background: var(--cyan-tint); }
-.search-play.playing { color: var(--cyan-text); background: var(--cyan-tint); }
+/* Lit while it's the one loaded into the PFL mini-player — same amber as
+   every other PFL button (deck, tree). */
+.search-play.playing { background: var(--amber); color: #2a1d02; }
+/* Extra fire buttons (DJ players / autoplayer) that mirror whatever's
+   actually on screen — same sizing as the preview button, next to it. */
+.search-btn { flex: 0 0 auto; width: 26px; height: 26px; border: none; border-radius: 6px; cursor: pointer; background: var(--raised-hover); color: var(--text-secondary); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+.search-btn:hover { color: #fff; background: var(--cyan-tint); }
 .search-empty { padding: 14px 10px; color: var(--text-tertiary); font-size: 13px; text-align: center; }
 .topbar-search {
     display: flex;
     align-items: center;
     gap: 10px;
     width: 100%;
-    max-width: 380px;
+    max-width: 520px;
     height: 40px;
     padding: 0 14px;
     border-radius: 10px;
@@ -754,6 +821,12 @@ body.layout-locked .title-bar-0002 { cursor: default; }
     font-family: 'Assistant', Arial, sans-serif; font-weight: 700; font-size: 11px;
     letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary);
 }
+/* Which backend this frontend is actually pinging — handy once there's more
+   than one machine running the player. */
+.log-popup-server {
+    flex: 1 1 auto; margin: 0 10px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-tertiary); text-align: right;
+}
 .log-popup-x {
     width: 22px; height: 22px; border: none; border-radius: 5px; cursor: pointer;
     background: none; color: var(--text-tertiary);
@@ -850,6 +923,74 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .statuses-bar .status-pill { flex-shrink: 0; }
 /* Announcement text takes the remaining width and ellipsises. */
 .ticker-msg { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Station tab's "Show ticker" switch. */
+body.hide-ticker .ticker-msg { display: none; }
+/* In-GUI ticker edit (admin-only): the input takes over the message's own
+   flex slot while editing; the pencil sits just after it. */
+.ticker-edit-input {
+    flex: 1 1 auto; min-width: 0; height: 26px;
+    background: rgba(0, 0, 0, 0.25); border: 1px solid var(--cyan-border); border-radius: 6px;
+    padding: 0 8px; color: var(--text-primary); font-size: 13px; font-family: inherit;
+}
+.ticker-edit-input[hidden] { display: none; }
+.ticker-edit-btn {
+    flex: 0 0 auto; width: 24px; height: 24px; border: none; border-radius: 6px; cursor: pointer;
+    background: transparent; color: var(--text-tertiary);
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+}
+.ticker-edit-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.08); }
+/* No ticker: the full-width bar collapses into a small hover-reveal pill
+   tucked in the bottom-left corner instead — the sign-in chip and the two
+   status pills already default to icon/dot-only, so this only needs to
+   reposition the bar and let a hover on ANY part of it reveal all three
+   labels together (they normally only reveal on their own individual hover). */
+body.hide-ticker .statuses-bar {
+    position: fixed; left: 10px; bottom: 10px; right: auto;
+    width: auto; min-width: 0; height: auto;
+    padding: 6px 8px; border-radius: 999px; gap: 7px;
+    background: #171b21; border: 1px solid var(--hairline); /* solid, not var(--raised)'s near-transparent wash — it sits right over the clock */
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+body.hide-ticker .statuses-bar .ticker-edit-btn,
+body.hide-ticker .statuses-bar .ticker-edit-input { display: none; } /* no room to edit in the mini pill */
+/* Collapsed to three small dots (sign-in, connection, audio keep-alive) —
+   icons/labels only reveal on hover, when all three restore to their normal
+   chip/pill size together. */
+body.hide-ticker .statuses-bar .ticker-chip,
+body.hide-ticker .statuses-bar .status-pill {
+    height: 10px; padding: 0; border-radius: 50%; border: none; background: none;
+    transition: height 0.15s ease, width 0.15s ease, padding 0.15s ease, border-radius 0.15s ease;
+}
+body.hide-ticker .statuses-bar .ticker-chip .avatar { width: 10px; height: 10px; }
+body.hide-ticker .statuses-bar .ticker-chip .avatar i { display: none; }
+/* The signed-in avatar's translucent blue tint (18% opacity, designed to sit
+   behind the icon glyph in the full-size chip) all but disappears once the
+   icon is hidden and the avatar shrinks to a bare 10px dot — solid blue here
+   instead, so "someone's logged in" actually reads at a glance. */
+body.hide-ticker .statuses-bar .ticker-chip.is-auth .avatar { background: var(--cat-blue); }
+body.hide-ticker .statuses-bar .status-pill .pulse-dot { width: 10px; height: 10px; }
+body.hide-ticker .statuses-bar:hover .ticker-chip,
+body.hide-ticker .statuses-bar:hover .status-pill {
+    height: 32px; padding: 0 11px; border-radius: 8px;
+    border: 1px solid var(--hairline); background: var(--raised);
+}
+body.hide-ticker .statuses-bar:hover .ticker-chip .avatar { width: 24px; height: 24px; }
+body.hide-ticker .statuses-bar:hover .ticker-chip .avatar i { display: inline; }
+body.hide-ticker .statuses-bar:hover .status-pill .pulse-dot { width: 8px; height: 8px; }
+body.hide-ticker .statuses-bar:hover .chip-reveal,
+body.hide-ticker .statuses-bar:hover .status-label {
+    max-width: 200px; opacity: 1; margin-left: 8px;
+}
+
+/* Source-repo attribution link: normally tucked just above the full-width
+   footer ticker. When the ticker collapses to the minimized status pill
+   (bottom-left), keeping it there too would crowd that corner against the
+   clock — move it to the opposite corner instead. */
+.source-link {
+    position: fixed; bottom: 52px; left: 9px; z-index: 1002110;
+    font-size: 10px; color: #5a6b75; text-decoration: none;
+}
+body.hide-ticker .source-link { bottom: 10px; left: auto; right: 12px; }
 
 /*
  * Transparent overlay shown ONLY while a floating window is being dragged.
@@ -866,11 +1007,19 @@ body.layout-locked .title-bar-0002 { cursor: default; }
     background: transparent;
 }
 .drag-overlay.active { display: block; }
+/* Vertical/horizontal panel-resize drags reuse the same overlay (it sits
+   above the docked iframes so the drag survives fast mouse moves) but want
+   a resize cursor instead of the free-drag "grabbing" one. */
+.drag-overlay.resize-v { cursor: ns-resize; }
+.drag-overlay.resize-h { cursor: ew-resize; }
 
+/* currentColor (not a hardcoded green) so the ring matches whichever pill
+   it's pulsing on — .status-pill.audio's inherited amber text colour, not
+   always the connection pill's green. */
 @keyframes livePulse {
-    0% { box-shadow: 0 0 0 0 rgba(53, 196, 111, 0.55); }
-    70% { box-shadow: 0 0 0 7px rgba(53, 196, 111, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(53, 196, 111, 0); }
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); }
+    70% { box-shadow: 0 0 0 7px color-mix(in srgb, currentColor 0%, transparent); }
+    100% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 0%, transparent); }
 }
 
 /* ---- Break planner overlay (admin) ----------------------------------- */
@@ -1005,6 +1154,8 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .ptree-cart:hover .ptree-btn { opacity: 1; }
 .ptree-btn:hover { background: #c3c9cf; color: #000; }
 .ptree-add:hover { background: var(--cyan); border-color: var(--cyan); color: #06222a; }
+/* PFL preview button, lit while it's the one loaded into the mini-player. */
+.ptree-play.active { background: #f4c542; border-color: #c69a17; color: #5a4300; opacity: 1; }
 
 /* RIGHT: breaks list above the editor, separated by a bar. */
 .planner-right { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -1323,6 +1474,13 @@ body.layout-locked .title-bar-0002 { cursor: default; }
     background: rgba(255, 255, 255, 0.04); cursor: pointer;
 }
 .opt-row:hover { background: rgba(255, 255, 255, 0.07); }
+/* Per-surface PFL checkboxes, indented under the master "Allow PFL player"
+   switch (only rendered once that master switch is on). */
+.opt-subgroup {
+    display: flex; flex-direction: column; gap: 8px; margin: -2px 0 0 20px;
+    padding: 8px 0 8px 14px; border-left: 2px solid var(--hairline);
+}
+.opt-subgroup .opt-row { background: rgba(255, 255, 255, 0.025); }
 .opt-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .opt-text b { font-size: 13.5px; color: var(--text-primary); }
 .opt-text small { font-size: 11.5px; color: var(--text-tertiary); }
@@ -1386,6 +1544,10 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 }
 .ma-swatch.active { border-color: #fff; box-shadow: 0 0 0 2px var(--cyan); }
 .ma-chain { display: flex; align-items: center; gap: 10px; color: var(--text-secondary); font-size: 12.5px; cursor: pointer; }
+/* Edit chain sits right under the toggle (not stranded at the row's far
+   right edge on wide screens, where .ma-chain's own flex-grow used to push
+   it). */
+.ma-chain-group { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; flex: 1 1 auto; }
 .ma-audio-btns { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ma-btn {
     display: flex; align-items: center; gap: 7px;
@@ -1513,11 +1675,6 @@ button.opt-link { cursor: pointer; font-family: 'Assistant', sans-serif; width: 
 /* Play / Play trimmed keep a fixed min-width so swapping their label to
    "Stop" (a shorter string) can't resize the button under the cursor. */
 #maPlayFull, #maPlayTrim { min-width: 118px; justify-content: center; }
-/* Save trim: disabled by default, only enabling — with a glowing highlight,
-   never a layout change — once the handles actually move away from the
-   saved values. Always occupies the same slot in the row either way. */
-#maTrimSave.dirty { background: var(--cyan); color: #06222a; border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-tint); }
-#maTrimSave.dirty:hover { filter: brightness(1.08); }
 
 /* Empty-slot view: nothing but a prompt + Upload button until a file lands. */
 .ma-empty-upload { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 30px 0; }
@@ -1538,6 +1695,11 @@ button.opt-link { cursor: pointer; font-family: 'Assistant', sans-serif; width: 
 .mnt-section { margin-bottom: 4px; }
 .mnt-section-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .mnt-section h3 { font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); margin: 0; }
+/* Only a DIRECT h3 child (e.g. "PFL (preview)", "Logs") needs its own gap —
+   one wrapped in .mnt-section-head (e.g. "Backup & restore") already gets
+   spacing from that row's own margin, and adding more here would also
+   misalign it from the row's "?" info button (both flex items). */
+.mnt-section > h3 { margin-bottom: 10px; }
 /* "?" info trigger — the explanation is hidden by default (productization:
    don't scare the user with a wall of text they didn't ask for). */
 .mnt-info-btn {
@@ -1554,36 +1716,28 @@ button.opt-link { cursor: pointer; font-family: 'Assistant', sans-serif; width: 
     flex: 1 1 auto; max-width: 320px; padding: 6px 8px; border: 1px solid var(--hairline); border-radius: 7px;
     background: rgba(0, 0, 0, 0.3); color: var(--text-secondary); font-size: 12px;
 }
-.mnt-log-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
-.mnt-log-tab {
-    padding: 6px 14px; border: 1px solid var(--hairline); border-radius: 7px; cursor: pointer;
-    background: transparent; color: var(--text-secondary);
-    font-family: 'Assistant', sans-serif; font-size: 12px; font-weight: 700;
-}
-.mnt-log-tab.active { background: var(--cyan-tint); color: var(--cyan-text); border-color: var(--cyan-border); }
-/* The log VIEW itself is a full modal (its own overlay above the manager),
-   not a small inline scroller — that inline box read as jittery/cramped. */
-.mnt-log-modal {
-    position: fixed; inset: 0; z-index: 30;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(4, 6, 9, 0.72);
-}
-.mnt-log-modal[hidden] { display: none; }
-.mnt-log-box {
-    width: min(900px, 90vw); height: min(600px, 80vh);
+/* Small always-on scrollable panes (no popover — that modal read as
+   overkill for "glance at recent lines"), one per log file. */
+.mnt-log-panes { display: flex; gap: 12px; }
+.mnt-log-pane {
+    flex: 1 1 0; min-width: 0;
     display: flex; flex-direction: column;
-    background: var(--bg-panel); border: 1px solid var(--hairline); border-radius: 12px;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6); overflow: hidden;
+    border: 1px solid var(--hairline); border-radius: 10px;
+    background: var(--bg-panel); overflow: hidden;
 }
-.mnt-log-box-head {
-    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 16px; background: var(--window-header); border-bottom: 1px solid var(--hairline);
+.mnt-log-pane-head {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; background: var(--window-header); border-bottom: 1px solid var(--hairline);
 }
-.mnt-log-box-head h4 { font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-primary); }
-.mnt-log-box-actions { display: flex; gap: 8px; }
+.mnt-log-pane-head h4 {
+    flex: 1 1 auto; font-size: 12px; font-weight: 800; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--text-primary);
+}
+.mnt-log-size { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-tertiary); }
+.mnt-log-pane .ma-btn { padding: 5px 10px; font-size: 11.5px; }
 .mnt-log-view {
-    flex: 1 1 auto; overflow-y: auto; margin: 0;
-    padding: 14px 16px;
+    height: 220px; overflow-y: auto; margin: 0;
+    padding: 10px 12px;
     background: #05070a; color: #9fe6d0;
     font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5;
     white-space: pre-wrap; word-break: break-word;
@@ -1694,7 +1848,8 @@ button.opt-link { cursor: pointer; font-family: 'Assistant', sans-serif; width: 
     position: absolute; top: 50%; height: 5px; transform: translateY(-50%); z-index: 1;
     background: #8a939e; border-radius: 3px; pointer-events: none;
 }
-/* Read-only preview playhead (Play button drives it; touching stops it). */
+/* Preview playhead: Play button drives it, but it's also scrubbable —
+   click/drag anywhere in the lanes to seek while it plays. */
 .cross-playhead {
     position: absolute; top: 0; bottom: 0; width: 2px; z-index: 3;
     background: #fff; box-shadow: 0 0 7px rgba(255, 255, 255, 0.85);
@@ -1792,6 +1947,28 @@ body.dj-mode.dock-clock-only .dj-tree { margin-bottom: 200px; }
 .dj-tree .ptree-list { margin-left: 7px; padding-left: 5px; }
 .dj-tree .ptree-btn { width: 19px; height: 19px; }
 .dj-tree .ptree-len { margin: 0 2px; }
+/* Chain runs: each member keeps its own row (name/dot/marks), but they share
+   ONE button rail — floated over the whole group, tall as it, hover-only —
+   since firing any of them plays the whole run from its first item anyway. */
+.dj-tree .ptree-chain-group { position: relative; }
+.dj-tree .ptree-chain-group .ptree-cart:hover { background: none; } /* the GROUP hover below wins */
+.dj-tree .ptree-chain-group:hover .ptree-cart { background: #aec7d2; }
+/* Each row still renders its own length + PFL button in flow; its
+   padding-right (set inline, per row — see groupGutterPx() in dj.js, sized
+   to match a non-chain row's own trailing buttons exactly) reserves the
+   gutter the floated rail (below) sits in, so the overlay never covers them
+   AND the length column stays aligned with non-chain rows regardless of
+   how many DJ players are enabled. */
+.dj-tree .ptree-chain-btns {
+    /* One row, right-aligned flush with the row's own 8px right padding —
+       the reserved gutter is sized with room to spare, so this always fits
+       without needing the old 2-column grid. */
+    position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
+    display: flex; align-items: center; gap: 4px;
+    opacity: 0; pointer-events: none; transition: opacity 0.12s ease;
+}
+.dj-tree .ptree-chain-group:hover .ptree-chain-btns { opacity: 1; pointer-events: auto; }
+.dj-tree .ptree-chain-btns .ptree-btn { opacity: 1; } /* the rail itself is already hover-gated */
 /* Marker columns: chain link and favourite star get a fixed slot EACH, so
    they line up column-wise and the name always starts at the same x. */
 .dj-mark {
@@ -1824,6 +2001,7 @@ body:has(.automation-panel.active) .dj-send-auto { display: flex; }
     border: 1px solid var(--hairline); border-radius: 12px;
     border-left: 5px solid var(--deck-color, var(--hairline));
 }
+.dj-deck[hidden] { display: none; }
 /* ON AIR: the whole deck glows red — unmistakable across the studio. */
 .dj-deck.playing {
     border-color: rgba(240, 69, 63, 0.75);
@@ -1886,6 +2064,25 @@ body:has(.automation-panel.active) .dj-send-auto { display: flex; }
     overflow: hidden;
 }
 .dj-deck-wavebox[hidden] { display: none; }
+/* Audio-reactive VU meter, right end of the player, full height (align-items:
+   stretch on .dj-deck-mid does the work), padded a touch from the fill. Only
+   shown once a cart is actually on the deck — with nothing loaded,
+   .dj-deck-empty's label doesn't stretch to fill the row (unlike the
+   waveform box, which does), so the meter would otherwise have sat bunched
+   up right next to the play button instead of anchored to the right edge. */
+.dj-deck-vu {
+    flex: 0 0 12px; align-self: stretch;
+    display: flex; align-items: flex-end; justify-content: center;
+    padding: 3px; box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.3); border: 1px solid var(--hairline); border-radius: 6px;
+    overflow: hidden;
+}
+.dj-deck:not(.loaded) .dj-deck-vu { display: none; }
+.dj-deck-vu-fill {
+    width: 100%; height: 0%; border-radius: 2px;
+    background: linear-gradient(0deg, #1f7a44, #4fce7c);
+    transition: height 0.05s linear;
+}
 .dj-deck-wave { position: absolute; inset: 0; width: 100%; height: 100%; }
 .dj-deck-wash {
     position: absolute; top: 0; bottom: 0; left: 0; width: 0;
@@ -1894,11 +2091,15 @@ body:has(.automation-panel.active) .dj-send-auto { display: flex; }
     transition: width 0.1s linear; pointer-events: none;
 }
 .dj-deck.playing .dj-deck-wash { background: rgba(240, 69, 63, 0.3); border-right-color: #ff8a86; }
+/* x/y chain-position chip: dead centre of the waveform, big enough to read
+   at a glance across the studio. */
 .dj-deck-chainpos {
-    position: absolute; top: 4px; right: 6px; z-index: 1;
-    padding: 1px 7px; border-radius: 4px;
-    background: rgba(0, 0, 0, 0.6); color: var(--text-secondary);
-    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1;
+    padding: 3px 16px; border-radius: 999px;
+    background: rgba(0, 0, 0, 0.65); color: #fff;
+    font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 800;
+    letter-spacing: 0.02em;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
 }
 .dj-deck-chainpos[hidden] { display: none; }
 /* Foot: narrow secondaries left, the BIG countdown right — red for the
@@ -1912,6 +2113,7 @@ body:has(.automation-panel.active) .dj-send-auto { display: flex; }
     display: flex; align-items: center; justify-content: center;
     transition: background-color 0.15s ease, color 0.15s ease;
 }
+.dj-deck-btns button[hidden] { display: none; }
 .dj-deck-btns button:hover { background: var(--raised-hover); color: var(--text-primary); }
 .dj-deck-btns button:disabled { opacity: 0.3; pointer-events: none; }
 .dj-deck-btns .dj-deck-repeat.active { background: var(--cyan); border-color: var(--cyan); color: #06222a; }
@@ -1923,6 +2125,36 @@ body:has(.automation-panel.active) .dj-send-auto { display: flex; }
 .dj-deck-time b { font-size: clamp(17px, 3.2vh, 32px); line-height: 1; color: var(--text-primary); font-weight: 700; font-variant-numeric: tabular-nums; }
 .dj-deck-total { font-size: 13px; color: var(--text-tertiary); }
 .dj-deck-time.ending b { color: #ff4a44; text-shadow: 0 0 10px rgba(240, 69, 63, 0.6); }
+
+/* PFL (preview) button on each deck — lit yellow while that deck's item is
+   the one loaded into the small PFL player below the library. */
+.dj-deck-pfl.active { background: var(--amber); border-color: var(--amber); color: #2a1d02; }
+
+/* Small full-width PFL mini-player, docked under the DJ library tree —
+   joins the tree's light family, same as the toolbar/rows above it. */
+.dj-pfl {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px;
+    border-top: 2px solid #9aa2ab;
+    background: #c3c9cf;
+    color: #111;
+    font-size: 12.5px;
+}
+.dj-pfl[hidden] { display: none; }
+.dj-pfl-label { flex: 0 0 auto; font-weight: 800; letter-spacing: 0.06em; opacity: 0.6; }
+.dj-pfl-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.dj-pfl-bar { flex: 1 1 120px; height: 5px; border-radius: 3px; background: rgba(0, 0, 0, 0.15); overflow: hidden; }
+.dj-pfl-bar > i { display: block; height: 100%; width: 0%; background: #c69a17; transition: width 0.1s linear; }
+.dj-pfl-out { flex: 0 0 auto; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; opacity: 0.7; }
+.dj-pfl-stop {
+    flex: 0 0 auto; width: 24px; height: 24px;
+    border: 1px solid #9aa2ab; border-radius: 6px; cursor: pointer;
+    background: #d3d8dd; color: #333;
+    display: flex; align-items: center; justify-content: center;
+}
+.dj-pfl-stop:hover { background: #eef1f4; color: #000; }
+.dj-pfl-stop:disabled { opacity: 0.3; pointer-events: none; }
 
 /* Toast for deck refusals ("Player 1 is on air") — dead centre of DJ mode. */
 .dj-toast {
@@ -2002,6 +2234,12 @@ body:has(.automation-panel.active) .dj-send-auto { display: flex; }
     font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
     color: #ffd646; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85); pointer-events: none;
 }
+/* Gray strip straddling each junction, spanning exactly the active fade
+   (JS sets top/left/width; no fade at that junction = no visible strip). */
+.chain-overlap-track {
+    position: absolute; height: 5px; transform: translateY(-50%); z-index: 1;
+    background: #8a939e; border-radius: 3px; pointer-events: none;
+}
 .chain-ed-btns { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
 .chain-ed-note { flex: 1 1 auto; text-align: center; font-size: 12px; color: var(--text-tertiary); }
 .chain-ed-save.dirty { background: var(--cyan); color: #06222a; border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-tint); }
@@ -2017,6 +2255,10 @@ body:has(.automation-panel.active) .dj-send-auto { display: flex; }
     font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
     color: var(--text-tertiary);
 }
+/* Routing tab's "Show output labels" switch: hides every OUT N badge at once. */
+body.hide-out-labels .dj-deck-out,
+body.hide-out-labels .dj-pfl-out,
+body.hide-out-labels .auto-out-badge { display: none; }
 
 /* ---- ID-window reload mask -------------------------------------------- */
 /* A black cover + slim progress bar over the Station-ID window while it

@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /**
  * Backup & restore. A backup is a .cartdb file (a zip) holding audio.zip
  * (everything in uploads/) and db.zip (the pseudo-database text files).

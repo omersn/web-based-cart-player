@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /** Upload a brand-new jingle and append it to the cart list. */
 require_once __DIR__ . '/includes/helpers.php';
 

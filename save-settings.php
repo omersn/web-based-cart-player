@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /**
  * Save the feature switches (manager Options tab -> data/settings.txt).
  *
@@ -33,7 +33,14 @@ if (!is_array($payload) || !isset($payload['settings']) || !is_array($payload['s
 
 $merged = load_settings();
 foreach ($payload['settings'] as $k => $v) {
-    if (array_key_exists($k, $merged)) $merged[$k] = $v ? 1 : 0;
+    if (!array_key_exists($k, $merged)) continue;
+    if ($k === 'dj_players') { $merged[$k] = max(1, min(3, (int) $v)); continue; }
+    if ($k === 'log_retention') {
+        $iv = (int) $v;
+        $merged[$k] = in_array($iv, [30, 60, 90, 180, 0], true) ? $iv : 90;
+        continue;
+    }
+    $merged[$k] = $v ? 1 : 0;
 }
 
 if (!save_settings($merged)) {

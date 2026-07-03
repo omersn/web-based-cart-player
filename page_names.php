@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /**
  * Manage the editable section labels (data/parts.txt), the per-page names
  * (data/page_names.txt) and the DJ edit-rights (data/dj-rights.txt).

@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /**
  * Toggle the "chain to next" flag for a cart (data/cross.txt). Shown inside a
  * small popup iframe from the admin/DJ lists; saves over fetch().

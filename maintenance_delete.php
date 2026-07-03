@@ -1,5 +1,5 @@
 <?php
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /** Delete every unreferenced (soft-deleted) audio file from uploads/. */
 require_once __DIR__ . '/includes/helpers.php';
 

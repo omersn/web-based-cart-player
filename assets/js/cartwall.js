@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// License: PolyForm-Strict-1.0.0 (see LICENSE)
 /*
  * Cart wall — load mechanism & playback
  * =====================================
@@ -83,6 +83,12 @@
         }
         return sharedAudioContext;
     };
+
+    // Tags every playback-log line with which player fired it and which
+    // (simulated) output it carries — lets the log double as a check that
+    // different players are actually routed to different real devices, once
+    // there's real multi-output hardware behind OUT 1-4.
+    const outputLabel = () => `Cart Wall -> OUT ${(window.ROUTING || {}).carts || 1}`;
 
     // Log a page refresh.
     window.addEventListener('load', () => {
@@ -218,6 +224,66 @@
         page.style.gridTemplateRows = rows.join(' ');
     }
 
+    // ---- PFL (preview) mini-player -------------------------------------------
+    // One shared preview slot per cartwall instance, independent of the real
+    // on-air buttons: hovering a tile reveals a sliding bottom strip
+    // (suppressed on tiles too small to fit it — see the ResizeObserver in
+    // buildButton) that plays its cart here instead of on the board. Docked
+    // to the bottom of this document. Gated entirely by
+    // window.SETTINGS.pfl_player/pfl_buttons_carts (manager Routing tab).
+    const pflAllowed = () => !!(window.SETTINGS && window.SETTINGS.pfl_player);
+    const pflButtonsAllowed = () => pflAllowed() && !!(window.SETTINGS && window.SETTINGS.pfl_buttons_carts);
+    let pflState = null; // { cart, btn, audio, timer, tileBtn }
+    function pflStop() {
+        if (!pflState) return;
+        const { btn, audio, timer, tileBtn } = pflState;
+        clearInterval(timer);
+        try { audio.pause(); } catch (e) {}
+        if (btn) btn.classList.remove('active');
+        if (tileBtn) tileBtn.classList.remove('pfl-shrunk'); // let the tile relax back to full height
+        pflState = null;
+        const box = document.getElementById('cartPfl');
+        if (box) {
+            box.querySelector('.cart-pfl-name').textContent = '-';
+            box.querySelector('.cart-pfl-bar > i').style.width = '0%';
+            box.querySelector('.cart-pfl-stop').disabled = true;
+            box.hidden = true;
+        }
+    }
+    function sendToPFL(cart, btn, tileBtn) {
+        if (!pflAllowed()) return;
+        if (pflState && pflState.btn === btn) { pflStop(); return; } // same icon again -> unload
+        pflStop(); // only one thing plays in PFL at a time
+        const box = document.getElementById('cartPfl');
+        const audio = new Audio(`uploads/${cart.file}`);
+        audio.currentTime = cart.start || 0;
+        audio.volume = cart.volume != null ? cart.volume : 1;
+        const dur = () => (cart.end != null ? cart.end : (audio.duration || 0)) - (cart.start || 0);
+        const finish = () => pflStop();
+        audio.addEventListener('ended', finish);
+        if (cart.end != null) audio.addEventListener('timeupdate', () => { if (audio.currentTime >= cart.end) finish(); });
+        audio.play().catch(finish);
+        const timer = setInterval(() => {
+            const d = dur();
+            const done = Math.max(0, audio.currentTime - (cart.start || 0));
+            box.querySelector('.cart-pfl-bar > i').style.width = (d > 0 ? Math.min(100, (done / d) * 100) : 0) + '%';
+        }, 100);
+        if (box) {
+            box.querySelector('.cart-pfl-name').textContent = cart.name;
+            box.querySelector('.cart-pfl-stop').disabled = false;
+            box.hidden = false;
+        }
+        btn.classList.add('active');
+        // Keeps the tile contracted (and the strip lit/visible) while it's
+        // actually the one playing, not just while hovered.
+        if (tileBtn) tileBtn.classList.add('pfl-shrunk');
+        pflState = { cart, btn, audio, timer, tileBtn };
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+        const stopBtn = document.getElementById('cartPflStop');
+        if (stopBtn) stopBtn.addEventListener('click', pflStop);
+    });
+
     const chainedAt = (bn) => specialBoxes.some(box => box.boxNumber === bn && box.flag === 1);
     // Chain-crossfade ms (cross.txt's second field, set by the audio manager's
     // chain editor): how early the NEXT cart launches while this one's tail
@@ -225,6 +291,41 @@
     const chainFadeAt = (bn) => {
         const box = specialBoxes.find(b => b.boxNumber === bn && b.flag === 1);
         return box ? Math.max(0, box.seconds || 0) : 0;
+    };
+    // A PFL-eligible cart is wrapped in a .cart-slot (see buildButton) — the
+    // slot, not the button itself, is then the actual grid sibling. Every
+    // chain traversal below walks grid-level neighbours (slot-or-bare-button)
+    // and drills back into the slot to get the real .button/.buttonext, so
+    // chaining works the same whether or not PFL wrapped a given tile.
+    const cartButton = (gridChild) => {
+        if (!gridChild) return null;
+        return gridChild.classList.contains('cart-slot') ? gridChild.querySelector('.button, .buttonext') : gridChild;
+    };
+    const gridChildOf = (btn) => btn.closest('.cart-slot') || btn;
+    const nextCartButton = (btn) => cartButton(gridChildOf(btn).nextElementSibling);
+    const prevCartButton = (btn) => cartButton(gridChildOf(btn).previousElementSibling);
+
+    // Tiles stay visually separate (each keeps its own border/name/colour),
+    // but a chain plays as one unit: the run's first tile, and every member
+    // of the run walked from it via .chain/.chain-end classes.
+    const chainStart = (btn) => {
+        let s = btn;
+        while (!s.classList.contains('chain-start')) {
+            const prev = prevCartButton(s);
+            if (!prev || !prev.classList.contains('chain')) break;
+            s = prev;
+        }
+        return s;
+    };
+    const chainMembers = (btn) => {
+        const run = [];
+        let node = chainStart(btn);
+        while (node && node.classList.contains('chain')) {
+            run.push(node);
+            if (node.classList.contains('chain-end')) break;
+            node = nextCartButton(node);
+        }
+        return run;
     };
 
     function buildButton(line, pageIndex, index, pageDiv, sectionFrom) {
@@ -293,6 +394,34 @@
             } else {
                 button.classList.add('chain-mid');
             }
+        }
+
+        // Hover PFL (preview) strip — slides up from the bottom of the tile,
+        // only when settings allow it. This is a SIBLING of the button (see
+        // the wrapping .cart-slot at the end of this function), never a
+        // descendant: a nested control would sit inside the button's own
+        // native :active chain, so pressing it would visually depress the
+        // whole tile too. A ResizeObserver hides it again on tiles too small
+        // to fit it (e.g. the Station-IDs window).
+        let pflStrip = null;
+        if (pflButtonsAllowed()) {
+            pflStrip = document.createElement('div');
+            pflStrip.className = 'cart-pfl-strip';
+            pflStrip.title = 'Preview (PFL)';
+            pflStrip.innerHTML = '<span class="pfl-icon"><i class="ph ph-speaker-simple-high"></i></span>';
+            pflStrip.addEventListener('click', (e) => {
+                e.stopPropagation();
+                sendToPFL({ name, file: audioFilename, start: startAt, end: endAt, volume }, pflStrip, button);
+            });
+            const MIN_PFL_TILE_H = 110;
+            const MIN_PFL_TILE_W = 90;
+            const ro = new ResizeObserver((entries) => {
+                for (const entry of entries) {
+                    const { height, width } = entry.contentRect;
+                    button.classList.toggle('pfl-eligible', height >= MIN_PFL_TILE_H && width >= MIN_PFL_TILE_W);
+                }
+            });
+            ro.observe(button);
         }
 
         const audio = new Audio(`uploads/${audioFilename}`);
@@ -451,7 +580,7 @@
             driveVu();
             progress.style.display = 'block';
             refreshBackTimer();
-            fetch('', { method: 'POST', body: `${new Date().toLocaleString()} - ${name} - played` });
+            fetch('', { method: 'POST', body: `${new Date().toLocaleString()} - ${name} - played - ${outputLabel()}` });
         });
 
         audio.addEventListener('pause', () => {
@@ -468,7 +597,7 @@
             duration.textContent = `${Math.floor(trimmed / 60)}:${Math.floor(trimmed % 60).toString().padStart(2, '0')}`;
             duration.classList.remove('active');
             refreshBackTimer();
-            fetch('', { method: 'POST', body: `${new Date().toLocaleString()} - ${name} - stopped` });
+            fetch('', { method: 'POST', body: `${new Date().toLocaleString()} - ${name} - stopped - ${outputLabel()}` });
         });
 
         // Fire the chained successor exactly once per play — with a crossfade
@@ -476,7 +605,7 @@
         // tail keeps ringing), so both the hard-stop timer and the 'ended'
         // listener must know the handover already happened.
         const clickNext = () => {
-            const nextButton = button.nextElementSibling;
+            const nextButton = nextCartButton(button);
             if (nextButton && nextButton.tagName === 'BUTTON') nextButton.click();
         };
         audio.addEventListener('ended', () => {
@@ -498,6 +627,17 @@
         let playbackTimer = null;
         let chainTimer = null;
         button.onclick = () => {
+            // A chain plays as one unit — tiles stay visually separate, but
+            // firing ANY of them (while the run is idle) starts the WHOLE
+            // chain from its first item, never a partial chain. Once
+            // something in the run is already on air, each tile keeps its
+            // normal individual stop/toggle behaviour (unchanged below).
+            if (button.classList.contains('chain')) {
+                const members = chainMembers(button);
+                const anyPlaying = members.some((b) => b.classList.contains('playing'));
+                if (!anyPlaying && members[0] !== button) { members[0].click(); return; }
+            }
+
             const playDuration = endAt - startAt;
 
             if (audio.paused) {
@@ -541,7 +681,26 @@
         button.appendChild(vu);
         button.appendChild(span);
         button.appendChild(duration);
-        pageDiv.appendChild(button);
+        // The PFL strip is a SIBLING of the button, wrapped together in a
+        // slot — never a child (see the comment above pflStrip's creation).
+        if (pflStrip) {
+            const slot = document.createElement('div');
+            slot.className = 'cart-slot';
+            // The slot, not the button, is the real grid cell now — the
+            // negative margin that pulls a chain-mid/chain-end tile flush
+            // against its predecessor has to move there too, or it just
+            // shifts the button around INSIDE its own (already-flush) slot.
+            // A dedicated class, not a copy of chain-mid/chain-end: the
+            // button keeps those (chainStart/chainMembers/gatherChain and
+            // the border-radius/overlay rules all still key off the button).
+            if (button.classList.contains('chain-mid')) slot.classList.add('cart-slot-chain-mid');
+            if (button.classList.contains('chain-end')) slot.classList.add('cart-slot-chain-end');
+            slot.appendChild(button);
+            slot.appendChild(pflStrip);
+            pageDiv.appendChild(slot);
+        } else {
+            pageDiv.appendChild(button);
+        }
     }
 
     // Refresh the shared countdown from EVERYTHING on air. Fixes the old bug
@@ -567,7 +726,7 @@
         while (node && node.classList.contains('buttonext')) {
             // Each hop's crossfade overlaps the join, shortening the chain total.
             const fade = (node._fadeMs || 0) / 1000;
-            node = node.nextElementSibling;
+            node = nextCartButton(node);
             if (!node || node.tagName !== 'BUTTON') break;
             total += fullDuration(node) - fade;
         }
@@ -645,15 +804,17 @@
         function gatherChain(button) {
             if (!button.classList.contains('chain')) return [button];
             let start = button;
-            while (!start.classList.contains('chain-start') && start.previousElementSibling && start.previousElementSibling.classList.contains('chain')) {
-                start = start.previousElementSibling;
+            while (!start.classList.contains('chain-start')) {
+                const prev = prevCartButton(start);
+                if (!prev || !prev.classList.contains('chain')) break;
+                start = prev;
             }
             const run = [];
             let node = start;
             while (node && node.classList.contains('chain')) {
                 if (node._cart && !node.classList.contains('empty')) run.push(node);
                 if (node.classList.contains('chain-end')) break;
-                node = node.nextElementSibling;
+                node = nextCartButton(node);
             }
             return run.length ? run : [button];
         }
