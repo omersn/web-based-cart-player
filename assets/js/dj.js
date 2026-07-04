@@ -25,6 +25,8 @@
     const $ = (id) => document.getElementById(id);
     const CAT = { '1': '#2f6fd6', '2': '#2f9e5f', '3': '#b0479e', '4': '#c98a2b', '5': '#2aa7bf' };
     const fmtDur = (sec) => { sec = Math.max(0, Math.round(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
+    // Wall-clock HH:MM:SS, same format automation.js's fmtClockSec uses for breaks.
+    const fmtClockSec = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
     const byIndex = (i) => (window.CARTS || []).find((c) => c.i === i);
     const cartEnd = (c, a) => (c.end != null ? c.end : ((a && a.duration) || (c.start || 0)));
     const cartLen = (c) => (c.end != null ? Math.max(0, c.end - (c.start || 0)) : null);
@@ -422,6 +424,11 @@
             el('.dj-deck-remain').textContent = fmtDur(Math.max(0, remain));
             el('.dj-deck-len').textContent = fmtDur(runLength(deck.items));
             el('.dj-deck-time').classList.toggle('ending', deck.playing && remain <= 4);
+            // Wall-clock end of the WHOLE load — same `remain` the countdown and
+            // the "ending" flash use, so it already nets out trims (cartLen) and
+            // crossfade overlaps (fadeAfter) across every chained item, not just
+            // the one currently audible.
+            el('.dj-deck-endtime').textContent = 'ENDS AT: ' + fmtClockSec(new Date(Date.now() + Math.max(0, remain) * 1000));
             const len = cartLen(c) || 0;
             el('.dj-deck-wash').style.width = len > 0 ? `${Math.min(100, (done / len) * 100)}%` : '0%';
         }
@@ -479,6 +486,7 @@
             el('.dj-deck-remain').textContent = '0:00';
             el('.dj-deck-len').textContent = '0:00';
             el('.dj-deck-time').classList.remove('ending');
+            el('.dj-deck-endtime').textContent = '';
             // paint() only ever SETS --deck-color (never had a reason to clear
             // it) — an unloaded deck must drop the last cart's colour accent
             // too, or the border tint lingers on an otherwise-empty deck.

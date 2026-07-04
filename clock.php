@@ -99,6 +99,10 @@
             direction: ltr;
         }
         .readout .hm { font-size: 44px; font-weight: 700; color: #f2f5f8; line-height: 1; }
+        .readout .ss {
+            font-size: 15px; font-weight: 700; color: #566072;
+            letter-spacing: 0.06em; margin-top: 2px; font-variant-numeric: tabular-nums;
+        }
 
         /* Compact sizing when docked (?dock=1) so the ring fits the short dock. */
         body.dock .ring { width: 150px; height: 150px; }
@@ -107,6 +111,7 @@
         body.dock .sec-ring .tick { width: 4px; height: 4px; margin-left: -2px; }
         body.dock .hour-marks .hour-mark { top: -75px; left: -1px; width: 2px; height: 10px; transform-origin: 1px 75px; }
         body.dock .readout .hm { font-size: 30px; }
+        body.dock .readout .ss { font-size: 12px; }
         /* ?nodigits=1 (the clock-only dock trio): the big digital clock sits
            right beside this ring, so the centre readout is redundant there. */
         body.nodigits .readout { display: none; }
@@ -118,12 +123,14 @@
         <div class="sec-ring" id="secRing"></div>
         <div class="readout">
             <div class="hm" id="hm">00:00</div>
+            <div class="ss" id="ss">:00</div>
         </div>
     </div>
 
     <script>
         const ring = document.getElementById('ring');
         const hm = document.getElementById('hm');
+        const ss = document.getElementById('ss');
         const secRing = document.getElementById('secRing');
         const hourMarks = document.getElementById('hourMarks');
 
@@ -149,6 +156,7 @@
             const seconds = now.getSeconds();
 
             hm.textContent = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            ss.textContent = `:${String(seconds).padStart(2, '0')}`;
 
             // Dots accumulate through the minute (0..current second lit), then
             // reset together at the top of the next minute.

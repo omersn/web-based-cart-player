@@ -348,6 +348,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                                 <span class="dj-deck-num"><?= $deckNo ?></span>
                                 <span class="dj-deck-name"></span>
                                 <span class="dj-deck-onair">ON AIR</span>
+                                <span class="dj-deck-endtime" title="Wall-clock time the whole load will end"></span>
                                 <span class="dj-deck-out" title="Assigned output (manager &rsaquo; Routing)"></span>
                             </div>
                             <div class="dj-deck-mid">

@@ -2036,6 +2036,17 @@ body:has(.automation-panel.active) .dj-send-auto { display: flex; }
     font-size: 11px; font-weight: 800; letter-spacing: 0.1em;
 }
 .dj-deck.playing .dj-deck-onair { display: inline-block; }
+/* Wall-clock end of the whole load — only means anything while actually
+   playing, same visibility rule (and shape) as ON AIR, just a neutral gray
+   instead of red so the two don't compete for attention. */
+.dj-deck-endtime {
+    display: none; flex: 0 0 auto;
+    padding: 2px 9px; border-radius: 5px;
+    background: #6f757c; color: #fff;
+    font-size: 11px; font-weight: 800; letter-spacing: 0.1em;
+    font-variant-numeric: tabular-nums;
+}
+.dj-deck.playing .dj-deck-endtime { display: inline-block; }
 .dj-deck-out {
     flex: 0 0 auto; padding: 2px 8px; border-radius: 5px;
     border: 1px solid var(--hairline);
