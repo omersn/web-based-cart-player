@@ -100,7 +100,7 @@
         }
         .readout .hm { font-size: 44px; font-weight: 700; color: #f2f5f8; line-height: 1; }
         .readout .ss {
-            font-size: 15px; font-weight: 700; color: #566072;
+            font-size: 15px; font-weight: 700; color: #f2f5f8;
             letter-spacing: 0.06em; margin-top: 2px; font-variant-numeric: tabular-nums;
         }
 
