@@ -343,19 +343,22 @@
 
         // VU meter: one shared analyser per deck — every audio element the
         // deck ever creates (load() below) routes through it, so the meter
-        // follows whichever item in the run is actually on air.
-        let vuCtx = null, vuAnalyser = null, vuData = null, vuRaf = null, vuAvg = 0;
+        // follows whichever item in the run is actually on air. Real playback
+        // routes through the persistent AudioEngine's master bus (audio-engine.js);
+        // a <audio> element can only ever get ONE MediaElementSourceNode for its
+        // whole lifetime, so the engine owns that call and this analyser is a
+        // parallel, metering-only tap off the GainNode it hands back.
+        let vuAnalyser = null, vuData = null, vuRaf = null, vuAvg = 0;
         function vuWire(audio) {
             try {
-                vuCtx = vuCtx || new (window.AudioContext || window.webkitAudioContext)();
+                const gainNode = window.AudioEngine.connectDeck(no, audio);
                 if (!vuAnalyser) {
-                    vuAnalyser = vuCtx.createAnalyser();
+                    vuAnalyser = window.AudioEngine.audioContext.createAnalyser();
                     vuAnalyser.fftSize = 64;
                     vuAnalyser.smoothingTimeConstant = 0.75;
                     vuData = new Uint8Array(vuAnalyser.frequencyBinCount);
-                    vuAnalyser.connect(vuCtx.destination);
                 }
-                vuCtx.createMediaElementSource(audio).connect(vuAnalyser);
+                gainNode.connect(vuAnalyser);
             } catch (e) { /* metering is best-effort; playback still works without it */ }
         }
         function vuDrive() {
@@ -369,7 +372,7 @@
             if (fill) fill.style.height = `${Math.max(0, Math.min(100, vuAvg * 165))}%`;
             vuRaf = requestAnimationFrame(vuDrive);
         }
-        function vuStart() { if (vuCtx) vuCtx.resume().catch(() => {}); if (!vuRaf) vuDrive(); }
+        function vuStart() { window.AudioEngine.resume(); if (!vuRaf) vuDrive(); }
         function vuStop() {
             if (vuRaf) { cancelAnimationFrame(vuRaf); vuRaf = null; }
             vuAvg = 0;

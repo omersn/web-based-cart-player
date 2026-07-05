@@ -433,6 +433,26 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             </div>
         </div>
 
+        <!-- Meter bridge: master + per-source level/GR/limiting readouts, driven
+             directly by audio-engine.js's analysers (same document, no
+             postMessage) — see the inline script right after that engine's
+             <script> tag near the end of this file. Cart Wall stays idle until
+             Stage 2 of the persistent-audio-engine work connects cart playback
+             through the engine; Autoplayer/Player 1-3 light up once Stage 1's
+             connectAutoplayer()/connectDeck() calls land. -->
+        <div class="meter-bridge" id="meterBridge">
+            <div class="meter-ch" data-ch="cartwall"><div class="meter-track"><div class="meter-fill"></div></div><span class="meter-label">CART WALL</span></div>
+            <div class="meter-ch" data-ch="auto"><div class="meter-track"><div class="meter-fill"></div></div><span class="meter-label">AUTO</span></div>
+            <div class="meter-ch" data-ch="player1"><div class="meter-track"><div class="meter-fill"></div></div><span class="meter-label">PLAYER 1</span></div>
+            <div class="meter-ch" data-ch="player2"><div class="meter-track"><div class="meter-fill"></div></div><span class="meter-label">PLAYER 2</span></div>
+            <div class="meter-ch" data-ch="player3"><div class="meter-track"><div class="meter-fill"></div></div><span class="meter-label">PLAYER 3</span></div>
+            <span class="meter-sep"></span>
+            <div class="meter-ch meter-master" data-ch="master"><div class="meter-track"><div class="meter-fill"></div></div><span class="meter-label">MASTER</span></div>
+            <div class="meter-ch meter-gr" data-ch="agc"><div class="meter-track meter-track-gr"><div class="meter-fill"></div></div><span class="meter-label">AGC</span></div>
+            <div class="meter-ch meter-gr" data-ch="comp"><div class="meter-track meter-track-gr"><div class="meter-fill"></div></div><span class="meter-label">COMP</span></div>
+            <div class="meter-ch meter-gr" data-ch="limit"><div class="meter-track meter-track-gr"><div class="meter-fill"></div></div><span class="meter-label">LIMIT</span></div>
+        </div>
+
         <!-- Drag to widen the automation sidebar (Options tab's "Allow panel
              resize", off by default). Severely capped span — min is the
              panel's own default width, can't shrink it. -->
@@ -2052,6 +2072,50 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 c.appendChild(frame);
             });
         }
+    </script>
+    <script src="<?= asset_v('assets/js/audio-engine.js') ?>"></script>
+    <script>
+        // Meter bridge: reads AudioEngine's analysers/DynamicsCompressorNode
+        // .reduction values directly (same document as the engine — no
+        // postMessage needed). Runs continuously; channels simply read 0 while
+        // nothing is connected to them yet (Cart Wall until Stage 2 lands).
+        (() => {
+            const CH = [
+                { key: 'cartwall', analyser: () => window.AudioEngine.cartWallAnalyser },
+                { key: 'auto', analyser: () => window.AudioEngine.autoplayerAnalyser },
+                { key: 'player1', analyser: () => window.AudioEngine.deckAnalyser(1) },
+                { key: 'player2', analyser: () => window.AudioEngine.deckAnalyser(2) },
+                { key: 'player3', analyser: () => window.AudioEngine.deckAnalyser(3) },
+                { key: 'master', analyser: () => window.AudioEngine.masterAnalyser },
+            ];
+            const GR = [
+                { key: 'agc', reduction: () => window.AudioEngine.reductionDb.agc() },
+                { key: 'comp', reduction: () => window.AudioEngine.reductionDb.compressor() },
+                { key: 'limit', reduction: () => window.AudioEngine.reductionDb.limiter() },
+            ];
+            const fills = {};
+            document.querySelectorAll('#meterBridge .meter-ch').forEach((el) => {
+                fills[el.dataset.ch] = el.querySelector('.meter-fill');
+            });
+            function frame() {
+                CH.forEach(({ key, analyser }) => {
+                    const fill = fills[key];
+                    if (!fill) return;
+                    const level = window.AudioEngine.levelOf(analyser());
+                    fill.style.height = Math.min(100, level * 140) + '%';
+                });
+                GR.forEach(({ key, reduction }) => {
+                    const fill = fills[key];
+                    if (!fill) return;
+                    // .reduction is 0 (none) to roughly -20dB+ (heavy) — map
+                    // 0..20dB of reduction onto 0..100% fill height.
+                    const db = Math.abs(reduction() || 0);
+                    fill.style.height = Math.min(100, (db / 20) * 100) + '%';
+                });
+                requestAnimationFrame(frame);
+            }
+            requestAnimationFrame(frame);
+        })();
     </script>
     <script src="<?= asset_v('assets/js/automation.js') ?>"></script>
     <script src="<?= asset_v('assets/js/dj.js') ?>"></script>

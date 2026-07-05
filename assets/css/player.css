@@ -866,6 +866,30 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .clock-anchor .hm { font-size: 20px; font-weight: 700; color: var(--text-strong); }
 .clock-anchor .sec { font-size: 13px; font-weight: 600; color: var(--clock-dim); }
 
+/* ---- Meter bridge: master + per-source level/GR/limiting readouts ----- */
+/* Stacked directly above the ticker's own 46px footprint (not layered over
+   it) — the on-air countdown bar still slides up over just the ticker, same
+   as before; this sits above that whole interaction, always visible. */
+.meter-bridge {
+    position: fixed; left: 0; right: 0; bottom: 46px; z-index: 1002;
+    height: 60px; display: flex; align-items: center; gap: 10px;
+    padding: 0 16px; background: #0a0c10; border-top: 1px solid var(--hairline);
+    font-family: 'JetBrains Mono', monospace;
+}
+.meter-ch { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 46px; }
+.meter-label { font-size: 9px; font-weight: 800; letter-spacing: 0.06em; color: var(--text-tertiary); }
+.meter-track {
+    width: 10px; height: 36px; border-radius: 3px; background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--hairline); position: relative; overflow: hidden;
+}
+.meter-master .meter-track { width: 14px; }
+.meter-fill {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 0%;
+    background: linear-gradient(0deg, #1f7a44, #4fce7c 70%, #f0453f);
+}
+.meter-track-gr .meter-fill { background: linear-gradient(0deg, #7a5a1f, #f0a53f); }
+.meter-sep { flex: 0 0 auto; width: 1px; align-self: stretch; margin: 8px 0; background: var(--hairline); }
+
 /* ---- Bottom ticker --------------------------------------------------- */
 .statuses-bar {
     z-index: 1001;

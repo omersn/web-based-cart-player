@@ -125,6 +125,7 @@
             });
             restore.forEach((d) => {
                 const audio = new Audio(`uploads/${d.file}`);
+                window.AudioEngine.connectAutoplayer(audio);
                 audio.preload = 'auto';
                 const item = {
                     id: idSeq++, groupId: d.groupId, name: d.name, file: d.file,
@@ -244,6 +245,7 @@
         if (gid != null) groupDefs[gid] = []; // capture the chain's full definition
         list.forEach((d) => {
             const audio = new Audio(`uploads/${d.file}`);
+            window.AudioEngine.connectAutoplayer(audio);
             audio.preload = 'auto';
             const item = {
                 id: idSeq++, groupId: gid, name: d.name || '—', file: d.file,
