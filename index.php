@@ -1146,6 +1146,10 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         // trick (behind the loading overlay) that primes every cart. Kiosk mode
         // (?kiosk=1, browser launched with the autoplay flag) skips the button.
         function runLoadingKick() {
+            // Unlock the shared AudioContext on this gesture — cart-wall
+            // priming (triggered below by the grid iframes reloading) now
+            // plays through the engine's context, not a local per-iframe one.
+            if (window.AudioEngine) window.AudioEngine.resume();
             const overlay = document.getElementById('loadingOverlay');
             const progressBar = document.getElementById('progressBar');
             const grid = document.getElementById('cartgrid');
@@ -1551,6 +1555,10 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
 
         // --- Toolbar actions.
         function stopAll() {
+            // Cart-wall audio now lives in the engine, not the iframes — an
+            // iframe reload alone no longer stops it (that's the whole point
+            // of the migration), so stop it explicitly first.
+            if (window.AudioEngine) window.AudioEngine.cartStopAll();
             // Both cart walls (the main board and whichever ID-window surface
             // is live) force-reload and visibly reflow — mask each one that's
             // actually on screen.
@@ -2069,6 +2077,19 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 bar.classList.toggle('show', on);
                 if (on) document.getElementById('countdownValue').textContent = d.countdown;
             }
+        });
+
+        // Cart-wall playback commands from any grid.php iframe — the engine
+        // owns the real <audio> elements (a DOM element can't cross the iframe
+        // boundary via postMessage), so the iframe just sends plain metadata
+        // and the engine plays/stops/primes for real. Separate `source` value
+        // from the 'cartwall' traffic above so the two never tangle.
+        window.addEventListener('message', (event) => {
+            const d = event.data;
+            if (!d || d.source !== 'cart-engine-cmd') return;
+            if (d.cmd === 'play') window.AudioEngine.cartPlay(d);
+            else if (d.cmd === 'stop') window.AudioEngine.cartStop(d);
+            else if (d.cmd === 'prime') window.AudioEngine.cartPrime(d.carts);
         });
 
         // Show the correct search shortcut hint for this platform (⌘K on Mac, Ctrl K elsewhere).

@@ -244,6 +244,159 @@
         return wrapAndConnect(audioElement, sources.pfl.bus);
     }
 
+    // ---- Cart-wall voices ------------------------------------------------------
+    // The engine owns the real <audio> elements for cart wall — cartwall.js
+    // (running inside grid.php's iframe, a different document) can't call in
+    // here directly, and a real <audio> element can't cross the iframe
+    // boundary via postMessage (structured clone can't carry DOM nodes). So
+    // cartwall.js only ever sends plain metadata commands (see index.php's
+    // 'cart-engine-cmd' message handler) and reacts to the state broadcasts
+    // below. One voice per absolute cartId (carts.txt line number), created
+    // lazily and reused across replays — same one-persistent-element-per-cart
+    // idea cartwall.js used to own locally, just relocated here so it survives
+    // an iframe reload instead of being destroyed by one.
+    const cartVoices = new Map(); // cartId -> voice record
+    function connectCartwall(audioElement) {
+        return wrapAndConnect(audioElement, sources.cartwall.bus);
+    }
+    function getOrCreateVoice(cartId, file, start, end, volume, chainFadeMs) {
+        let v = cartVoices.get(cartId);
+        if (!v) {
+            const audio = new Audio(`uploads/${file}`);
+            v = {
+                cartId, audio, gainNode: connectCartwall(audio),
+                file, start, end, volume, chainFadeMs,
+                primed: false, priming: false, leadFired: false, endedFired: false, fullSec: null,
+            };
+            cartVoices.set(cartId, v);
+            audio.addEventListener('loadedmetadata', () => {
+                v.fullSec = (v.end != null ? v.end : audio.duration) - (v.start || 0);
+            });
+            audio.addEventListener('timeupdate', () => onVoiceTick(v));
+            audio.addEventListener('ended', () => finishVoice(v));
+        } else if (v.file !== file) {
+            // Cart was replaced/edited (new audio) since this voice was made.
+            v.audio.src = `uploads/${file}`;
+            v.primed = false;
+        }
+        v.file = file; v.start = start; v.end = end; v.volume = volume; v.chainFadeMs = chainFadeMs;
+        return v;
+    }
+    // Ported from cartwall.js's original preload hack: mute, play, confirm
+    // "playing" actually fired within 100ms, pause and reset to the start
+    // point — so the first REAL play is instant. Retries with growing
+    // backoff if the browser didn't actually start playback in time.
+    function primeVoice(v) {
+        if (v.primed || v.priming) return;
+        v.priming = true;
+        let attempts = 0;
+        const maxAttempts = 5;
+        const attempt = () => {
+            const audio = v.audio;
+            audio.currentTime = v.start || 0;
+            audio.volume = 0;
+            let playbackStarted = false;
+            const onPlaying = () => { playbackStarted = true; audio.removeEventListener('playing', onPlaying); };
+            audio.addEventListener('playing', onPlaying);
+            audio.play().then(() => {
+                setTimeout(() => {
+                    if (!playbackStarted) {
+                        audio.currentTime = 0;
+                        attempts++;
+                        if (attempts < maxAttempts) setTimeout(attempt, 10 * attempts);
+                        else v.priming = false;
+                        return;
+                    }
+                    if (!audio.paused) {
+                        audio.pause();
+                        audio.currentTime = v.start || 0;
+                    }
+                    audio.volume = 1;
+                    v.primed = true;
+                    v.priming = false;
+                }, 100);
+            }).catch(() => {
+                attempts++;
+                if (attempts < maxAttempts) setTimeout(attempt, 10 * attempts);
+                else v.priming = false;
+            });
+        };
+        if (v.audio.readyState >= 3) attempt();
+        else v.audio.addEventListener('canplaythrough', attempt, { once: true });
+    }
+    function cartPrime(carts) {
+        (carts || []).forEach(({ cartId, file, start, end }) => {
+            primeVoice(getOrCreateVoice(cartId, file, start, end, 1, 0));
+        });
+    }
+    function cartPlay({ cartId, file, start, end, volume, chainFadeMs }) {
+        const v = getOrCreateVoice(cartId, file, start, end, volume, chainFadeMs);
+        v.leadFired = false;
+        v.endedFired = false;
+        v.audio.currentTime = start || 0;
+        v.audio.volume = volume != null ? volume : 1;
+        v.audio.play();
+    }
+    function cartStop({ cartId }) {
+        const v = cartVoices.get(cartId);
+        if (v) v.audio.pause();
+    }
+    function cartStopAll() {
+        cartVoices.forEach((v) => v.audio.pause());
+    }
+    function onVoiceTick(v) {
+        if (v.audio.paused) return;
+        if (v.end != null && v.audio.currentTime >= v.end) {
+            finishVoice(v);
+            return;
+        }
+        if (!v.leadFired && v.chainFadeMs > 0) {
+            const endPoint = v.end != null ? v.end : (v.audio.duration || 0);
+            if ((endPoint - v.audio.currentTime) * 1000 <= v.chainFadeMs) {
+                v.leadFired = true;
+                broadcastCartEvent('cart-lead', v.cartId);
+            }
+        }
+    }
+    function finishVoice(v) {
+        if (v.endedFired) return;
+        v.endedFired = true;
+        v.audio.pause();
+        broadcastCartEvent('cart-ended', v.cartId);
+    }
+    // Every mounted grid.php iframe, found fresh each time (not cached) — a
+    // reloaded/newly-mounted iframe is picked up automatically with no
+    // registration step, and a torn-down one is never posted to stale.
+    function gridIframeWindows() {
+        return Array.from(document.querySelectorAll('iframe'))
+            .filter((f) => f.src && f.src.includes('grid.php'))
+            .map((f) => f.contentWindow)
+            .filter(Boolean);
+    }
+    function broadcastCartEvent(type, cartId) {
+        const msg = { source: 'cart-engine-state', type, cartId };
+        gridIframeWindows().forEach((w) => { try { w.postMessage(msg, '*'); } catch (e) { /* torn down mid-broadcast */ } });
+    }
+    // ~5/sec: every known cart voice's current state, playing or not (not-yet-
+    // playing entries still carry fullSec, which cartwall.js's chain-forward
+    // duration math needs for cart members further down a chain).
+    function broadcastTick() {
+        const voices = [];
+        cartVoices.forEach((v) => {
+            const playing = !v.audio.paused;
+            const endPoint = v.end != null ? v.end : (v.audio.duration || 0);
+            voices.push({
+                cartId: v.cartId,
+                playing,
+                remainingSec: playing ? Math.max(0, endPoint - v.audio.currentTime) : 0,
+                fullSec: v.fullSec != null ? v.fullSec : Math.max(0, endPoint - (v.start || 0)),
+            });
+        });
+        const msg = { source: 'cart-engine-state', type: 'tick', voices };
+        gridIframeWindows().forEach((w) => { try { w.postMessage(msg, '*'); } catch (e) { /* torn down mid-broadcast */ } });
+    }
+    setInterval(broadcastTick, 200);
+
     // ---- Level helpers (0..1 RMS from time-domain data) -------------------------
     function levelOf(analyser) {
         if (!analyser) return 0;
@@ -298,5 +451,8 @@
         refreshRouting,
         channelAnalyser: (n) => channelChains[n - 1] && channelChains[n - 1].analyser,
         channelReductionDb: (n) => channelChains[n - 1] ? reductionOf(channelChains[n - 1]) : 0,
+        // Cart-wall commands — called only from index.php's 'cart-engine-cmd'
+        // message handler, never directly by cartwall.js (different document).
+        cartPlay, cartStop, cartStopAll, cartPrime,
     };
 })();
