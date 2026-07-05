@@ -177,3 +177,33 @@ on the board to queue them. The panel appears on the right once at least one car
 - [ ] `LICENSE` at the repo root is the PolyForm Strict License 1.0.0 text (not AGPL).
 - [ ] `assets/fonts/OFL.txt`, `assets/vendor/phosphor/LICENSE`, `assets/vendor/LICENSE-wavesurfer.txt`,
       and `assets/vendor/LICENSE-chartjs.txt` exist and contain the real license text for each.
+
+## 18. Persistent audio engine + cart-wall migration (2026-07-05)
+**Setup:** click **START**, wait for the loading overlay to clear (this primes every visible cart
+through the engine).
+- [ ] A cart plays instantly and cleanly on first click (no clipped attack) — confirms priming
+      still works now that it happens in the engine instead of locally per-button.
+- [ ] Clicking a playing cart again stops it immediately (no lag, no lingering audio).
+- [ ] A **chained** run (e.g. the Station-IDs floater's first chain) crossfades cleanly: the next
+      cart audibly starts before the current one cuts off, and the current one's tail rings out
+      naturally rather than being cut short.
+- [ ] **The headline fix** — start a cart or chain playing, then switch board sections (or pick a
+      different page). **Expected:** it keeps playing uninterrupted through the reload, and once
+      the board reloads, the button (if the same cart is visible again) correctly shows itself as
+      still playing, with a correct countdown — not silently stopped and not stuck on "not playing"
+      while audio is actually still going.
+- [ ] Same test via **Station Manager → Save & Close** (or Audio Library Manager save) while a cart
+      is playing — playback survives the manager-triggered board refresh the same way.
+- [ ] **Stop all** (top bar) actually silences cart-wall audio — not just a visual reset. Start a
+      cart, hit Stop all, confirm there's no lingering sound.
+- [ ] Right-click a cart (or a chain) still queues it to the Automation panel correctly, including
+      the crossfade duration into each chained item.
+- [ ] Cart PFL preview (hover a board tile, click the speaker strip) still works and is audibly
+      independent of on-air cart-wall playback — previewing one does not affect (or route through)
+      whatever's actually playing on the board.
+- [ ] "Play at top of hour" (right-click a cart → the clock option) still fires the cart at the next
+      full hour with the countdown badge, same as before.
+- [ ] Station Manager → Audio tab: switch DSP style and toggle Processing on/off — cart-wall audio
+      audibly changes (more/less processed) the same way DJ deck and autoplayer audio already did.
+- [ ] Multichannel mode: route Cartwall to a specific output channel in the routing matrix, play a
+      cart, and confirm the footer meter pill's per-channel flyout shows level on that channel only.

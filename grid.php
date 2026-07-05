@@ -162,11 +162,6 @@ $settings = load_settings(); // gates the per-tile PFL preview button + mini-pla
         }
         .playing-tag .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: livePulse 1.6s infinite; }
         .button.playing .playing-tag { display: flex; }
-        /* 2-bar VU: heights are driven live from a WebAudio analyser in
-           cartwall.js (real audio level), not a canned animation. */
-        .vu { display: none; position: absolute; top: 8px; right: 8px; z-index: 3; align-items: flex-end; gap: 3px; height: 16px; }
-        .vu span { display: block; width: 3px; background: #fff; border-radius: 1px; height: 10%; transition: height 0.06s linear; }
-        .button.playing .vu { display: flex; }
 
         /* Chained carts: ONE border wraps the whole run and the members abut as a
            single block. Each member's INNER corners are squared and the grid gap

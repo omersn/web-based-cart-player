@@ -87,13 +87,14 @@ index.php  ── the player shell (Carts mode OR DJ mode) ───────
    ├─ <iframe> grid.php?from=0&to=10    → floating "Station ID" window          │
    ├─ <iframe> clock.php                → floating broadcast clock              │
    ├─ <iframe> keep-alive.php           → heartbeat (silent audio + indicator)   │
+   ├─ assets/js/audio-engine.js         → persistent audio engine (see below)     │
    ├─ assets/js/dj.js                   → DJ mode: library tree + manual decks   │
    ├─ assets/js/automation.js           → Autoplayer engine + breaks strip       │
    ├─ assets/js/manager.js              → Station Manager overlay               │
    ├─ assets/js/audio-manager.js        → Audio Library Manager overlay         │
    └─ assets/js/planner.js              → Break Planner overlay                 │
                                                                                 │
-grid.php  ── cart-wall shell ── loads assets/js/cartwall.js (the board engine) ─┘
+grid.php  ── cart-wall shell ── loads assets/js/cartwall.js (the board UI) ────┘
 
 data/*.txt   the "pseudo-database" (flat files)        uploads/*.mp3   the audio
 ```
@@ -104,17 +105,27 @@ data/*.txt   the "pseudo-database" (flat files)        uploads/*.mp3   the audio
 - **`includes/helpers.php`** wraps every flat-file read/write (`load_carts()`, `load_breaks()`,
   `load_routing()`, `color_for()`, …) so the format lives in one place.
 
-### The audio load mechanism (the "preload hack")
+### The persistent audio engine
 
-This is the trick that makes the player usable on air, and it lives in
-[`assets/js/cartwall.js`](assets/js/cartwall.js).
+`grid.php` (the cart wall) loads inside an `<iframe>` in `index.php`, and that iframe reloads
+whenever the operator switches board sections, hits "Stop all," or a Station Manager save
+refreshes the player windows — every one of those used to kill whatever was playing. The fix:
+[`assets/js/audio-engine.js`](assets/js/audio-engine.js) owns one shared `AudioContext` and every
+real `<audio>` element for cart wall, DJ decks, and the autoplayer, living in `index.php`'s own
+document, which never reloads for any of those. A real `<audio>` element can't cross the iframe
+boundary via `postMessage`, so `cartwall.js` never touches it directly — it sends plain play/stop/
+prime commands and reacts to lightweight state broadcasts (a "tick" with each playing cart's
+remaining time, plus chain-handoff events), driving its own buttons, chaining, and back-timer from
+that instead of a local timer. This is also what makes a master-bus DSP chain (AGC → compressor →
+limiter, configurable from Station Manager → Audio) possible: everything sums into one place to
+process, rather than three independent per-subsystem audio contexts with no shared destination.
 
-Browsers don't actually decode an `<audio>` element's data until something forces them to, so a
-cold first `play()` often has audible latency or a clipped attack — unacceptable for a jingle.
-To avoid that, each clip is **primed** as the wall loads: it is played once **muted** (`volume = 0`)
-and immediately paused, at a small **staggered delay** so the browser isn't asked to decode every
-file in the same instant. If a clip reports that it never really started, it is retried a few times
-with a growing delay. After this pass the first real click is instant and clean.
+The **preload hack**: browsers don't actually decode an `<audio>` element's data until something
+forces them to, so a cold first `play()` often has audible latency or a clipped attack —
+unacceptable for a jingle. To avoid that, each clip is **primed** once the engine knows about it:
+played once **muted** (`volume = 0`) and immediately paused. If a clip reports that it never really
+started, it's retried a few times with a growing delay. After this pass the first real click is
+instant and clean.
 
 > **⚠️ Autoplay policy — required for the preload to work.** The preload calls `audio.play()`
 > programmatically, and modern browsers **block audio playback until the user has interacted with
@@ -257,7 +268,11 @@ index.php                    player shell — Carts/DJ mode + the Station Manage
                               Manager and Break Planner overlays (all driven by assets/js/*.js below)
 grid.php                     the cart wall itself (the board, and the floating ID window)
 
-assets/js/cartwall.js        board engine — preload hack, chaining, back-timer, PFL
+assets/js/audio-engine.js    the persistent audio engine — one shared AudioContext, master-bus DSP
+                              (AGC/compressor/limiter), and the cart-wall voice map/priming/broadcast
+                              that lets playback survive an iframe reload (see below)
+assets/js/cartwall.js        board UI — chaining/back-timer/PFL, talks to the engine via postMessage
+                              (it can't call it directly — a different document, see below)
 assets/js/dj.js               DJ mode — library tree + manual decks
 assets/js/automation.js      Autoplayer engine, breaks strip, and the planner-mode API
 assets/js/manager.js         Station Manager overlay (Station / Options / Audio / Maintenance)
