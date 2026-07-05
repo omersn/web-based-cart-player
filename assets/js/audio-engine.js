@@ -304,7 +304,7 @@
                         audio.currentTime = 0;
                         attempts++;
                         if (attempts < maxAttempts) setTimeout(attempt, 10 * attempts);
-                        else v.priming = false;
+                        else { v.priming = false; console.warn(`Cart-wall priming gave up on cartId ${v.cartId} after ${maxAttempts} attempts.`); }
                         return;
                     }
                     if (!audio.paused) {
@@ -318,7 +318,7 @@
             }).catch(() => {
                 attempts++;
                 if (attempts < maxAttempts) setTimeout(attempt, 10 * attempts);
-                else v.priming = false;
+                else { v.priming = false; console.warn(`Cart-wall priming failed for cartId ${v.cartId} after ${maxAttempts} attempts.`); }
             });
         };
         if (v.audio.readyState >= 3) attempt();
