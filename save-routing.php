@@ -3,12 +3,16 @@
 /**
  * Save the output-routing map (manager Routing tab -> data/routing.txt).
  *
- * POST a JSON body: { "routing": { "player1": 1..4, "player2": 1..4,
- *                                  "player3": 1..4, "pfl": 1..4 } }
+ * POST a JSON body: { "routing": { "player1": 1..5, "player2": 1..5,
+ *                                  "player3": 1..5, "pfl": 1..5 } }
  *
- * The four outputs are SIMULATED stereo pairs (GUI-level routing until the
- * appification phase maps them to real devices). Admin-only. Responds with
- * { ok: true, routing: {...} } (the saved, normalised map).
+ * Up to 5 outputs, matching audio-engine.js's multichannel mode ceiling. In
+ * stereo mode (audio_mode, settings.txt) these assignments are still cosmetic
+ * — everything sums into one chain regardless; in multichannel mode they're
+ * what actually decides which independent channel a source's audio reaches.
+ * The "device" each channel maps to is a simulated label either way (GUI-level
+ * until the appification phase maps them to real hardware). Admin-only.
+ * Responds with { ok: true, routing: {...} } (the saved, normalised map).
  */
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/includes/helpers.php';
@@ -34,7 +38,7 @@ if (!is_array($p) || !isset($p['routing']) || !is_array($p['routing'])) {
 }
 
 // Merge onto the current map — a partial payload (one dropdown change)
-// leaves the other assignments untouched; save_routing clamps to 1..4.
+// leaves the other assignments untouched; save_routing clamps to 1..5.
 $merged = array_merge(load_routing(), array_intersect_key($p['routing'], load_routing()));
 if (!save_routing($merged)) {
     http_response_code(500);

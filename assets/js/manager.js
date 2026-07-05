@@ -1,17 +1,24 @@
 // License: PolyForm-Strict-1.0.0 (see LICENSE)
 /*
- * Station manager (admin-only overlay): Station | Options | Routing | Maintenance.
- * (Audio lives in its own overlay now — see audio-manager.js.)
+ * Station manager (admin-only overlay): Station | Options | Audio | Maintenance.
+ * (Per-cart audio editing lives in its own, DIFFERENT overlay — the Audio
+ * Library Manager, audio-manager.js — renamed specifically so it wouldn't
+ * collide with this tab's name.)
  *
  * Station      station name, logo upload, ticker, section labels.
  * Options      feature switches + links.
- * Routing      which simulated output each DJ player/PFL/carts/autoplayer feeds.
+ * Audio        (data-tab/pane id still say "routing" — internal only) which
+ *              simulated output each DJ player/PFL/carts/autoplayer feeds,
+ *              plus the persistent audio engine's master DSP type + on/off.
  * Maintenance  backup/restore (.cartdb), runtime logs, the danger zone.
  *
- * Station/Options/Routing are edited as a local draft and only committed to
- * the server on Save & Close; Cancel discards it (confirming first if the
- * draft is dirty). Maintenance is unchanged: its actions are one-shot and
- * take effect immediately, so it isn't part of the draft.
+ * Station/Options/(routing assignments in) Audio are edited as a local draft
+ * and only committed to the server on Save & Close; Cancel discards it
+ * (confirming first if the draft is dirty). Maintenance is unchanged: its
+ * actions are one-shot and take effect immediately, so it isn't part of the
+ * draft — DSP (also in the Audio tab) follows Maintenance's model instead of
+ * Routing's: it calls AudioEngine directly and applies live, since gating an
+ * audible A/B comparison behind Save & Close would make it clunky to use.
  */
 (() => {
     if (!window.IS_ADMIN) return;
@@ -163,7 +170,10 @@
                 sel.addEventListener('change', () => {
                     draft.options.dj_players = +sel.value;
                     markDirty();
-                    renderRouting(); // keep the Routing tab's player rows in sync live
+                    // Player 2/3 matrix columns depend on this count too —
+                    // renderRoutingMatrix() reads it from the draft, same as
+                    // this whole tab does, so no premature settings.txt write.
+                    if (window.AudioEngine.getAudioMode() === 'multichannel') renderRoutingMatrix();
                 });
                 host.appendChild(sub);
             }
@@ -173,105 +183,248 @@
         $('optRegenQr').addEventListener('click', () => flash('QR regeneration is parked — coming later'));
     }
 
-    // ---- Routing tab --------------------------------------------------------
-    // Assign each DJ player + the PFL (preview) bus to one of the four
-    // simulated stereo outs.
-    const ROUTES = [
-        ['carts',      'Cart board', 'Every cart fired from the wall or the ID windows'],
-        ['autoplayer', 'Autoplayer', 'The automation playlist engine (breaks)'],
-        ['player1', 'Player 1 (DJ mode)', 'The top deck'],
-        ['player2', 'Player 2 (DJ mode)', 'The middle deck'],
-        ['player3', 'Player 3 (DJ mode)', 'The bottom deck'],
-    ];
-    /** One "label + OUT n select" row, bound to draft.routing[key]. */
-    function makeRoutingRow(key, label, hint) {
-        const row = document.createElement('div');
-        row.className = 'opt-row';
-        row.innerHTML = `<span class="opt-text"><b></b><small></small></span><select class="ma-select routing-out"></select>`;
-        row.querySelector('b').textContent = label;
-        row.querySelector('small').textContent = hint;
-        const sel = row.querySelector('select');
-        for (let n = 1; n <= 4; n++) {
-            const o = document.createElement('option');
-            o.value = n;
-            o.textContent = `OUT ${n} (stereo)`;
-            sel.appendChild(o);
-        }
-        sel.value = draft.routing[key] || 1;
-        sel.addEventListener('change', () => { draft.routing[key] = +sel.value; markDirty(); });
-        return row;
+    // ---- Audio mode (stereo / multichannel) — action-based, not part of the
+    // draft: everything below applies to AudioEngine immediately and persists
+    // straight to settings.txt/routing.txt as each control changes. Content
+    // is a full redefinition per the user's own explicit spec, not additive
+    // to what used to be here:
+    //   STEREO   — nothing routing-related at all (one shared chain, nothing
+    //              to assign); the ONLY control is a "disable PFL entirely"
+    //              switch, so there's no possible path for cue audio to reach
+    //              the on-air signal when there's just one output to leak
+    //              into (reuses the existing pfl_player flag — same one the
+    //              Options tab's own "Allow PFL player" switch used to expose
+    //              here, now inverted/reframed as a safety control).
+    //   MULTI    — a (today: one, simulated) device list, each with its own
+    //              on/off and channel count, feeding a routing MATRIX: one
+    //              column per on-air source (including PFL now — it's a
+    //              real routable source in this mode, not a special case),
+    //              one row per available output. Exactly one radio checked
+    //              per column (a source can only go to one output).
+    // The OLD per-source dropdown list and the OLD standalone "PFL (preview)"
+    // section (its 4 granular "which surface shows a preview button"
+    // checkboxes, and the "Show output labels" switch) are gone from here —
+    // the user's redefinition didn't mention them and was explicit about
+    // "only" for stereo mode. Their settings are untouched on disk, just not
+    // editable from this tab anymore.
+    // Positively framed on purpose: checking a box labeled "Disable X" but
+    // seeing the switch turn GREEN (checked = this component's own on/off
+    // convention everywhere else) read as backwards. "Allow PFL," checked =
+    // green = allowed, is the same switch but now unchecked (red, this
+    // component's native "off" color) honestly means "PFL is blocked" —
+    // no separate red badge needed, the existing switch already reads right
+    // once the label's polarity matches its color convention.
+    function renderPflEnabledSwitch() {
+        $('pflEnabledToggle').checked = !!(window.SETTINGS || {}).pfl_player;
+        renderPflSurfaces();
     }
-    /** Same as makeRoutingRow, but with an extra "PFL output" choice (value 0)
-        ahead of OUT 1-4 — for things that can ride the PFL bus itself instead
-        of only ever feeding INTO it. */
-    function makeRoutingRowWithPfl(key, label, hint) {
-        const row = document.createElement('div');
-        row.className = 'opt-row';
-        row.innerHTML = `<span class="opt-text"><b></b><small></small></span><select class="ma-select routing-out"></select>`;
-        row.querySelector('b').textContent = label;
-        row.querySelector('small').textContent = hint;
-        const sel = row.querySelector('select');
-        const pflOpt = document.createElement('option');
-        pflOpt.value = 0;
-        pflOpt.textContent = 'PFL output';
-        sel.appendChild(pflOpt);
-        for (let n = 1; n <= 4; n++) {
-            const o = document.createElement('option');
-            o.value = n;
-            o.textContent = `OUT ${n} (stereo)`;
-            sel.appendChild(o);
-        }
-        sel.value = draft.routing[key] ?? 0;
-        sel.addEventListener('change', () => { draft.routing[key] = +sel.value; markDirty(); });
-        return row;
-    }
-    /** One "label + switch" row, bound to draft.options[key]. */
-    function makeSwitchRow(key, label, hint) {
-        const row = document.createElement('label');
-        row.className = 'opt-row';
-        row.innerHTML = `<span class="opt-text"><b></b><small></small></span><input type="checkbox" class="opt-switch">`;
-        row.querySelector('b').textContent = label;
-        row.querySelector('small').textContent = hint;
-        const cb = row.querySelector('input');
-        cb.checked = !!draft.options[key];
-        cb.addEventListener('change', () => { draft.options[key] = cb.checked ? 1 : 0; markDirty(); });
-        return row;
-    }
-    function renderRouting() {
-        const host = $('routingList');
-        host.innerHTML = '';
-        host.appendChild(makeSwitchRow('show_out_labels', 'Show output labels', 'The "OUT N" badges on DJ decks, PFL and the autoplayer strip'));
-        const djPlayers = draft.options.dj_players || 3;
-        ROUTES.forEach(([key, label, hint]) => {
-            // Disallowed DJ players (per the Options tab's "DJ players" count)
-            // drop out of the routing list too — nothing to assign an output to.
-            if (key === 'player2' && djPlayers < 2) return;
-            if (key === 'player3' && djPlayers < 3) return;
-            host.appendChild(makeRoutingRow(key, label, hint));
+    function wirePflEnabledSwitch() {
+        $('pflEnabledToggle').addEventListener('change', (e) => {
+            window.SETTINGS.pfl_player = e.target.checked ? 1 : 0;
+            post('save-settings.php', { settings: { pfl_player: e.target.checked ? 1 : 0 } }, true);
+            renderPflSurfaces();
         });
     }
-    // PFL (preview): its own section — allow the player, then (once allowed)
-    // a checkbox per surface that can send to it, and the output it carries.
+    // Which UI surfaces show a PFL preview button — orthogonal to stereo vs
+    // multichannel (kept visible in both, per the user's own call: "why
+    // not"), hidden entirely while PFL itself is disabled since it's moot.
     const PFL_SURFACES = [
         ['pfl_buttons_carts',   'Cart board', 'Hover preview icon on cart-board tiles'],
         ['pfl_buttons_players', 'DJ players', 'Preview button on each DJ deck'],
         ['pfl_buttons_tree',    'DJ library tree', 'Preview button in the DJ library tree'],
         ['pfl_buttons_search',  'Search results', 'Preview button in the topbar search results'],
     ];
-    function renderPfl() {
-        const host = $('pflOptList');
+    function makePflSurfaceRow(key, label, hint) {
+        const row = document.createElement('label');
+        row.className = 'opt-row';
+        row.innerHTML = `<span class="opt-text"><b></b><small></small></span><input type="checkbox" class="opt-switch">`;
+        row.querySelector('b').textContent = label;
+        row.querySelector('small').textContent = hint;
+        const cb = row.querySelector('input');
+        cb.checked = !!(window.SETTINGS || {})[key];
+        cb.addEventListener('change', () => {
+            window.SETTINGS[key] = cb.checked ? 1 : 0;
+            post('save-settings.php', { settings: { [key]: cb.checked ? 1 : 0 } }, true);
+        });
+        return row;
+    }
+    function renderPflSurfaces() {
+        const section = $('pflSurfacesSection');
+        const enabled = !!(window.SETTINGS || {}).pfl_player;
+        section.hidden = !enabled;
+        if (!enabled) return;
+        const host = $('pflSurfacesList');
         host.innerHTML = '';
-        const master = makeSwitchRow('pfl_player', 'Allow PFL player', 'The small preview player docked under the DJ library');
-        master.querySelector('input').addEventListener('change', renderPfl); // reveal/hide the per-surface checkboxes live
-        host.appendChild(master);
-        if (draft.options.pfl_player) {
-            const group = document.createElement('div');
-            group.className = 'opt-subgroup';
-            PFL_SURFACES.forEach(([key, label, hint]) => group.appendChild(makeSwitchRow(key, label, hint)));
-            host.appendChild(group);
+        PFL_SURFACES.forEach(([key, label, hint]) => host.appendChild(makePflSurfaceRow(key, label, hint)));
+    }
+    function makeDeviceRow(id, label, hint) {
+        const row = document.createElement('label');
+        row.className = 'opt-row';
+        row.innerHTML = `<span class="opt-text"><b></b><small></small></span><input type="checkbox" class="opt-switch">`;
+        row.querySelector('b').textContent = label;
+        row.querySelector('small').textContent = hint;
+        const cb = row.querySelector('input');
+        cb.checked = window.AudioEngine.isDeviceEnabled(id);
+        cb.addEventListener('change', () => {
+            window.AudioEngine.setDeviceEnabled(id, cb.checked);
+            post('save-settings.php', { settings: { ['device_' + id + '_enabled']: cb.checked ? 1 : 0 } }, true);
+            renderRoutingMatrix(); // available output count just changed
+        });
+        return row;
+    }
+    function renderDeviceList() {
+        const host = $('deviceList');
+        host.innerHTML = '';
+        host.appendChild(makeDeviceRow('sim4', 'Simulated Multi-Output Device', '4 discrete stereo outputs — real device detection is planned, not wired up yet'));
+    }
+    // Matrix columns: every on-air source, PFL included. Player 2/3 drop out
+    // when the Options tab's "DJ players" count doesn't allow them — same
+    // guard the old per-source dropdown list used to apply.
+    const MATRIX_SOURCES = [
+        ['player1', 'PLAYER 1'],
+        ['player2', 'PLAYER 2'],
+        ['player3', 'PLAYER 3'],
+        ['carts', 'CARTWALL'],
+        ['autoplayer', 'AUTOPLAYER'],
+        ['pfl', 'PFL'],
+    ];
+    function renderRoutingMatrix() {
+        const host = $('routingMatrix');
+        const djPlayers = draft.options.dj_players || 3;
+        const cols = MATRIX_SOURCES.filter(([key]) => {
+            if (key === 'player2' && djPlayers < 2) return false;
+            if (key === 'player3' && djPlayers < 3) return false;
+            return true;
+        });
+        const rows = window.AudioEngine.availableOutputCount();
+        host.innerHTML = '';
+        if (rows === 0) {
+            host.style.gridTemplateColumns = '';
+            host.innerHTML = '<p class="mgr-stub-text">No outputs available &mdash; enable a device above.</p>';
+            return;
         }
-        host.appendChild(makeRoutingRow('pfl', 'PFL channel', 'All single-play preview buttons — planner, audio manager, DJ library'));
-        host.appendChild(makeRoutingRowWithPfl('manager_preview', 'Audio manager preview', "The chain editor's own Play button (Audio manager)"));
+        host.style.gridTemplateColumns = `70px repeat(${cols.length}, 1fr)`;
+        host.appendChild(document.createElement('div')).className = 'dsp-matrix-corner';
+        cols.forEach(([, label]) => {
+            const el = document.createElement('div');
+            el.className = 'dsp-matrix-col-label';
+            el.textContent = label;
+            host.appendChild(el);
+        });
+        for (let n = 1; n <= rows; n++) {
+            const rowLabel = document.createElement('div');
+            rowLabel.className = 'dsp-matrix-row-label';
+            rowLabel.textContent = 'OUT ' + n;
+            host.appendChild(rowLabel);
+            cols.forEach(([key]) => {
+                const cell = document.createElement('label');
+                cell.className = 'dsp-matrix-cell';
+                const radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = 'matrix-' + key;
+                radio.value = n;
+                radio.checked = (window.ROUTING[key] || 1) === n;
+                radio.addEventListener('change', () => {
+                    window.ROUTING[key] = n;
+                    post('save-routing.php', { routing: { [key]: n } }, true);
+                    window.AudioEngine.refreshRouting();
+                });
+                cell.appendChild(radio);
+                cell.insertAdjacentHTML('beforeend', '<span class="dsp-matrix-check">&#10003;</span>');
+                host.appendChild(cell);
+            });
+        }
+    }
+    function renderAudioMode() {
+        const mode = window.AudioEngine.getAudioMode();
+        $('audioModeStereo').classList.toggle('active', mode === 'stereo');
+        $('audioModeMulti').classList.toggle('active', mode === 'multichannel');
+        $('stereoPflSection').hidden = mode !== 'stereo';
+        $('multiChannelSection').hidden = mode !== 'multichannel';
+        if (mode === 'stereo') {
+            renderPflEnabledSwitch(); // also renders the surfaces list below it
+        } else {
+            renderDeviceList();
+            renderRoutingMatrix();
+            renderPflSurfaces(); // the switch itself only lives in stereo mode's section, but the surfaces list stays visible in both
+        }
+    }
+    function wireAudioMode() {
+        function choose(mode) {
+            window.AudioEngine.setAudioMode(mode);
+            post('save-settings.php', { settings: { audio_mode: mode } }, true);
+            renderAudioMode();
+        }
+        $('audioModeStereo').addEventListener('click', () => choose('stereo'));
+        $('audioModeMulti').addEventListener('click', () => choose('multichannel'));
+        wirePflEnabledSwitch();
+    }
+
+    // ---- DSP (Audio tab, action-based like Maintenance — not part of the
+    // draft; see the header comment for why). One shared chain for every
+    // on-air source: a Style select, a master Enabled switch, and a separate
+    // PFL switch (dry by default — see audio-engine.js's connectPfl()).
+    // Every change applies to AudioEngine immediately AND persists straight
+    // to settings.txt via save-settings.php (one key at a time). Controls
+    // are wired ONCE (static HTML, unlike the per-output rows this replaced);
+    // renderDsp() just re-syncs their displayed values + the params readout
+    // each time the overlay opens. ----
+    const STAGE_LABELS = { agc: 'AGC', compressor: 'Compressor', limiter: 'Limiter' };
+    /** The real, currently-configured numbers for `name` (or whatever's
+     *  selected right now) — NOT a live meter reading. Rendered as one row
+     *  per active stage so there's no ambiguity about what's actually applied. */
+    // Always renders exactly 3 rows (AGC/Compressor/Limiter) PLUS the 2 flow
+    // arrows between them, whether or not the selected style actually uses
+    // each stage AND whether Processing is even on — an inactive/disabled
+    // stage still takes up its row, just showing a "not used"/"disabled"
+    // placeholder instead of numbers, so the panel's height never jumps
+    // around, whether you're switching styles or flipping Processing itself.
+    const ALL_STAGES = ['agc', 'compressor', 'limiter'];
+    function renderDspParams(name) {
+        const host = $('dspParams');
+        const preset = window.AudioEngine.typeParams(name || $('dspTypeSelect').value);
+        const dspOn = window.AudioEngine.isEnabled();
+        const rows = ALL_STAGES.map((key) => {
+            const p = dspOn ? preset[key] : null;
+            if (!p) {
+                const why = dspOn ? 'Not used in this style' : 'Processing disabled';
+                return `<div class="dsp-param-row inactive"><b>${STAGE_LABELS[key]}</b><span class="dsp-param-unused">${why}</span></div>`;
+            }
+            return `<div class="dsp-param-row"><b>${STAGE_LABELS[key]}</b>` +
+                `<span>threshold ${p.threshold} dB</span>` +
+                `<span>ratio ${p.ratio}:1</span>` +
+                `<span>knee ${p.knee} dB</span>` +
+                `<span>attack ${Math.round(p.attack * 1000)} ms</span>` +
+                `<span>release ${Math.round(p.release * 1000)} ms</span></div>`;
+        });
+        // Signal always runs AGC -> Compressor -> Limiter, top to bottom —
+        // the arrow is just showing that fixed order, not whether a
+        // particular stage is currently active.
+        host.innerHTML = rows.join('<div class="dsp-flow-arrow">&#8595;</div>');
+    }
+    function renderDsp() {
+        $('dspEnabledToggle').checked = window.AudioEngine.isEnabled();
+        $('dspTypeSelect').value = window.AudioEngine.getType();
+        renderDspParams();
+    }
+    function wireDspTab() {
+        $('dspEnabledToggle').addEventListener('change', (e) => {
+            window.AudioEngine.setEnabled(e.target.checked);
+            renderDspParams();
+            post('save-settings.php', { settings: { dsp_enabled: e.target.checked ? 1 : 0 } }, true);
+        });
+        $('dspTypeSelect').addEventListener('change', (e) => {
+            window.AudioEngine.setType(e.target.value);
+            renderDspParams();
+            post('save-settings.php', { settings: { dsp_type: e.target.value } }, true);
+        });
+        // Preset explanations: tucked behind a "?", same reveal as Maintenance's
+        // Backup & restore info button.
+        $('dspInfoBtn').addEventListener('click', (e) => {
+            const shown = !$('dspInfo').hidden;
+            $('dspInfo').hidden = shown;
+            e.currentTarget.classList.toggle('active', !shown);
+        });
     }
 
     // ---- Maintenance tab (action-based, not part of the draft) -----------------
@@ -383,6 +536,10 @@
         if (window.DJMode) window.DJMode.applyRouting();
         const badge = $('autoOutBadge');
         if (badge) badge.textContent = 'OUT ' + (window.ROUTING.autoplayer || 1);
+        // Multichannel mode: new assignments mean sources may now feed a
+        // different independent channel — re-patch immediately. A no-op in
+        // stereo mode (nothing there depends on ROUTING).
+        window.AudioEngine.refreshRouting();
 
         draft.logoFile = null;
         draft.logoReset = false;
@@ -403,8 +560,8 @@
         buildDraft();
         dirty = false;
         renderOptions();
-        renderRouting();
-        renderPfl();
+        renderAudioMode();
+        renderDsp();
         renderStation();
         $('mntLogRetention').value = String((window.SETTINGS || {}).log_retention != null ? window.SETTINGS.log_retention : 90);
         showTab('station'); // Station is the manager's home tab (Audio moved to its own window)
@@ -448,6 +605,8 @@
         wireStationTab();
         wireOptionsTab();
         wireMaintenanceTab();
+        wireDspTab();
+        wireAudioMode();
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 

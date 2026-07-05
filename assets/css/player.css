@@ -866,29 +866,61 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 .clock-anchor .hm { font-size: 20px; font-weight: 700; color: var(--text-strong); }
 .clock-anchor .sec { font-size: 13px; font-weight: 600; color: var(--clock-dim); }
 
-/* ---- Meter bridge: master + per-source level/GR/limiting readouts ----- */
-/* Stacked directly above the ticker's own 46px footprint (not layered over
-   it) — the on-air countdown bar still slides up over just the ticker, same
-   as before; this sits above that whole interaction, always visible. */
-.meter-bridge {
-    position: fixed; left: 0; right: 0; bottom: 46px; z-index: 1002;
-    height: 60px; display: flex; align-items: center; gap: 10px;
-    padding: 0 16px; background: #0a0c10; border-top: 1px solid var(--hairline);
-    font-family: 'JetBrains Mono', monospace;
+/* ---- Footer meter/DSP pills -------------------------------------------- */
+/* Same shape/reveal mechanism as .status-pill (in fact, they ARE .status-pill
+   — see below), just with a small row of LED-style dots instead of a single
+   pulse-dot. When the ticker message has room to show (default), the pair
+   floats OVER its right edge instead of claiming its own space in the row —
+   the ticker already ellipsis-truncates, so this just truncates a little
+   more; when the ticker is hidden (hide-ticker), .status-pill's OWN generic
+   collapse rules already shrink these to dots automatically, same as the
+   connection/keep-alive pills, so nothing extra is needed for that mode. */
+.meter-pill-group { display: flex; align-items: center; gap: 6px; }
+.meter-pill { cursor: default; position: relative; } /* status-only, unlike the click-to-open-log pills above; relative anchors its own .meter-flyout */
+body:not(.hide-ticker) .statuses-bar { position: relative; }
+body:not(.hide-ticker) .meter-pill-group {
+    position: absolute; top: 50%; right: 40px; transform: translateY(-50%); z-index: 2;
 }
-.meter-ch { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 46px; }
-.meter-label { font-size: 9px; font-weight: 800; letter-spacing: 0.06em; color: var(--text-tertiary); }
-.meter-track {
-    width: 10px; height: 36px; border-radius: 3px; background: rgba(255, 255, 255, 0.06);
-    border: 1px solid var(--hairline); position: relative; overflow: hidden;
+/* Hovering EITHER pill reveals BOTH labels together — the same "hover the
+   group, reveal every child's label" trick body.hide-ticker's collapsed
+   cluster already uses further down this file. */
+.meter-pill-group:hover .status-label { max-width: 200px; opacity: 1; margin-left: 8px; }
+.level-dots { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; }
+.level-dots i {
+    width: 5px; height: 5px; border-radius: 50%;
+    opacity: 0.15; transition: opacity 0.1s linear;
 }
-.meter-master .meter-track { width: 14px; }
-.meter-fill {
-    position: absolute; left: 0; right: 0; bottom: 0; height: 0%;
-    background: linear-gradient(0deg, #1f7a44, #4fce7c 70%, #f0453f);
+/* Level pill: a small green/amber/red LED ladder, cool to hot. */
+.meter-pill:not(.dsp-pill) .level-dots i:nth-child(1),
+.meter-pill:not(.dsp-pill) .level-dots i:nth-child(2) { background: var(--green-dot); }
+.meter-pill:not(.dsp-pill) .level-dots i:nth-child(3) { background: var(--amber); }
+.meter-pill:not(.dsp-pill) .level-dots i:nth-child(4) { background: #f0453f; }
+/* DSP pill: amber-to-red — reads as "how hard is it working," not a level. */
+.dsp-pill .level-dots i:nth-child(1),
+.dsp-pill .level-dots i:nth-child(2) { background: var(--amber); }
+.dsp-pill .level-dots i:nth-child(3),
+.dsp-pill .level-dots i:nth-child(4) { background: #f0453f; }
+.dsp-pill.standby .level-dots i { background: var(--text-tertiary); }
+/* Per-channel flyout (multichannel mode only — see index.php's driver
+   script): one row per output, hidden entirely in stereo mode since JS never
+   populates it there (:empty keeps it from ever showing). Reveals alongside
+   the labels, same group-hover trigger — "expanding the pill" per the user's
+   own request means showing every channel, not one summary. */
+.meter-flyout {
+    display: flex; flex-direction: column; gap: 5px;
+    position: absolute; top: 100%; left: 0; margin-top: 6px;
+    padding: 8px 10px; border-radius: 8px; min-width: 100px;
+    background: #171b21; border: 1px solid var(--hairline);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    opacity: 0; visibility: hidden; transition: opacity 0.15s ease;
 }
-.meter-track-gr .meter-fill { background: linear-gradient(0deg, #7a5a1f, #f0a53f); }
-.meter-sep { flex: 0 0 auto; width: 1px; align-self: stretch; margin: 8px 0; background: var(--hairline); }
+.meter-flyout:empty { display: none; }
+.meter-pill-group:hover .meter-flyout:not(:empty) { opacity: 1; visibility: visible; }
+.meter-flyout-row { display: flex; align-items: center; gap: 8px; }
+.meter-flyout-row b {
+    flex: 0 0 34px; font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    font-weight: 800; color: var(--text-primary);
+}
 
 /* ---- Bottom ticker --------------------------------------------------- */
 .statuses-bar {
@@ -1005,6 +1037,13 @@ body.hide-ticker .statuses-bar:hover .chip-reveal,
 body.hide-ticker .statuses-bar:hover .status-label {
     max-width: 200px; opacity: 1; margin-left: 8px;
 }
+/* The meter/DSP pills' 4-dot rows are wider than the other pills' single
+   pulse-dot — collapse to just the first dot so they shrink to the same
+   small circle, restoring the full row on hover alongside the label. */
+body.hide-ticker .statuses-bar .level-dots i:not(:first-child) { display: none; }
+body.hide-ticker .statuses-bar:hover .level-dots i:not(:first-child) { display: inline-block; }
+body.hide-ticker .statuses-bar .level-dots i:first-child { width: 10px; height: 10px; }
+body.hide-ticker .statuses-bar:hover .level-dots i { width: 5px; height: 5px; }
 
 /* Source-repo attribution link: normally tucked just above the full-width
    footer ticker. When the ticker collapses to the minimized status pill
@@ -1732,6 +1771,78 @@ button.opt-link { cursor: pointer; font-family: 'Assistant', sans-serif; width: 
     display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800;
 }
 .mnt-info-btn:hover, .mnt-info-btn.active { color: var(--text-primary); background: rgba(255, 255, 255, 0.14); }
+/* DSP parameters readout (Audio tab): the real, currently-configured numbers
+   for whichever style is selected — one row per active stage. Static/
+   read-only, not a live meter (see the footer's Level/DSP pills for that). */
+.dsp-params { display: flex; flex-direction: column; gap: 4px; }
+.dsp-param-row {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    min-height: 60px; box-sizing: border-box;
+    padding: 6px 10px; border: 1px solid var(--hairline); border-radius: 7px;
+    background: rgba(255, 255, 255, 0.03);
+    font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--text-secondary);
+}
+.dsp-param-row b { flex: 0 0 76px; color: var(--text-primary); font-family: 'Assistant', sans-serif; font-size: 12.5px; }
+/* Inactive stage (not part of the selected style's chain) — same row height
+   as an active one, so switching styles never changes the panel's size. */
+.dsp-param-row.inactive { opacity: 0.5; }
+.dsp-param-unused { font-style: italic; }
+/* Routing matrix (Audio tab, multichannel mode): sources (columns) x outputs
+   (rows), one radio group per column since a source can only feed one
+   output. CSS Grid, not a <table> — matches the rest of this app's markup
+   style; header + row-label cells and radio cells are all flat grid
+   children in row-major order, auto-flowing into place. */
+.dsp-matrix {
+    display: grid; gap: 1px; background: var(--hairline);
+    border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden;
+    margin-top: 6px;
+}
+.dsp-matrix-corner,
+.dsp-matrix-col-label,
+.dsp-matrix-row-label,
+.dsp-matrix-cell {
+    background: var(--bg-panel); padding: 8px 6px;
+    display: flex; align-items: center; justify-content: center;
+    /* Belt-and-suspenders alongside the grid `gap`: some row boundaries can
+       lose their 1px gap line to sub-pixel rounding on certain row counts.
+       An explicit border-bottom guarantees every row (incl. the last, against
+       the container's own border) gets a consistent separating line. */
+    border-bottom: 1px solid var(--hairline);
+}
+.dsp-matrix-col-label, .dsp-matrix-row-label {
+    font-size: 10.5px; font-weight: 800; letter-spacing: 0.03em; color: var(--text-secondary);
+    text-align: center;
+}
+.dsp-matrix-row-label { justify-content: flex-start; font-family: 'JetBrains Mono', monospace; }
+.dsp-matrix-cell {
+    cursor: pointer; transition: background 0.12s ease;
+}
+.dsp-matrix-cell input {
+    position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
+}
+/* Plain text glyph, not a Phosphor icon class — this specific icon (a bare
+   checkmark) was never used elsewhere in the app before this feature, so it
+   isn't in the self-hosted Phosphor subset and the font substitutes the
+   wrong glyph for its codepoint. A literal Unicode character sidesteps that
+   entirely; it only needs the page's normal font, not the icon font. */
+.dsp-matrix-check {
+    font-size: 15px; font-weight: 800; color: #fff; opacity: 0; transition: opacity 0.12s ease;
+}
+.dsp-matrix-cell:has(input:checked) {
+    background: var(--green-dot);
+}
+.dsp-matrix-cell:has(input:checked) .dsp-matrix-check {
+    opacity: 1;
+}
+
+/* Fixed AGC -> Compressor -> Limiter signal order, shown between
+   .dsp-param-row rows regardless of which stages are active/inactive. Plain
+   Unicode arrow, not a Phosphor icon class — see the .dsp-matrix-check
+   comment above; same self-hosted-subset problem, same fix. */
+.dsp-flow-arrow {
+    display: flex; justify-content: center; align-items: center;
+    padding: 5px 0; color: #fff; font-size: 20px; line-height: 1;
+}
 .mgr-stub-text { font-size: 12.5px; color: var(--text-tertiary); line-height: 1.5; margin-bottom: 14px; max-width: 560px; }
 .mgr-stub-text[hidden] { display: none; }
 .mgr-stub-text b { color: var(--text-primary); }

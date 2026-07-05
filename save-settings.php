@@ -2,6 +2,12 @@
 // License: PolyForm-Strict-1.0.0 (see LICENSE)
 /**
  * Save the feature switches (manager Options tab -> data/settings.txt).
+ * Also carries the DSP settings (manager Audio tab's DSP section -- dsp_enabled,
+ * dsp_type), the audio mode + simulated device toggle (audio_mode,
+ * device_sim4_enabled), and pfl_player when toggled from the Audio tab's
+ * stereo-mode "disable PFL" switch (same key the Options tab's own "Allow PFL
+ * player" switch uses) — all posted directly from there (one key at a time,
+ * applied live) rather than through the Options tab's draft/Save & Close flow.
  *
  * POST a JSON body:  { "settings": { "mobile": 0|1, "download": 0|1, ... } }
  *
@@ -40,6 +46,11 @@ foreach ($payload['settings'] as $k => $v) {
         $merged[$k] = in_array($iv, [30, 60, 90, 180, 0], true) ? $iv : 90;
         continue;
     }
+    if ($k === 'dsp_type') {
+        $merged[$k] = in_array($v, ['limiting', 'agcOnly', 'aggressive', 'gentle'], true) ? $v : 'aggressive';
+        continue;
+    }
+    if ($k === 'audio_mode') { $merged[$k] = $v === 'multichannel' ? 'multichannel' : 'stereo'; continue; }
     $merged[$k] = $v ? 1 : 0;
 }
 

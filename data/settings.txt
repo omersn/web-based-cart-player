@@ -10,7 +10,11 @@ pfl_buttons_players|1
 pfl_buttons_tree|1
 pfl_buttons_search|1
 show_out_labels|0
-show_ticker|0
+show_ticker|1
 dock_resize|1
 panel_resize|1
 log_retention|90
+dsp_enabled|1
+dsp_type|aggressive
+audio_mode|multichannel
+device_sim4_enabled|1

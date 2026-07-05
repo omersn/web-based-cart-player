@@ -87,7 +87,7 @@
     // Tags every playback-log line with which player fired it and which
     // (simulated) output it carries — lets the log double as a check that
     // different players are actually routed to different real devices, once
-    // there's real multi-output hardware behind OUT 1-4.
+    // there's real multi-output hardware behind OUT 1-5.
     const outputLabel = () => `Cart Wall -> OUT ${(window.ROUTING || {}).carts || 1}`;
 
     // Log a page refresh.

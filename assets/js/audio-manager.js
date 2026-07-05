@@ -1,7 +1,7 @@
 // License: PolyForm-Strict-1.0.0 (see LICENSE)
 /*
- * Audio manager (admin-only overlay): its own window, separate from the
- * Station manager.
+ * Audio library manager (admin-only overlay): its own window, separate from
+ * the Station manager.
  *
  * Every slot (incl. empty/disabled placeholders) in a sections list + ONE
  * detail panel: enable/disable, rename (pencil), colour, volume, an inline

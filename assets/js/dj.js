@@ -271,6 +271,10 @@
         pflStop(); // only one thing plays in PFL at a time
         const box = $('djPfl');
         const audio = new Audio(`uploads/${c.file}`);
+        // Dry by default (a fresh, throwaway element every preview, so this is
+        // always safe to call) — AudioEngine itself decides whether this
+        // actually wires in, based on the Audio tab's "DSP on PFL" setting.
+        window.AudioEngine.connectPfl(audio);
         audio.currentTime = c.start || 0;
         audio.volume = c.volume != null ? c.volume : 1;
         const dur = () => (c.end != null ? c.end : (audio.duration || 0)) - (c.start || 0);
@@ -334,48 +338,28 @@
         // deck fired the cart and which (simulated) output it carries — lets
         // the log double as a check that different players are actually
         // routed to different real devices, once there's real multi-output
-        // hardware behind OUT 1-4. dj.js runs in the parent document, not
+        // hardware behind OUT 1-5. dj.js runs in the parent document, not
         // grid.php's iframe, so it posts to grid.php explicitly.
         function logPlayback(cartName, action) {
             const out = (window.ROUTING || {})['player' + no] || no;
             fetch('grid.php', { method: 'POST', body: `${new Date().toLocaleString()} - ${cartName} - ${action} - DJ Player ${no} -> OUT ${out}` });
         }
 
-        // VU meter: one shared analyser per deck — every audio element the
-        // deck ever creates (load() below) routes through it, so the meter
-        // follows whichever item in the run is actually on air. Real playback
-        // routes through the persistent AudioEngine's master bus (audio-engine.js);
-        // a <audio> element can only ever get ONE MediaElementSourceNode for its
-        // whole lifetime, so the engine owns that call and this analyser is a
-        // parallel, metering-only tap off the GainNode it hands back.
-        let vuAnalyser = null, vuData = null, vuRaf = null, vuAvg = 0;
+        // Real playback routes through the persistent AudioEngine's master bus
+        // (audio-engine.js) via connectDeck(), which also hands the engine's
+        // shared per-deck analyser to index.php's one central meter-driver
+        // loop — that loop now drives BOTH the meter drawer's Player channel
+        // AND this deck's own .dj-deck-vu-fill directly, so there's only ever
+        // ONE analyser and ONE rAF loop per deck, not a second local one here
+        // duplicating the same read (a <audio> element can only ever get ONE
+        // MediaElementSourceNode for its whole lifetime anyway, so the engine
+        // has to own that call regardless).
         function vuWire(audio) {
-            try {
-                const gainNode = window.AudioEngine.connectDeck(no, audio);
-                if (!vuAnalyser) {
-                    vuAnalyser = window.AudioEngine.audioContext.createAnalyser();
-                    vuAnalyser.fftSize = 64;
-                    vuAnalyser.smoothingTimeConstant = 0.75;
-                    vuData = new Uint8Array(vuAnalyser.frequencyBinCount);
-                }
-                gainNode.connect(vuAnalyser);
-            } catch (e) { /* metering is best-effort; playback still works without it */ }
+            try { window.AudioEngine.connectDeck(no, audio); }
+            catch (e) { /* metering is best-effort; playback still works without it */ }
         }
-        function vuDrive() {
-            if (!vuAnalyser) return;
-            vuAnalyser.getByteFrequencyData(vuData);
-            let sum = 0;
-            for (let i = 0; i < vuData.length; i++) sum += vuData[i];
-            const level = sum / vuData.length / 255;
-            vuAvg = vuAvg * 0.72 + level * 0.28;
-            const fill = el('.dj-deck-vu-fill');
-            if (fill) fill.style.height = `${Math.max(0, Math.min(100, vuAvg * 165))}%`;
-            vuRaf = requestAnimationFrame(vuDrive);
-        }
-        function vuStart() { window.AudioEngine.resume(); if (!vuRaf) vuDrive(); }
+        function vuStart() { window.AudioEngine.resume(); }
         function vuStop() {
-            if (vuRaf) { cancelAnimationFrame(vuRaf); vuRaf = null; }
-            vuAvg = 0;
             const fill = el('.dj-deck-vu-fill');
             if (fill) fill.style.height = '0%';
         }

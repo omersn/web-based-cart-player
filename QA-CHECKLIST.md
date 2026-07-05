@@ -111,7 +111,7 @@ on the board to queue them. The panel appears on the right once at least one car
       rail and the reserved gutter should always line up correctly regardless of player count.
 
 ## 11. Crossfade editors — scrubbable playhead (2026-07-04)
-- [ ] **Chain editor** (Audio manager > select a chained cart > Edit chain): click Play, then while
+- [ ] **Chain editor** (Audio library manager > select a chained cart > Edit chain): click Play, then while
       it's running, click or drag anywhere in the lanes. **Expected:** the playhead jumps to the
       clicked position and playback **continues** (does not stop).
 - [ ] Chain editor shows a **gray overlap strip** straddling the junction between two chained lanes,
@@ -141,18 +141,18 @@ on the board to queue them. The panel appears on the right once at least one car
       reload the player page, and re-open Maintenance > Logs — the old lines are gone, recent lines
       remain, and any line the parser can't date is never removed.
 
-## 14. Audio manager — trimmer drafts, no separate Save (2026-07-04)
-- [ ] Open Audio manager, pick a cart, confirm there is **no "Save trim" button** next to Play /
+## 14. Audio library manager — trimmer drafts, no separate Save (2026-07-04)
+- [ ] Open Audio library manager, pick a cart, confirm there is **no "Save trim" button** next to Play /
       Play trimmed.
 - [ ] Drag a trim handle, then select a **different** cart, then select the original cart again —
       the trim change is **still shown** (held in the in-memory draft).
 - [ ] With that pending trim change, click **Cancel** — the unsaved-changes warning dialog appears;
       confirming discard reverts the trim back to its last-saved value (re-select the cart to check).
 - [ ] With a pending trim change, click **Save & Close**, then reload the whole player page and
-      re-open Audio manager on that cart — the new trim persisted.
+      re-open Audio library manager on that cart — the new trim persisted.
 
 ## 15. Layout fixes (2026-07-04)
-- [ ] On a wide window, Audio manager's **"Edit chain"** button sits directly under the Chain toggle
+- [ ] On a wide window, Audio library manager's **"Edit chain"** button sits directly under the Chain toggle
       (not stranded far to the right of the row).
 - [ ] **"Move"** sits directly above **"Clear this slot"** in the same section, with no separating
       line between them.

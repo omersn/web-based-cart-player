@@ -23,7 +23,7 @@
     // fired the cart and which (simulated) output it carries — lets the log
     // double as a check that different players are actually routed to
     // different real devices, once there's real multi-output hardware
-    // behind OUT 1-4. Runs in the parent document, not grid.php's iframe, so
+    // behind OUT 1-5. Runs in the parent document, not grid.php's iframe, so
     // it posts to grid.php explicitly.
     function logPlayback(name, action) {
         const out = (window.ROUTING || {}).autoplayer || 1;
@@ -279,14 +279,34 @@
         const l = el('autoList'); l.scrollTop = l.scrollHeight; // reveal the just-added item(s) at the bottom
     }
 
+    // Stands a still-in-flight priming cycle down once an item's <audio>
+    // element is about to carry REAL, audible playback (on-air advance,
+    // resume, or a planner preview). Without this, primeAudio()'s delayed
+    // muted-play cleanup can fire after real playback has already started on
+    // the same element, silently pausing + rewinding it mid-air — the advance
+    // timer is wall-clock/duration-based, not tied to playback events, so it
+    // has no idea audio actually stopped and just proceeds on schedule as if
+    // nothing happened. Call this before any real .play() on item.audio.
+    function cancelPriming(item) {
+        item._primeCancelled = true;
+        if (item._primeTimer) { clearTimeout(item._primeTimer); item._primeTimer = null; }
+    }
     function primeAudio(item) {
         const a = item.audio;
         const onReady = () => {
             a.removeEventListener('canplaythrough', onReady);
+            if (item._primeCancelled) return; // real playback already claimed this element
             const vol = a.volume; a.volume = 0;
             try { a.currentTime = item.start; } catch (e) {}
             const p = a.play();
-            if (p) p.then(() => setTimeout(() => { a.pause(); try { a.currentTime = item.start; } catch (e) {} a.volume = vol; }, 60)).catch(() => { a.volume = vol; });
+            if (p) p.then(() => {
+                if (item._primeCancelled) return;
+                item._primeTimer = setTimeout(() => {
+                    item._primeTimer = null;
+                    if (item._primeCancelled) return;
+                    a.pause(); try { a.currentTime = item.start; } catch (e) {} a.volume = vol;
+                }, 60);
+            }).catch(() => { a.volume = vol; });
         };
         a.addEventListener('canplaythrough', onReady);
         a.load();
@@ -394,6 +414,7 @@
         if (state.playingIndex >= state.items.length) { endPlayback(); render(); return; }
         const it = state.items[state.playingIndex];
         const a = it.audio;
+        cancelPriming(it);
         try { a.currentTime = it.start; } catch (e) {}
         a.volume = it.volume;
         a.play().catch(() => {});
@@ -413,6 +434,7 @@
     function resume() {
         const it = state.items[state.playingIndex];
         if (!it) { playNext(); return; }
+        cancelPriming(it);
         it.audio.play().catch(() => {});
         logPlayback(it.name, 'played');
         it._timer = setTimeout(() => playNext(), Math.max(0, (itemEnd(it) - it.audio.currentTime) * 1000 - advanceLeadMs(state.playingIndex + 1)));
@@ -1376,6 +1398,7 @@
         if (rowPreview && rowPreview.item === it) { stopRowPreview(); return; }
         stopRowPreview();
         const a = it.audio;
+        cancelPriming(it);
         try { a.currentTime = it.start; } catch (e) {}
         a.volume = it.volume != null ? it.volume : 1;
         const onTime = () => { if (a.currentTime >= itemEnd(it)) stopRowPreview(); };

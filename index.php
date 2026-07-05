@@ -195,14 +195,14 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 <button type="button" class="icon-btn" id="chip-planner" title="Break planner" <?= $settings['automation'] ? '' : 'disabled' ?>>
                     <i class="ph ph-calendar-check"></i>
                 </button>
-                <button type="button" class="icon-btn" id="chip-audiomgr" title="Audio manager">
+                <button type="button" class="icon-btn" id="chip-audiomgr" title="Audio library manager">
                     <i class="ph ph-waveform"></i>
                 </button>
                 <?php else: ?>
                 <button type="button" class="icon-btn locked" id="chip-planner" title="Break planner — sign in" onclick="location.href='login.php';">
                     <i class="ph ph-calendar-check"></i>
                 </button>
-                <button type="button" class="icon-btn locked" id="chip-audiomgr" title="Audio manager — sign in" onclick="location.href='login.php';">
+                <button type="button" class="icon-btn locked" id="chip-audiomgr" title="Audio library manager — sign in" onclick="location.href='login.php';">
                     <i class="ph ph-waveform"></i>
                 </button>
                 <?php endif; ?>
@@ -433,26 +433,6 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             </div>
         </div>
 
-        <!-- Meter bridge: master + per-source level/GR/limiting readouts, driven
-             directly by audio-engine.js's analysers (same document, no
-             postMessage) — see the inline script right after that engine's
-             <script> tag near the end of this file. Cart Wall stays idle until
-             Stage 2 of the persistent-audio-engine work connects cart playback
-             through the engine; Autoplayer/Player 1-3 light up once Stage 1's
-             connectAutoplayer()/connectDeck() calls land. -->
-        <div class="meter-bridge" id="meterBridge">
-            <div class="meter-ch" data-ch="cartwall"><div class="meter-track"><div class="meter-fill"></div></div><span class="meter-label">CART WALL</span></div>
-            <div class="meter-ch" data-ch="auto"><div class="meter-track"><div class="meter-fill"></div></div><span class="meter-label">AUTO</span></div>
-            <div class="meter-ch" data-ch="player1"><div class="meter-track"><div class="meter-fill"></div></div><span class="meter-label">PLAYER 1</span></div>
-            <div class="meter-ch" data-ch="player2"><div class="meter-track"><div class="meter-fill"></div></div><span class="meter-label">PLAYER 2</span></div>
-            <div class="meter-ch" data-ch="player3"><div class="meter-track"><div class="meter-fill"></div></div><span class="meter-label">PLAYER 3</span></div>
-            <span class="meter-sep"></span>
-            <div class="meter-ch meter-master" data-ch="master"><div class="meter-track"><div class="meter-fill"></div></div><span class="meter-label">MASTER</span></div>
-            <div class="meter-ch meter-gr" data-ch="agc"><div class="meter-track meter-track-gr"><div class="meter-fill"></div></div><span class="meter-label">AGC</span></div>
-            <div class="meter-ch meter-gr" data-ch="comp"><div class="meter-track meter-track-gr"><div class="meter-fill"></div></div><span class="meter-label">COMP</span></div>
-            <div class="meter-ch meter-gr" data-ch="limit"><div class="meter-track meter-track-gr"><div class="meter-fill"></div></div><span class="meter-label">LIMIT</span></div>
-        </div>
-
         <!-- Drag to widen the automation sidebar (Options tab's "Allow panel
              resize", off by default). Severely capped span — min is the
              panel's own default width, can't shrink it. -->
@@ -646,6 +626,30 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
         <?php endif; ?>
         <span class="status-pill" id="connectionPill" role="button" tabindex="0"><span class="pulse-dot"></span><span class="status-label" id="connectionLabel">CONNECTED</span></span>
         <span class="status-pill audio" id="audioPill" role="button" tabindex="0"><span class="pulse-dot"></span><span class="status-label" id="audioLabel">AUDIO ENGINE KEEP-ALIVE ON</span></span>
+        <!-- Master level + DSP status: two small pills, same shape/reveal as
+             the pills above, driven by audio-engine.js's analysers directly
+             (see the inline script near the end of this file). Hovering
+             EITHER expands BOTH labels AND both flyouts together (the
+             group-level :hover rule below), the same "reveal together" trick
+             the hide-ticker collapsed cluster already uses further down in
+             the stylesheet. In stereo mode the flyouts stay empty (nothing to
+             break down beyond the one label) — in multichannel mode they
+             fill with one row per output channel, since — per the user's own
+             framing — there's no single "master" to summarize there. Not
+             click-actionable (no popup), so no role/tabindex, unlike the two
+             pills above. -->
+        <span class="meter-pill-group" id="meterPillGroup">
+            <span class="status-pill meter-pill" id="meterPill">
+                <span class="level-dots" id="meterDots"><i></i><i></i><i></i><i></i></span>
+                <span class="status-label" id="meterStatusLabel">MASTER LEVEL</span>
+                <span class="meter-flyout" id="meterFlyout"></span>
+            </span>
+            <span class="status-pill meter-pill dsp-pill" id="dspPill">
+                <span class="level-dots" id="dspDots"><i></i><i></i><i></i><i></i></span>
+                <span class="status-label" id="dspStatusLabel">DSP</span>
+                <span class="meter-flyout" id="dspFlyout"></span>
+            </span>
+        </span>
         <span class="ticker-msg" id="tickerMsg"><?= $statusText !== '' ? htmlspecialchars($statusText, ENT_QUOTES, 'UTF-8') : 'Welcome to the Web-based Cart Player demo &mdash; right-click a cart to schedule it for the top of the hour.' ?></span>
         <?php if (is_admin()): ?>
         <!-- In-GUI ticker edit (admin-only): pencil swaps the message for a
@@ -672,8 +676,8 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     </div>
 
     <?php if (is_admin()): ?>
-    <!-- Audio manager overlay (admin): its own window, separate from the
-         Station manager below — every slot (incl. empty/disabled) in a
+    <!-- Audio library manager overlay (admin): its own window, separate from
+         the Station manager below — every slot (incl. empty/disabled) in a
          sections list + one detail panel. Rendered by audio-manager.js from
          MANAGER_DATA. Field edits (enable/name/volume/chain/colour/trim, and
          the chain crossfade editor's own Save) are a draft, committed only on
@@ -683,7 +687,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     <div class="planner-overlay" id="audioManagerOverlay" hidden>
         <div class="planner-frame">
             <header class="planner-head">
-                <h2><i class="ph ph-waveform"></i> Audio manager</h2>
+                <h2><i class="ph ph-waveform"></i> Audio library manager</h2>
                 <div class="planner-head-actions">
                     <span class="planner-msg" id="audioManagerMsg"></span>
                     <button type="button" class="planner-save" id="audioManagerSave"><i class="ph ph-floppy-disk"></i> Save &amp; Close</button>
@@ -853,7 +857,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             <div class="mgr-tabs">
                 <button type="button" class="mgr-tab active" data-tab="station">Station</button>
                 <button type="button" class="mgr-tab" data-tab="options">Options</button>
-                <button type="button" class="mgr-tab" data-tab="routing">Routing</button>
+                <button type="button" class="mgr-tab" data-tab="routing">Audio</button>
                 <button type="button" class="mgr-tab" data-tab="maintenance">Maintenance</button>
             </div>
             <div class="mgr-body">
@@ -882,22 +886,108 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                         <a class="opt-link" href="admin.php"><i class="ph ph-clock-counter-clockwise"></i> Legacy admin panel</a>
                     </div>
                 </div>
-                <!-- ROUTING: which of the four SIMULATED stereo outputs each
-                     DJ player and the PFL (preview) bus feeds. GUI-level
-                     until the appification phase maps them to real devices. -->
+                <!-- AUDIO: mode switch (stereo vs multichannel) — the rest of
+                     this tab's content is a full redefinition per mode, not
+                     additive:
+                       STEREO   only a "disable PFL entirely" switch (reuses
+                                pfl_player — no routing panel at all, since
+                                there's only one combined output to assign
+                                anything to).
+                       MULTI    a simulated device list feeding a routing
+                                matrix (sources x outputs — PFL included as a
+                                real routable source here, not a special case).
+                     DSP (untouched, shared across both modes) follows. -->
                 <div class="mgr-pane" id="mgrPaneRouting" hidden>
-                    <p class="mgr-stub-text">Four simulated stereo outputs (<b>OUT 1&ndash;4</b>) for GUI testing —
-                        assignments are stored and shown across the player, and will map to real sound
-                        devices in the desktop build.</p>
-                    <div class="opt-list" id="routingList"></div>
-                    <hr class="ma-hr">
-                    <!-- PFL (preview): the small mini-player docked under the DJ
-                         library, its per-row/per-deck send buttons, and the
-                         output every single-play preview (planner tree, audio
-                         manager, DJ library) carries. -->
                     <div class="mnt-section">
-                        <h3>PFL (preview)</h3>
-                        <div class="opt-list" id="pflOptList"></div>
+                        <h3>Audio mode</h3>
+                        <div class="auto-mode-switch" id="audioModeSwitch">
+                            <button type="button" data-mode="stereo" id="audioModeStereo" class="active">STEREO</button>
+                            <button type="button" data-mode="multichannel" id="audioModeMulti">MULTI-CHANNEL</button>
+                        </div>
+                        <p class="mgr-stub-text">Stereo sums every source into one combined output — the only
+                            other control here is a way to guarantee PFL preview can never leak into it.
+                            Multi-channel gives independent output channels — no single "master" — with PFL as
+                            a real routable source alongside the others. Devices below are simulated for now;
+                            real per-device hardware output is future desktop-build work.</p>
+                    </div>
+                    <hr class="ma-hr">
+                    <!-- STEREO mode's entire remaining content. Positively
+                         framed ("Allow PFL," not "Disable PFL") on purpose —
+                         checked=green/allowed, unchecked=red/blocked, matches
+                         .opt-switch's own native on/off colors instead of
+                         fighting them with a negatively-worded label. -->
+                    <div class="mnt-section" id="stereoPflSection">
+                        <h3>PFL</h3>
+                        <label class="ma-chain"><input type="checkbox" class="opt-switch" id="pflEnabledToggle" checked><span>Allow PFL</span></label>
+                        <p class="mgr-stub-text">With one combined output, turning this off is the only way to guarantee
+                            cue/preview audio can never mix into the on-air program.</p>
+                    </div>
+                    <!-- MULTI-CHANNEL mode's entire remaining content. -->
+                    <div class="mnt-section" id="multiChannelSection" hidden>
+                        <h3>Devices</h3>
+                        <p class="mgr-stub-text">Simulated for now — real hardware detection is future work.</p>
+                        <div class="opt-list" id="deviceList"></div>
+                        <hr class="ma-hr">
+                        <h3>Routing matrix</h3>
+                        <p class="mgr-stub-text">One output per source (a source can only feed one channel at a
+                            time). PFL is a real routable source here — route it to its own channel to keep it
+                            separate from on-air content, or deliberately share one if that's what you want.</p>
+                        <div class="dsp-matrix" id="routingMatrix"></div>
+                    </div>
+                    <hr class="ma-hr">
+                    <!-- Which UI surfaces show a PFL preview button — orthogonal
+                         to stereo vs multichannel, so it stays visible in both
+                         (unlike the switch above, which only lives in stereo
+                         mode's section); hidden entirely while PFL is off,
+                         since it's moot then. -->
+                    <div class="mnt-section" id="pflSurfacesSection">
+                        <h3>PFL preview surfaces</h3>
+                        <p class="mgr-stub-text">Which parts of the UI show a PFL preview button.</p>
+                        <div class="opt-list" id="pflSurfacesList"></div>
+                    </div>
+                    <hr class="ma-hr">
+                    <!-- DSP: the persistent audio engine's ONE shared chain
+                         (AGC/compressor/limiter — audio-engine.js), applied
+                         uniformly to every on-air source, in either mode.
+                         Applies immediately on change, unlike the rest of
+                         this overlay — there's nothing to stage as a draft
+                         here, and gating an audible A/B comparison behind
+                         Save & Close would make it clunky to actually use.
+                         Persists straight to settings.txt via
+                         save-settings.php as each control changes. Wired up
+                         in manager.js's wireDspTab()/renderDsp(), not the
+                         draft/save flow the rest of this tab uses. -->
+                    <div class="mnt-section">
+                        <div class="mnt-section-head">
+                            <h3>DSP</h3>
+                            <button type="button" class="mnt-info-btn" id="dspInfoBtn" title="What does each style do?">?</button>
+                        </div>
+                        <p class="mgr-stub-text" id="dspInfo" hidden>
+                            <b>Limiting only</b> &mdash; just a safety brickwall limiter catching loud peaks; otherwise untouched.<br>
+                            <b>AGC Only</b> &mdash; a slow automatic leveler that evens out loudness across sources over several seconds.<br>
+                            <b>Gentle Radio Sound</b> &mdash; a mild version of the full chain (leveler + compressor + limiter).<br>
+                            <b>Aggressive Radio Sound</b> &mdash; the same chain tuned harder: denser, more &ldquo;radio-processed,&rdquo; less dynamic range.
+                        </p>
+                        <p class="mgr-stub-text">One chain, shared by every on-air source. Changes take effect immediately.</p>
+                        <div class="ma-row"><label>Style</label>
+                            <select class="ma-select" id="dspTypeSelect">
+                                <option value="limiting">Limiting only</option>
+                                <option value="agcOnly">AGC Only</option>
+                                <option value="gentle">Gentle Radio Sound</option>
+                                <option value="aggressive" selected>Aggressive Radio Sound</option>
+                            </select>
+                        </div>
+                        <div class="ma-row"><label>Processing</label>
+                            <label class="ma-chain"><input type="checkbox" class="opt-switch" id="dspEnabledToggle" checked><span>Enabled, for every on-air source</span></label>
+                        </div>
+                        <!-- Real, currently-configured numbers for the selected style — not
+                             a live meter reading (see the footer's Level/DSP pills for that).
+                             Always 3 rows (active + "not used") so the panel's height doesn't
+                             jump around when the style changes — one row per active stage,
+                             rebuilt on every Style change. -->
+                        <div class="ma-row ma-row-top"><label>Parameters</label>
+                            <div class="dsp-params" id="dspParams"></div>
+                        </div>
                     </div>
                 </div>
                 <!-- MAINTENANCE: backup/restore (.cartdb, cross-compatible with any
@@ -1474,7 +1564,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
             if (window.DJMode) window.DJMode.stopAll();
         }
         // Cart names/colours/enable-state/trims/labels can all change from the
-        // Station manager or the Audio manager; both call this on close so the
+        // Station manager or the Audio library manager; both call this on close so the
         // board, the floating/docked ID windows, and the clock pick it up
         // without needing a full page reload. Only live (non about:blank)
         // frames are touched. The reload is masked by the same progress
@@ -2075,46 +2165,98 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
     </script>
     <script src="<?= asset_v('assets/js/audio-engine.js') ?>"></script>
     <script>
-        // Meter bridge: reads AudioEngine's analysers/DynamicsCompressorNode
-        // .reduction values directly (same document as the engine — no
-        // postMessage needed). Runs continuously; channels simply read 0 while
-        // nothing is connected to them yet (Cart Wall until Stage 2 lands).
+        // Footer meter/DSP pills: read AudioEngine's analysers/reduction
+        // values directly (same document as the engine — no postMessage
+        // needed). This one loop also drives each DJ deck's OWN small VU bar
+        // (.dj-deck-vu-fill) from the same per-deck analyser dj.js hands to
+        // the engine — dj.js used to run a second, separate analyser + rAF
+        // loop per deck for that; consolidated here so there's exactly one
+        // read per deck per frame, not two.
         (() => {
-            const CH = [
-                { key: 'cartwall', analyser: () => window.AudioEngine.cartWallAnalyser },
-                { key: 'auto', analyser: () => window.AudioEngine.autoplayerAnalyser },
-                { key: 'player1', analyser: () => window.AudioEngine.deckAnalyser(1) },
-                { key: 'player2', analyser: () => window.AudioEngine.deckAnalyser(2) },
-                { key: 'player3', analyser: () => window.AudioEngine.deckAnalyser(3) },
-                { key: 'master', analyser: () => window.AudioEngine.masterAnalyser },
-            ];
-            const GR = [
-                { key: 'agc', reduction: () => window.AudioEngine.reductionDb.agc() },
-                { key: 'comp', reduction: () => window.AudioEngine.reductionDb.compressor() },
-                { key: 'limit', reduction: () => window.AudioEngine.reductionDb.limiter() },
-            ];
-            const fills = {};
-            document.querySelectorAll('#meterBridge .meter-ch').forEach((el) => {
-                fills[el.dataset.ch] = el.querySelector('.meter-fill');
-            });
+            const meterDots = Array.from(document.querySelectorAll('#meterDots i'));
+            const dspDots = Array.from(document.querySelectorAll('#dspDots i'));
+            const meterFlyout = document.getElementById('meterFlyout');
+            const dspFlyout = document.getElementById('dspFlyout');
+            const meterLabel = document.getElementById('meterStatusLabel');
+            const DECKS = [1, 2, 3];
+            const deckFills = DECKS.map((n) => document.querySelector('#djDeck' + n + ' .dj-deck-vu-fill'));
+            // Lights the first N of `dots` solid, dims the rest — a small LED
+            // ladder rather than a proportional bar.
+            function lightDots(dots, value) {
+                const lit = Math.max(0, Math.min(dots.length, Math.round(value * dots.length)));
+                dots.forEach((dot, i) => { dot.style.opacity = i < lit ? '1' : '0.15'; });
+            }
+            // One row per channel, only in multichannel mode — stereo mode
+            // leaves both flyouts empty (the plain label already says it
+            // all; :empty CSS keeps an empty flyout from ever showing).
+            let channelDots = []; // [{ level: [i,i,i,i], gr: [i,i,i,i] }, ...]
+            function buildFlyouts(mode) {
+                meterFlyout.innerHTML = '';
+                dspFlyout.innerHTML = '';
+                channelDots = [];
+                if (mode !== 'multichannel') return;
+                for (let n = 1; n <= window.AudioEngine.availableOutputCount(); n++) {
+                    const levelRow = document.createElement('span');
+                    levelRow.className = 'meter-flyout-row';
+                    levelRow.innerHTML = `<b>OUT ${n}</b><span class="level-dots"><i></i><i></i><i></i><i></i></span>`;
+                    meterFlyout.appendChild(levelRow);
+                    const grRow = document.createElement('span');
+                    grRow.className = 'meter-flyout-row';
+                    grRow.innerHTML = `<b>OUT ${n}</b><span class="level-dots"><i></i><i></i><i></i><i></i></span>`;
+                    dspFlyout.appendChild(grRow);
+                    channelDots.push({
+                        level: Array.from(levelRow.querySelectorAll('.level-dots i')),
+                        gr: Array.from(grRow.querySelectorAll('.level-dots i')),
+                    });
+                }
+            }
             function frame() {
-                CH.forEach(({ key, analyser }) => {
-                    const fill = fills[key];
-                    if (!fill) return;
-                    const level = window.AudioEngine.levelOf(analyser());
-                    fill.style.height = Math.min(100, level * 140) + '%';
+                // The compact pills stay aggregates (loudest channel / hardest-
+                // working DSP) even in multichannel mode — the per-channel
+                // breakdown lives in the hover flyout, not the collapsed dots.
+                lightDots(meterDots, Math.min(1, window.AudioEngine.masterLevel() * 3.5)); // headroom scaling — matches the old bars' feel
+                lightDots(dspDots, Math.min(1, window.AudioEngine.dspActivity() / 15));
+
+                channelDots.forEach((ch, i) => {
+                    const n = i + 1;
+                    lightDots(ch.level, Math.min(1, window.AudioEngine.levelOf(window.AudioEngine.channelAnalyser(n)) * 3.5));
+                    lightDots(ch.gr, Math.min(1, window.AudioEngine.channelReductionDb(n) / 15));
                 });
-                GR.forEach(({ key, reduction }) => {
-                    const fill = fills[key];
+
+                DECKS.forEach((n, i) => {
+                    const fill = deckFills[i];
                     if (!fill) return;
-                    // .reduction is 0 (none) to roughly -20dB+ (heavy) — map
-                    // 0..20dB of reduction onto 0..100% fill height.
-                    const db = Math.abs(reduction() || 0);
-                    fill.style.height = Math.min(100, (db / 20) * 100) + '%';
+                    const lvl = window.AudioEngine.levelOf(window.AudioEngine.deckAnalyser(n));
+                    fill.style.height = Math.min(100, lvl * 165) + '%';
                 });
                 requestAnimationFrame(frame);
             }
             requestAnimationFrame(frame);
+
+            // DSP pill's label/on-off look + the audio-mode-dependent label and
+            // flyout rows: none of this changes often, so a slow poll is
+            // plenty — no need to recompute every animation frame. Catches
+            // changes made from the Station Manager's Audio tab.
+            const dspLabel = document.getElementById('dspStatusLabel');
+            const dspPill = document.getElementById('dspPill');
+            const TYPE_LABELS = { limiting: 'LIMITING', agcOnly: 'AGC ONLY', aggressive: 'AGGRESSIVE', gentle: 'GENTLE' };
+            let lastMode = null;
+            let lastCount = null;
+            function syncDspStatus() {
+                const mode = window.AudioEngine.getAudioMode();
+                const count = window.AudioEngine.availableOutputCount();
+                if (mode !== lastMode || (mode === 'multichannel' && count !== lastCount)) {
+                    lastMode = mode;
+                    lastCount = count;
+                    buildFlyouts(mode);
+                    meterLabel.textContent = mode === 'multichannel' ? 'OUTPUTS' : 'MASTER LEVEL';
+                }
+                const on = window.AudioEngine.isEnabled();
+                dspLabel.textContent = 'DSP: ' + (on ? (TYPE_LABELS[window.AudioEngine.getType()] || window.AudioEngine.getType()) : 'OFF');
+                dspPill.classList.toggle('standby', !on);
+            }
+            syncDspStatus();
+            setInterval(syncDspStatus, 1000);
         })();
     </script>
     <script src="<?= asset_v('assets/js/automation.js') ?>"></script>

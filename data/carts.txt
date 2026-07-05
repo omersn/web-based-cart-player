@@ -1,5 +1,5 @@
 [ID] Station Opener 1|demo01.mp3|0|2|4.995
-[ID] Station Opener 2|demo02.mp3|0.005|2|4.995
+[ID] Station Opener 2|demo02.mp3|0.005|2|4.995|0.62
 [ID] Station Opener 3|demo03.mp3|0.005|2|4.995
 Hourly Transition|demo04.mp3|0.005|5|4.995
 Jingle Sting|demo05.mp3|0.005|1|4.995

@@ -114,7 +114,9 @@ function save_cross_data(array $flags, array $fades): bool
 function load_routing(): array
 {
     // manager_preview: the audio-manager chain editor's own Play button.
-    // Unlike the others it may also be 0 ("PFL output") rather than only 1-4.
+    // Unlike the others it may also be 0 ("PFL output") rather than only 1-5.
+    // 5 outputs matches the audio engine's multichannel mode ceiling
+    // (audio-engine.js's NUM_CHANNELS) — stereo mode ignores the exact value.
     $r = ['player1' => 1, 'player2' => 2, 'player3' => 3, 'pfl' => 4, 'carts' => 1, 'autoplayer' => 1, 'manager_preview' => 0];
     $path  = data_path('routing.txt');
     $lines = file_exists($path) ? file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
@@ -124,7 +126,7 @@ function load_routing(): array
         $out = (int) ($p[1] ?? 0);
         if (!array_key_exists($key, $r)) continue;
         $min = $key === 'manager_preview' ? 0 : 1;
-        if ($out >= $min && $out <= 4) $r[$key] = $out;
+        if ($out >= $min && $out <= 5) $r[$key] = $out;
     }
     return $r;
 }
@@ -136,7 +138,7 @@ function save_routing(array $r): bool
     foreach (load_routing() as $key => $def) {
         $out = (int) ($r[$key] ?? $def);
         $min = $key === 'manager_preview' ? 0 : 1;
-        $body .= $key . '|' . max($min, min(4, $out)) . "\n";
+        $body .= $key . '|' . max($min, min(5, $out)) . "\n";
     }
     return file_put_contents(data_path('routing.txt'), $body, LOCK_EX) !== false;
 }
@@ -287,8 +289,21 @@ function load_settings(): array
         'pfl_buttons_carts' => 1, 'pfl_buttons_players' => 1, 'pfl_buttons_tree' => 1, 'pfl_buttons_search' => 1,
         'show_out_labels' => 0, 'show_ticker' => 1, 'dock_resize' => 0, 'panel_resize' => 0,
         'log_retention' => 90,
+        // Persistent audio engine: ONE shared DSP style (AGC/compressor/limiter
+        // parameters), applied to every on-air source uniformly — not per-channel,
+        // even in multichannel mode below (see audio-engine.js's header comment).
+        'dsp_enabled' => 1, 'dsp_type' => 'aggressive',
+        // Stereo (today's single combined output, PFL always fully dry — see
+        // pfl_player below) vs multichannel (independent output channels, PFL
+        // becomes a routable source like any other — manager Audio tab's mode
+        // switch). Real per-device hardware output is future desktop-build
+        // work — device_sim4_enabled is one SIMULATED device (4 discrete
+        // stereo outputs) for the routing matrix to have something to target
+        // today; not wired to anything real yet.
+        'audio_mode' => 'stereo', 'device_sim4_enabled' => 1,
     ];
     $logRetentionOptions = [30, 60, 90, 180, 0];
+    $dspTypes = ['limiting', 'agcOnly', 'aggressive', 'gentle'];
     $path  = data_path('settings.txt');
     $lines = file_exists($path) ? file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) : [];
     foreach ($lines as $line) {
@@ -299,6 +314,16 @@ function load_settings(): array
         if ($k === 'log_retention') {
             $iv = (int) trim($v);
             $s[$k] = in_array($iv, $logRetentionOptions, true) ? $iv : 90;
+            continue;
+        }
+        if ($k === 'dsp_type') {
+            $tv = trim($v);
+            $s[$k] = in_array($tv, $dspTypes, true) ? $tv : 'aggressive';
+            continue;
+        }
+        if ($k === 'audio_mode') {
+            $mv = trim($v);
+            $s[$k] = $mv === 'multichannel' ? 'multichannel' : 'stereo';
             continue;
         }
         $s[$k] = trim($v) === '1' ? 1 : 0;
@@ -330,6 +355,7 @@ function station_logo(): string
 function save_settings(array $s): bool
 {
     $logRetentionOptions = [30, 60, 90, 180, 0];
+    $dspTypes = ['limiting', 'agcOnly', 'aggressive', 'gentle'];
     $lines = [];
     foreach (load_settings() as $k => $def) {
         $v = isset($s[$k]) ? $s[$k] : $def;
@@ -339,6 +365,11 @@ function save_settings(array $s): bool
             $lines[] = $k . '|' . (string) (in_array($iv, $logRetentionOptions, true) ? $iv : 90);
             continue;
         }
+        if ($k === 'dsp_type') {
+            $lines[] = $k . '|' . (in_array($v, $dspTypes, true) ? $v : 'aggressive');
+            continue;
+        }
+        if ($k === 'audio_mode') { $lines[] = $k . '|' . ($v === 'multichannel' ? 'multichannel' : 'stereo'); continue; }
         $lines[] = $k . '|' . ($v ? '1' : '0');
     }
     return file_put_contents(data_path('settings.txt'), implode("\n", $lines) . "\n", LOCK_EX) !== false;

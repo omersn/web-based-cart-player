@@ -40,7 +40,7 @@ anywhere real. The audio, content and credentials are sample data.
 - **Mobile access** — a QR code opens a touch-friendly section view on a phone.
 - **Search** — a command-palette-style search across every cart that jumps to and flashes the result.
 - **Admin tooling** — a Station Manager (branding, feature toggles, routing, backup/restore, and
-  logs with configurable retention) plus a dedicated Audio Manager for per-cart editing.
+  logs with configurable retention) plus a dedicated Audio Library Manager for per-cart editing.
 - **Two roles** — full `admin` and a limited `dj` view.
 
 ---
@@ -62,9 +62,9 @@ independently draggable, resizable, minimizable window over the board.
 and the upcoming schedule visible above it.
 ![Autoplayer active](docs/screenshots/autoplayer-active.png)
 
-**Audio manager** — per-cart detail: enable/rename/colour/volume, an inline waveform trimmer,
+**Audio library manager** — per-cart detail: enable/rename/colour/volume, an inline waveform trimmer,
 chaining (with its own crossfade editor), move, and file replace.
-![Audio manager](docs/screenshots/audio-manager.png)
+![Audio library manager](docs/screenshots/audio-manager.png)
 
 **Chain crossfade editor** — one lane per item in a chain, each with a draggable fade-in handle and
 a live cross-time readout; Play auditions the whole chain through the crossfades.
@@ -90,7 +90,7 @@ index.php  ── the player shell (Carts mode OR DJ mode) ───────
    ├─ assets/js/dj.js                   → DJ mode: library tree + manual decks   │
    ├─ assets/js/automation.js           → Autoplayer engine + breaks strip       │
    ├─ assets/js/manager.js              → Station Manager overlay               │
-   ├─ assets/js/audio-manager.js        → Audio Manager overlay                 │
+   ├─ assets/js/audio-manager.js        → Audio Library Manager overlay         │
    └─ assets/js/planner.js              → Break Planner overlay                 │
                                                                                 │
 grid.php  ── cart-wall shell ── loads assets/js/cartwall.js (the board engine) ─┘
@@ -145,8 +145,8 @@ with an empty `data/` directory still boots.
 | `carts.txt` | `name\|file\|startSec\|colour(1-5)\|endSec\|volume` per line, one line per board slot | `volume` (0–1) is optional and defaults to 1. An empty slot is `- \|0.mp3\|0\|1`. A line's 1-based number is the cart's id everywhere else (breaks, favourites, chains). |
 | `cross.txt` | `flag` or `flag\|fadeMs` per line, aligned 1:1 with `carts.txt` | `flag=1` means "auto-play the next cart when this one ends" (chaining). The optional `fadeMs` is the chain-crossfade editor's overlap — the *next* cart launches that many ms before this one ends. |
 | `enabled.txt` | `1`/`0` per line, aligned with `carts.txt` | A disabled cart is darkened and excluded from search, the planner tree, the DJ library, and playback everywhere. Missing = enabled. |
-| `favorites.txt` | one 1-based cart id per line | A station-wide "starred" list, shared by the planner tree, the DJ library and the Audio manager. |
-| `routing.txt` | `key\|out` per line | Which of 4 **simulated** stereo outputs (`OUT 1`–`4`) each source feeds: `player1`/`player2`/`player3` (DJ decks), `pfl` (preview bus), `carts` (board), `autoplayer`, and `manager_preview` (0–4, where `0` means "the PFL bus" — used by the Audio manager's chain-editor Play button). GUI-level only until a future desktop build maps these to real sound devices. |
+| `favorites.txt` | one 1-based cart id per line | A station-wide "starred" list, shared by the planner tree, the DJ library and the Audio Library Manager. |
+| `routing.txt` | `key\|out` per line | Which of 4 **simulated** stereo outputs (`OUT 1`–`4`) each source feeds: `player1`/`player2`/`player3` (DJ decks), `pfl` (preview bus), `carts` (board), `autoplayer`, and `manager_preview` (0–4, where `0` means "the PFL bus" — used by the Audio Library Manager's chain-editor Play button). GUI-level only until a future desktop build maps these to real sound devices. |
 | `settings.txt` | `key\|value` per line | Feature toggles — see the full key list below. |
 | `breaks.txt` | `HH:MM\|anchor\|name\|itemIds\|enabled\|trigger\|overlaps\|volumes` per line | The Break Planner / Autoplayer's schedule — see **Breaks** below. |
 | `id-sections.txt` | 2 lines, plain text | Display names for the two floating ID-window sections (defaults: "Station IDs", "Sweepers & FX"). |
@@ -253,15 +253,15 @@ config.php                  branding, demo credentials, paths, colours
 auth.php                     session-based admin/dj guards
 includes/helpers.php         flat-file data helpers
 
-index.php                    player shell — Carts/DJ mode + the Station Manager, Audio Manager
-                              and Break Planner overlays (all driven by assets/js/*.js below)
+index.php                    player shell — Carts/DJ mode + the Station Manager, Audio Library
+                              Manager and Break Planner overlays (all driven by assets/js/*.js below)
 grid.php                     the cart wall itself (the board, and the floating ID window)
 
 assets/js/cartwall.js        board engine — preload hack, chaining, back-timer, PFL
 assets/js/dj.js               DJ mode — library tree + manual decks
 assets/js/automation.js      Autoplayer engine, breaks strip, and the planner-mode API
-assets/js/manager.js         Station Manager overlay (Station / Options / Routing / Maintenance)
-assets/js/audio-manager.js   Audio Manager overlay (per-cart editing + chain crossfades)
+assets/js/manager.js         Station Manager overlay (Station / Options / Audio / Maintenance)
+assets/js/audio-manager.js   Audio Library Manager overlay (per-cart editing + chain crossfades)
 assets/js/planner.js         Break Planner overlay
 assets/js/keep-alive.js      the heartbeat
 
