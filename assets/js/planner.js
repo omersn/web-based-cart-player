@@ -384,7 +384,16 @@
         $('plannerEditorName').textContent = b.name || 'Break';
         const anchorLabel = b.anchor === 'end' ? 'To' : 'From';
         $('plannerEditorTime').textContent = `${anchorLabel}: ${hasTime(b) ? b.time : '--:--'}`;
-        $('plannerEditorUnsaved').hidden = !isDirty();
+        // Deliberately NOT isDirty() — that's a whole-PLAN check (right for
+        // the close-confirm dialog), but here it made editing some OTHER
+        // break's time/anchor mark THIS one's header as unsaved too. Compare
+        // just this one break against its last-saved counterpart at the same
+        // index instead (only ambiguous if breaks were reordered/inserted
+        // since the last save — an acceptable gap for a visual hint, not a
+        // save-blocking check).
+        commitEditor();
+        const savedCounterpart = (window.BREAKS || [])[sel] || null;
+        $('plannerEditorUnsaved').hidden = JSON.stringify(b) === JSON.stringify(savedCounterpart);
     }
     function select(i) {
         if (i === sel) return;

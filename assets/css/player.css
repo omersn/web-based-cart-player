@@ -1353,7 +1353,7 @@ body.hide-ticker .source-link { bottom: 10px; left: auto; right: 12px; }
    here (schedule header, strip, mode switch, clocks, clear&hide). What's left
    is the list (with its drag-&-drop + per-item preview), the total, and a
    SMALL play/stop pair — not the player's big live transport. */
-.planner-editor { display: flex; flex-direction: column; min-height: 0; position: relative; }
+.planner-editor { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; position: relative; }
 .planner-editor .automation-panel { flex: 1 1 auto; max-width: none; min-width: 0; border-left: none; }
 /* A break is loaded — inner border + padding so the workspace reads as its
    own distinct area, not just more of the same panel. */
