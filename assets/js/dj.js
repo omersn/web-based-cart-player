@@ -247,6 +247,10 @@
     function pflAllowed() { return !!(window.SETTINGS && window.SETTINGS.pfl_player); }
     function pflTreeAllowed() { return pflAllowed() && !!(window.SETTINGS && window.SETTINGS.pfl_buttons_tree); }
     function pflPlayersAllowed() { return pflAllowed() && !!(window.SETTINGS && window.SETTINGS.pfl_buttons_players); }
+    // Checked live (not cached) — same convention as pflAllowed() above — so
+    // an Options-tab save takes effect immediately, no reload needed.
+    function djLocalFilesAllowed() { return !!(window.SETTINGS && window.SETTINGS.dj_local_files); }
+    function djWaveformScrubAllowed() { return !!(window.SETTINGS && window.SETTINGS.dj_waveform_scrub); }
     function pflStop() {
         if (!pflState) return;
         const { btn, audio, timer } = pflState;
@@ -376,12 +380,18 @@
             el('.dj-deck-play').disabled = !loaded();
             el('.dj-deck-stop').disabled = !loaded();
             el('.dj-deck-repeat').disabled = !loaded();
-            // Dual purpose: empty -> load a local file (always available),
-            // loaded -> unload (blocked while on air, same as before).
-            const ejectBtn = el('.dj-deck-eject');
-            ejectBtn.disabled = loaded() && deck.playing;
-            ejectBtn.title = loaded() ? 'Unload' : 'Load local MP3 file (temporary, not uploaded)';
-            ejectBtn.innerHTML = loaded() ? '<i class="ph ph-x"></i>' : '<i class="ph ph-upload-simple"></i>';
+            // Load-only, single purpose (unload lives entirely on
+            // .dj-deck-unload in the head — see below): hidden outright when
+            // the admin setting is off, otherwise just disabled once
+            // something's already on the deck (nowhere for a new file to go
+            // until it's unloaded first).
+            const loadBtn = el('.dj-deck-load-local');
+            loadBtn.hidden = !djLocalFilesAllowed();
+            loadBtn.disabled = loaded();
+            // Unload-only, single purpose — visibility follows .loaded via
+            // CSS (see player.css), only the disabled-while-playing guard
+            // (same rule the old dual-purpose button had) needs JS.
+            el('.dj-deck-unload').disabled = deck.playing;
             el('.dj-deck-pfl').disabled = !loaded();
             el('.dj-deck-repeat').classList.toggle('active', deck.repeat);
             el('.dj-deck-play').innerHTML = deck.playing ? '<i class="ph-fill ph-pause"></i>' : '<i class="ph-fill ph-play"></i>';
@@ -392,6 +402,7 @@
             const pos = el('.dj-deck-chainpos');
             pos.hidden = deck.items.length < 2;
             if (!pos.hidden) pos.textContent = `${deck.idx + 1} / ${deck.items.length}`;
+            el('.dj-deck-wavebox').classList.toggle('scrubbable', loaded() && djWaveformScrubAllowed());
         }
         function drawCurrentWave() {
             const c = curCart();
@@ -608,25 +619,58 @@
             const out = (window.ROUTING || {})['player' + no] || no;
             el('.dj-deck-out').textContent = 'OUT ' + out;
         }
+        // Click/drag the waveform to seek — same pointerdown/pointermove/
+        // pointerup pattern automation.js's crossfade-editor lanes already
+        // use, scoped to the CURRENT item's own span (a chain's later members
+        // aren't reachable by scrubbing, same as the editor only scrubs
+        // within its own window). Setting .currentTime on a still-playing
+        // <audio> just jumps position — no explicit re-play() needed, unlike
+        // the editor's two-lane crossfade case this pattern was copied from.
+        function waveXToTime(clientX) {
+            const c = curCart();
+            if (!c) return 0;
+            const r = el('.dj-deck-wave').getBoundingClientRect();
+            const frac = Math.max(0, Math.min(1, (clientX - r.left) / (r.width || 1)));
+            const from = c.start || 0;
+            const to = cartEnd(c, curAudio());
+            return from + frac * Math.max(0.001, to - from);
+        }
+        function scrubTo(clientX) {
+            const a = curAudio();
+            if (!a) return;
+            a.currentTime = waveXToTime(clientX);
+            refreshTime();
+        }
+        function wireScrub() {
+            const box = el('.dj-deck-wavebox');
+            let scrubbing = false;
+            box.addEventListener('pointerdown', (e) => {
+                if (!loaded() || !djWaveformScrubAllowed()) return;
+                scrubbing = true;
+                scrubTo(e.clientX);
+            });
+            document.addEventListener('pointermove', (e) => { if (scrubbing) scrubTo(e.clientX); });
+            document.addEventListener('pointerup', () => { scrubbing = false; });
+        }
 
         el('.dj-deck-play').addEventListener('click', playPause);
         el('.dj-deck-stop').addEventListener('click', stop);
-        // Dual purpose (see paint()): empty -> open the file picker, loaded -> eject.
+        // Load-only (see paint()) — opens the file picker. Unload lives on
+        // its own separate .dj-deck-unload button in the head.
         const fileInput = el('.dj-deck-file-input');
-        el('.dj-deck-eject').addEventListener('click', () => {
-            if (loaded()) { eject(); return; }
-            fileInput.click();
-        });
+        el('.dj-deck-load-local').addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', () => {
             const file = fileInput.files && fileInput.files[0];
             fileInput.value = ''; // allow re-picking the same file later
             if (file) loadLocalFile(file);
         });
+        el('.dj-deck-unload').addEventListener('click', eject);
         el('.dj-deck-repeat').addEventListener('click', () => { deck.repeat = !deck.repeat; paint(); });
         el('.dj-deck-pfl').addEventListener('click', () => { const c = curCart(); if (c) sendToPFL(c, el('.dj-deck-pfl')); });
+        wireScrub();
         applyRouting();
         paint();
-        return { load, stop, applyRouting, isPlaying: () => deck.playing, redraw: drawCurrentWave };
+        return { load, stop, applyRouting, isPlaying: () => deck.playing, redraw: drawCurrentWave, repaint: paint };
     }
     const decks = [];
 
@@ -656,6 +700,12 @@
         document.querySelectorAll('.dj-deck-pfl').forEach((b) => { b.hidden = !pflPlayersAllowed(); });
         if (active) renderTree(); // the tree's own preview button follows the same gate
         pflOutBadge();
+    }
+
+    // manager Options tab's "Allow loading local MP3 files"/"Allow scrubbing"
+    // switches — each deck's load button and waveform cursor follow live.
+    function applyDeckFeatureSettings() {
+        decks.forEach((d) => d.repaint());
     }
 
     // ---- mode toggle ---------------------------------------------------------
@@ -730,6 +780,8 @@
         playerCount,
         // manager Routing tab pushes new PFL allow/deny switches live
         applyPflSettings,
+        // manager Options tab pushes new local-file/scrub allow switches live
+        applyDeckFeatureSettings,
         // audio manager rebuilt window.CARTS on close — rebuild the library
         // (names/colours/chain/fav marks all follow) and repaint loaded decks.
         refresh: () => { if (active) { renderTree(); decks.forEach((d) => d.redraw()); } },

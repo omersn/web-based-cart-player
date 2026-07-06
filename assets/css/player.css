@@ -2188,6 +2188,18 @@ body:has(.automation-panel.active) .dj-send-auto { display: flex; }
     font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
     color: var(--text-tertiary);
 }
+/* Dedicated unload — only ever visible once something's loaded (mirrors
+   .dj-deck-onair/.dj-deck-endtime's own conditional-visibility pattern above,
+   just keyed off .loaded instead of .playing). */
+.dj-deck-unload {
+    display: none; flex: 0 0 auto; margin-left: auto;
+    width: 20px; height: 20px; padding: 0; border: none; border-radius: 5px; cursor: pointer;
+    background: var(--red-grad); color: #fff; font-size: 11px;
+    align-items: center; justify-content: center;
+}
+.dj-deck.loaded .dj-deck-unload { display: flex; }
+.dj-deck-unload:disabled { opacity: 0.3; pointer-events: none; }
+.dj-deck-unload:hover:not(:disabled) { filter: brightness(1.15); }
 /* Middle: the BIG square play button, then the current item's waveform with
    the progress WASHING over it. */
 .dj-deck-mid { flex: 1 1 auto; min-height: 30px; display: flex; align-items: stretch; gap: 10px; }
@@ -2210,6 +2222,10 @@ body:has(.automation-panel.active) .dj-send-auto { display: flex; }
     overflow: hidden;
 }
 .dj-deck-wavebox[hidden] { display: none; }
+/* Toggled by dj.js only when Options > "Allow scrubbing" is on AND something's
+   loaded — a plain cursor change is enough of an affordance, matching the
+   crossfade editors' own lanes (no separate visible "scrub handle"). */
+.dj-deck-wavebox.scrubbable { cursor: ew-resize; }
 /* Audio-reactive VU meter, right end of the player, full height (align-items:
    stretch on .dj-deck-mid does the work), padded a touch from the fill. Only
    shown once a cart is actually on the deck — with nothing loaded,

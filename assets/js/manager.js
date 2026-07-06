@@ -176,6 +176,22 @@
                     if (window.AudioEngine.getAudioMode() === 'multichannel') renderRoutingMatrix();
                 });
                 host.appendChild(sub);
+                // Also right under "DJ mode": two deck feature switches, same
+                // .opt-row/.opt-switch shape as the top-level SWITCHES above.
+                [
+                    ['dj_local_files', 'Allow loading local MP3 files', 'Lets a deck load a file from disk (temporary — never uploaded)'],
+                    ['dj_waveform_scrub', 'Allow scrubbing playhead on waveform', 'Click/drag a deck’s waveform to seek'],
+                ].forEach(([subKey, subLabel, subHint]) => {
+                    const subRow = document.createElement('label');
+                    subRow.className = 'opt-row';
+                    subRow.innerHTML = `<span class="opt-text"><b></b><small></small></span><input type="checkbox" class="opt-switch">`;
+                    subRow.querySelector('b').textContent = subLabel;
+                    subRow.querySelector('small').textContent = subHint;
+                    const subCb = subRow.querySelector('input');
+                    subCb.checked = !!draft.options[subKey];
+                    subCb.addEventListener('change', () => { draft.options[subKey] = subCb.checked ? 1 : 0; markDirty(); });
+                    host.appendChild(subRow);
+                });
             }
         });
     }
@@ -529,6 +545,7 @@
         if (window.updatePanelResizeHandles) window.updatePanelResizeHandles();
         if (window.DJMode) window.DJMode.applyPlayerCount();
         if (window.DJMode) window.DJMode.applyPflSettings();
+        if (window.DJMode) window.DJMode.applyDeckFeatureSettings();
 
         const routeResp = await post('save-routing.php', { routing: draft.routing }, true);
         if (!routeResp) return false;

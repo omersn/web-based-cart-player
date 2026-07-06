@@ -350,13 +350,18 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                                 <span class="dj-deck-onair">ON AIR</span>
                                 <span class="dj-deck-endtime" title="Wall-clock time the whole load will end"></span>
                                 <span class="dj-deck-out" title="Assigned output (manager &rsaquo; Routing)"></span>
+                                <!-- Dedicated unload — only ever this, no dual purpose
+                                     with loading (see .dj-deck-load-local below). Shown
+                                     via CSS whenever the deck carries the .loaded class. -->
+                                <button type="button" class="dj-deck-unload" title="Unload"><i class="ph ph-x"></i></button>
                             </div>
                             <div class="dj-deck-mid">
                                 <!-- Big square transport: THE button of the deck. -->
                                 <button type="button" class="dj-deck-play" disabled title="Play / pause"><i class="ph-fill ph-play"></i></button>
                                 <span class="dj-deck-empty">Fire a cart from the library</span>
                                 <!-- Waveform of the item on deck; the progress
-                                     wash sweeps OVER it while playing. -->
+                                     wash sweeps OVER it while playing. Click/drag to
+                                     seek when Options > "Allow scrubbing" is on. -->
                                 <div class="dj-deck-wavebox" hidden>
                                     <canvas class="dj-deck-wave"></canvas>
                                     <div class="dj-deck-wash"></div>
@@ -369,10 +374,12 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                                 <div class="dj-deck-btns">
                                     <button type="button" class="dj-deck-stop" disabled title="Stop"><i class="ph-fill ph-stop"></i></button>
                                     <button type="button" class="dj-deck-repeat" disabled title="Repeat"><i class="ph ph-repeat"></i></button>
-                                    <!-- Dual purpose, per deck.js's paint(): empty deck ->
-                                         load a local MP3 (temporary, never sent to the
-                                         server); loaded deck -> unload (eject). -->
-                                    <button type="button" class="dj-deck-eject" title="Load local MP3 file (temporary, not uploaded)"><i class="ph ph-upload-simple"></i></button>
+                                    <!-- Load-only (see .dj-deck-unload above for the
+                                         separate unload control) — a local MP3 from disk,
+                                         temporary, never sent to the server. Hidden
+                                         entirely when Options > "Allow loading local MP3
+                                         files" is off. -->
+                                    <button type="button" class="dj-deck-load-local" title="Load local MP3 file (temporary, not uploaded)"><i class="ph ph-download-simple"></i></button>
                                     <input type="file" class="dj-deck-file-input" accept=".mp3,audio/mpeg" hidden>
                                     <button type="button" class="dj-deck-pfl" disabled title="PREVIEW (PFL)"><span class="pfl-icon"><i class="ph ph-speaker-simple-high"></i></span></button>
                                 </div>

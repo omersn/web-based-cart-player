@@ -4,6 +4,8 @@ automation|1
 ids_window|1
 dj_mode|1
 dj_players|3
+dj_local_files|1
+dj_waveform_scrub|1
 pfl_player|1
 pfl_buttons_carts|1
 pfl_buttons_players|1
