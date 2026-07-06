@@ -531,6 +531,9 @@
             e.currentTarget.classList.toggle('active', favOnly);
             renderTree();
         });
+        // The empty-state hint's "create" link does exactly what "+ Add
+        // break" does — same addBreak() call, just a second entry point.
+        $('plannerCreateBreak').addEventListener('click', (e) => { e.preventDefault(); addBreak(); });
         $('plannerCancel').addEventListener('click', close); // discard (confirms if dirty)
         $('plannerConfirmDiscard').addEventListener('click', doClose);
         $('plannerConfirmKeep').addEventListener('click', () => { $('plannerConfirm').hidden = true; });

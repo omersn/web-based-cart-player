@@ -1214,6 +1214,12 @@ body.hide-ticker .source-link { bottom: 10px; left: auto; right: 12px; }
     display: flex; align-items: center; justify-content: center; font-size: 11px;
     opacity: 0; transition: opacity 0.12s ease;
 }
+/* The play/plus glyphs are geometrically centered in their box (confirmed via
+   getBoundingClientRect — button, icon, and row all share the same vertical
+   center), but the Phosphor glyphs' actual visible ink doesn't fill their
+   character cell symmetrically, so they read as sitting a touch high —
+   nudged down for better optical (not just mathematical) centering. */
+.ptree-btn i { position: relative; top: 1px; }
 .ptree-cart:hover .ptree-btn { opacity: 1; }
 .ptree-btn:hover { background: #c3c9cf; color: #000; }
 .ptree-add:hover { background: var(--cyan); border-color: var(--cyan); color: #06222a; }
@@ -1347,6 +1353,8 @@ body.hide-ticker .source-link { bottom: 10px; left: auto; right: 12px; }
     background: #2e3742; color: var(--text-tertiary); font-size: 14px; font-weight: 700;
 }
 .planner-editor-hint[hidden] { display: none; }
+.planner-editor-hint-link { color: var(--cyan-text); text-decoration: underline; cursor: pointer; }
+.planner-editor-hint-link:hover { color: #fff; }
 .automation-panel.planner-mode .breaks-strip,
 .automation-panel.planner-mode .auto-header-wrap,
 .automation-panel.planner-mode .auto-mode-switch,

@@ -1098,7 +1098,7 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                              appended as a sibling of this on open(), and this
                              overlays it while nothing's selected so the
                              (otherwise confusingly empty) editor doesn't show. -->
-                        <p class="planner-editor-hint" id="plannerEditorHint">Select or create a new Ad break</p>
+                        <p class="planner-editor-hint" id="plannerEditorHint">Select or <a href="#" class="planner-editor-hint-link" id="plannerCreateBreak">create</a> a new Ad break</p>
                     </div>
                 </div>
             </div>
