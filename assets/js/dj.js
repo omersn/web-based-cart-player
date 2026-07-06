@@ -664,6 +664,12 @@
         if (!pflAllowed()) return;
         if (pflState && pflState.btn === btn) { pflStop(); return; } // same source again -> unload
         pflStop(); // only one thing plays in PFL at a time
+        // Decks/cartwall already do this before their own play() (see
+        // vuStart()) — PFL never did, so a PFL preview could be the very
+        // FIRST audio action of the session, hitting the browser's
+        // autoplay-policy-suspended AudioContext before anything else ever
+        // unlocks it. Harmless no-op once already running.
+        window.AudioEngine.resume();
         const box = $('djPfl');
         const audio = new Audio(c.isLocal ? c.objectUrl : `uploads/${c.file}`);
         // Dry by default (a fresh, throwaway element every preview, so this is
