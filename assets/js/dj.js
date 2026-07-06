@@ -235,6 +235,222 @@
         window.Automation.addItems(items, items.length > 1);
     }
 
+    // ---- Local folder browser (Local tab, next to the Network/jingle tree) --
+    // Browses the user's OWN computer's folders via the File System Access API
+    // (window.showDirectoryPicker — Chromium/Edge only, no Firefox/Safari). A
+    // page can't read the filesystem like a native file manager; this API is
+    // the one real mechanism, and it only grants access to a folder after an
+    // explicit user gesture. Once granted, that folder's CONTENTS (including
+    // subfolders) are freely readable without further native dialogs — which
+    // is what makes "remember the last folder" and "browse one at a time"
+    // both workable here. Files handed off to a deck go through the exact
+    // same loadLocalFile() the deck's own single-file Load button already
+    // uses (8MB cap, MP3-only, object-URL, waveform-from-File) — a
+    // FileSystemFileHandle's .getFile() returns a real File, identical to
+    // what <input type=file> gives you, so there's no separate validation
+    // path to maintain here.
+    const LOCAL_DB = 'djLocalBrowser', LOCAL_STORE = 'folder', LOCAL_KEY = 'root';
+    const LOCAL_MAX_ITEMS = 500;
+    function localSupported() { return typeof window.showDirectoryPicker === 'function'; }
+    function idbOpen() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(LOCAL_DB, 1);
+            req.onupgradeneeded = () => { req.result.createObjectStore(LOCAL_STORE); };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function idbGet(key) {
+        const db = await idbOpen();
+        return new Promise((resolve, reject) => {
+            const req = db.transaction(LOCAL_STORE, 'readonly').objectStore(LOCAL_STORE).get(key);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function idbSet(key, value) {
+        const db = await idbOpen();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(LOCAL_STORE, 'readwrite');
+            tx.objectStore(LOCAL_STORE).put(value, key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+    async function idbDel(key) {
+        const db = await idbOpen();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(LOCAL_STORE, 'readwrite');
+            tx.objectStore(LOCAL_STORE).delete(key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+
+    let localRootHandle = null, localRootName = '', localPath = [], localCurrentHandle = null;
+    let localInitialized = false; // only probe stored permission once per page load
+
+    async function resolvePath(root, path) {
+        let h = root;
+        for (const name of path) h = await h.getDirectoryHandle(name);
+        return h;
+    }
+    async function saveLocalState() {
+        if (!localRootHandle) { await idbDel(LOCAL_KEY).catch(() => {}); return; }
+        await idbSet(LOCAL_KEY, { rootHandle: localRootHandle, rootName: localRootName, path: localPath }).catch(() => {});
+    }
+    function localFireButtonsHtml() {
+        return Array.from({ length: playerCount() }, (_, k) => k + 1)
+            .map((n) => `<button type="button" class="ptree-btn dj-fire" data-deck="${n}" title="Fire into Player ${n}">${n}</button>`).join('');
+    }
+    async function renderLocalListing() {
+        const listing = $('djLocalListing');
+        listing.innerHTML = '';
+        const dir = localCurrentHandle;
+        if (!dir) return;
+        const folders = [], files = [];
+        let count = 0;
+        try {
+            for await (const [name, handle] of dir.entries()) {
+                count++;
+                if (count > LOCAL_MAX_ITEMS) {
+                    listing.innerHTML = `<p class="dj-local-error">This folder has more than ${LOCAL_MAX_ITEMS} items — too many to show. Pick a more specific subfolder.</p>`;
+                    return;
+                }
+                if (handle.kind === 'directory') folders.push(name);
+                else if (/\.mp3$/i.test(name)) files.push({ name, handle });
+            }
+        } catch (e) {
+            listing.innerHTML = '<p class="dj-local-error">Could not read this folder.</p>';
+            return;
+        }
+        folders.sort((a, b) => a.localeCompare(b));
+        files.sort((a, b) => a.name.localeCompare(b.name));
+        folders.forEach((name) => {
+            const row = document.createElement('div');
+            row.className = 'dj-local-row is-folder';
+            row.innerHTML = '<span class="dj-local-row-icon">\u{1F4C1}</span><span class="dj-local-row-name"></span>';
+            row.querySelector('.dj-local-row-name').textContent = name;
+            row.addEventListener('click', () => enterFolder(name));
+            listing.appendChild(row);
+        });
+        files.forEach(({ name, handle }) => {
+            const row = document.createElement('div');
+            row.className = 'dj-local-row';
+            row.innerHTML = '<i class="ph-fill ph-music-note dj-local-row-icon"></i><span class="dj-local-row-name"></span>' + localFireButtonsHtml();
+            row.querySelector('.dj-local-row-name').textContent = name.replace(/\.mp3$/i, '');
+            row.querySelectorAll('.dj-fire').forEach((b) => {
+                b.addEventListener('click', async () => {
+                    const file = await handle.getFile();
+                    window.DJMode.loadLocalDeck(+b.dataset.deck, file);
+                });
+            });
+            listing.appendChild(row);
+        });
+        if (folders.length === 0 && files.length === 0) {
+            listing.innerHTML = '<p class="dj-local-error">No subfolders or MP3 files here.</p>';
+        }
+    }
+    function updateCrumbAndRender() {
+        $('djLocalCrumb').hidden = false;
+        $('djLocalPath').textContent = [localRootName, ...localPath].join(' / ');
+        $('djLocalUp').disabled = localPath.length === 0;
+        renderLocalListing();
+    }
+    async function enterFolder(name) {
+        try {
+            const next = await localCurrentHandle.getDirectoryHandle(name);
+            localCurrentHandle = next;
+            localPath.push(name);
+            await saveLocalState();
+            updateCrumbAndRender();
+        } catch (e) { toast('Could not open that folder'); }
+    }
+    async function goUp() {
+        if (!localPath.length) return;
+        localPath.pop();
+        try {
+            localCurrentHandle = await resolvePath(localRootHandle, localPath);
+            await saveLocalState();
+            updateCrumbAndRender();
+        } catch (e) { toast('Could not go up'); }
+    }
+    function showPickerUi(mode, stored) {
+        $('djLocalPicker').hidden = false;
+        $('djLocalCrumb').hidden = true;
+        $('djLocalListing').innerHTML = '';
+        $('djLocalChoose').hidden = mode !== 'choose';
+        $('djLocalReopen').hidden = mode !== 'reopen';
+        if (mode === 'reopen') $('djLocalReopen').textContent = `Reopen "${stored.rootName}"`;
+    }
+    async function useFolder(handle, name, path) {
+        localRootHandle = handle;
+        localRootName = name;
+        try {
+            localCurrentHandle = path.length ? await resolvePath(handle, path) : handle;
+            localPath = path;
+        } catch (e) {
+            localCurrentHandle = handle;
+            localPath = [];
+        }
+        await saveLocalState();
+        $('djLocalPicker').hidden = true;
+        updateCrumbAndRender();
+    }
+    async function chooseFolder() {
+        if (!localSupported()) return;
+        try {
+            const handle = await window.showDirectoryPicker({ startIn: 'documents' });
+            await useFolder(handle, handle.name, []);
+        } catch (e) { /* user cancelled the native dialog */ }
+    }
+    async function tryRestoreFolder() {
+        let stored = null;
+        try { stored = await idbGet(LOCAL_KEY); } catch (e) { /* no stored folder */ }
+        if (!stored || !stored.rootHandle) { showPickerUi('choose'); return; }
+        let perm;
+        try { perm = await stored.rootHandle.queryPermission({ mode: 'read' }); } catch (e) { perm = 'denied'; }
+        if (perm === 'granted') { await useFolder(stored.rootHandle, stored.rootName, stored.path); return; }
+        if (perm === 'prompt') { showPickerUi('reopen', stored); return; }
+        await idbDel(LOCAL_KEY).catch(() => {});
+        showPickerUi('choose');
+    }
+    async function reopenFolder() {
+        let stored;
+        try { stored = await idbGet(LOCAL_KEY); } catch (e) { stored = null; }
+        if (!stored || !stored.rootHandle) { showPickerUi('choose'); return; }
+        const perm = await stored.rootHandle.requestPermission({ mode: 'read' }).catch(() => 'denied');
+        if (perm === 'granted') await useFolder(stored.rootHandle, stored.rootName, stored.path);
+        else toast('Permission was not granted');
+    }
+    function switchLibTab(pane) {
+        document.querySelectorAll('.dj-lib-tab').forEach((b) => b.classList.toggle('active', b.dataset.pane === pane));
+        $('djNetworkPane').hidden = pane !== 'network';
+        $('djLocalPane').hidden = pane !== 'local';
+        if (pane === 'local' && !localInitialized) {
+            localInitialized = true;
+            if (!localSupported()) { $('djLocalUnsupported').hidden = false; $('djLocalPicker').hidden = true; }
+            else tryRestoreFolder();
+        }
+    }
+    // manager Options tab's own live-apply hook (applyDeckFeatureSettings)
+    // also calls this — shows/hides the tab switcher itself, and forces back
+    // to the Network pane if the setting was switched off while Local was
+    // the active tab (Local's own state/handle is left alone, just hidden —
+    // no need to lose the browsed folder over a toggle).
+    function renderLibTabs() {
+        const allowed = djLocalFilesAllowed();
+        $('djLibTabs').hidden = !allowed;
+        if (!allowed) switchLibTab('network');
+    }
+    function initLocalBrowser() {
+        document.querySelectorAll('.dj-lib-tab').forEach((b) => b.addEventListener('click', () => switchLibTab(b.dataset.pane)));
+        $('djLocalChoose').addEventListener('click', chooseFolder);
+        $('djLocalReopen').addEventListener('click', reopenFolder);
+        $('djLocalUp').addEventListener('click', goUp);
+        renderLibTabs();
+    }
+
     // ---- PFL (preview) mini-player -------------------------------------------
     // One shared slot: the library tree's per-row preview button and each
     // deck's PFL button both send a single cart here (trim-aware, one at a
@@ -670,7 +886,7 @@
         wireScrub();
         applyRouting();
         paint();
-        return { load, stop, applyRouting, isPlaying: () => deck.playing, redraw: drawCurrentWave, repaint: paint };
+        return { load, stop, applyRouting, isPlaying: () => deck.playing, redraw: drawCurrentWave, repaint: paint, loadLocal: loadLocalFile };
     }
     const decks = [];
 
@@ -703,9 +919,11 @@
     }
 
     // manager Options tab's "Allow loading local MP3 files"/"Allow scrubbing"
-    // switches — each deck's load button and waveform cursor follow live.
+    // switches — each deck's load button and waveform cursor follow live,
+    // and so does the Network/Local tab switcher itself.
     function applyDeckFeatureSettings() {
         decks.forEach((d) => d.repaint());
+        renderLibTabs();
     }
 
     // ---- mode toggle ---------------------------------------------------------
@@ -765,6 +983,7 @@
         if (!(window.SETTINGS && window.SETTINGS.dj_mode)) active = false;
         applyPlayerCount();
         applyPflSettings();
+        initLocalBrowser();
         apply();
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
@@ -788,6 +1007,11 @@
         // Topbar search reuses these so its fire buttons behave identically to
         // the library tree's (chain-aware, no partial-chain loads).
         loadDeck: (n, c) => { const d = decks[n - 1]; if (d) d.load(c); },
+        // The Local-tab folder browser reuses the exact same per-deck local-
+        // file loader (validation/waveform/object-URL, all already built for
+        // the deck's own single-file Load button) — it just hands it a File
+        // it got from a FileSystemFileHandle instead of <input type=file>.
+        loadLocalDeck: (n, file) => { const d = decks[n - 1]; if (d) d.loadLocal(file); },
         sendToAuto,
     };
 })();

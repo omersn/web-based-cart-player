@@ -2075,6 +2075,46 @@ body.dj-mode.dock-clock-only .dj-tree { margin-bottom: 200px; }
     border-right: 3px solid var(--hairline);
     background: #b7bec6; color: #111;
 }
+/* Network/Local tab switcher (only shown via JS once Options > "Allow
+   loading local MP3 files" is on) + the two panes it flips between — reuses
+   .auto-mode-switch's own button/active styling verbatim, just adds spacing. */
+.dj-lib-tabs { margin: 8px 8px 0; flex: 0 0 auto; }
+.dj-lib-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.dj-lib-pane[hidden] { display: none; }
+/* Local tab: browsing the user's own computer's folders (File System Access
+   API — Chromium/Edge only). One folder's contents at a time, no search box,
+   no nested tree — see assets/js/dj.js's LocalBrowser section. */
+.dj-local-picker { padding: 10px 8px; flex: 0 0 auto; }
+.dj-local-choose {
+    width: 100%; height: 34px; border: 1px dashed var(--hairline); border-radius: 8px;
+    background: rgba(0, 0, 0, 0.04); color: #111; font-weight: 700; font-size: 13px; cursor: pointer;
+}
+.dj-local-choose:hover { background: rgba(0, 0, 0, 0.08); }
+.dj-local-crumb { display: flex; align-items: center; gap: 6px; padding: 0 8px 6px; flex: 0 0 auto; }
+.dj-local-crumb[hidden] { display: none; }
+.dj-local-up {
+    flex: 0 0 24px; height: 24px; border: 1px solid var(--hairline); border-radius: 6px;
+    background: rgba(0, 0, 0, 0.05); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; color: #111;
+}
+.dj-local-up:hover { background: rgba(0, 0, 0, 0.1); }
+.dj-local-path {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 12px; font-weight: 700; color: #333;
+}
+.dj-local-unsupported, .dj-local-error { margin: 10px 8px; font-size: 12.5px; line-height: 1.5; }
+.dj-local-unsupported { color: #555; }
+.dj-local-error { color: #a33; }
+.dj-local-hint { margin: 6px 8px; font-size: 11px; color: #555; line-height: 1.4; }
+.dj-local-hint i { font-size: 11px; }
+.dj-local-row { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 4px; }
+.dj-local-row.is-folder { cursor: pointer; }
+.dj-local-row.is-folder:hover { background: rgba(0, 0, 0, 0.06); }
+.dj-local-row-icon { flex: 0 0 auto; font-size: 13px; }
+.dj-local-row-name {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 12.5px;
+}
 /* Tighter spacing in the DJ library so wide names get the room (the fire +
    preview buttons sit in the flow permanently). Scoped to .dj-tree so the
    planner tree keeps its roomier defaults. */
