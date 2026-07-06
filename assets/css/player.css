@@ -1217,6 +1217,13 @@ body.hide-ticker .source-link { bottom: 10px; left: auto; right: 12px; }
 .ptree-cart:hover .ptree-btn { opacity: 1; }
 .ptree-btn:hover { background: #c3c9cf; color: #000; }
 .ptree-add:hover { background: var(--cyan); border-color: var(--cyan); color: #06222a; }
+/* No break selected — nowhere for it to add into (planner.js's
+   updateSelectionUi). Stays visibly grayed even on row-hover, unlike the
+   opacity-0-until-hover default above. */
+.ptree-add:disabled {
+    opacity: 0.35 !important; cursor: not-allowed;
+    background: #d3d8dd !important; border-color: #9aa2ab !important; color: #333 !important;
+}
 /* PFL preview button, lit while it's the one loaded into the mini-player. */
 .ptree-play.active { background: #f4c542; border-color: #c69a17; color: #5a4300; opacity: 1; }
 
@@ -1330,8 +1337,16 @@ body.hide-ticker .source-link { bottom: 10px; left: auto; right: 12px; }
    here (schedule header, strip, mode switch, clocks, clear&hide). What's left
    is the list (with its drag-&-drop + per-item preview), the total, and a
    SMALL play/stop pair — not the player's big live transport. */
-.planner-editor { flex: 1 1 auto; display: flex; min-height: 0; }
+.planner-editor { flex: 1 1 auto; display: flex; min-height: 0; position: relative; }
 .planner-editor .automation-panel { flex: 1 1 auto; max-width: none; min-width: 0; border-left: none; }
+/* Covers the (otherwise empty/confusing) editor until a break is picked —
+   see planner.js's updateSelectionUi(). */
+.planner-editor-hint {
+    position: absolute; inset: 0; z-index: 1;
+    margin: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+    background: #2e3742; color: var(--text-tertiary); font-size: 14px; font-weight: 700;
+}
+.planner-editor-hint[hidden] { display: none; }
 .automation-panel.planner-mode .breaks-strip,
 .automation-panel.planner-mode .auto-header-wrap,
 .automation-panel.planner-mode .auto-mode-switch,

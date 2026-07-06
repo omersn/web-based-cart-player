@@ -1092,7 +1092,14 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 </div>
                 <div class="planner-right">
                     <div class="planner-breaks" id="plannerBreaks"></div>
-                    <div class="planner-editor" id="plannerEditor"></div>
+                    <div class="planner-editor" id="plannerEditor">
+                        <!-- Shown until a break is picked (planner.js's
+                             updateSelectionUi) — the automation panel gets
+                             appended as a sibling of this on open(), and this
+                             overlays it while nothing's selected so the
+                             (otherwise confusingly empty) editor doesn't show. -->
+                        <p class="planner-editor-hint" id="plannerEditorHint">Select or create a new Ad break</p>
+                    </div>
                 </div>
             </div>
         </div>

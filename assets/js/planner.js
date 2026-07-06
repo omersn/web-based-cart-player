@@ -29,15 +29,40 @@
     let panelHome = null;   // where to put the automation panel back on close
 
     const cartById = (id) => (window.CARTS || []).find((c) => c.i === id - 1) || null;
+    const byIndex = (i) => (window.CARTS || []).find((c) => c.i === i);
     const cartRuntime = (c) => (c && c.end != null) ? Math.max(0, c.end - (c.start || 0)) : 0;
     const fmtDur = (s) => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+    // The fade INTO the following chain member (ms) — only meaningful when
+    // this cart actually chains onward. Same convention as dj.js/cartwall.js.
+    const fadeAfter = (c) => (c.cross ? Math.max(0, c.chainFade || 0) : 0);
+    // Always the WHOLE run, from its true first item — adding any cart that
+    // belongs to a chain (even a middle one) must add the complete run, same
+    // as firing one on the board or in DJ mode. A chain can never be added
+    // partially.
+    function chainRun(c) {
+        let start = c;
+        while (true) {
+            const prev = byIndex(start.i - 1);
+            if (!prev || !prev.cross) break;
+            start = prev;
+        }
+        const run = [start];
+        let cur = start;
+        while (cur.cross && run.length < 5) { // chains cap at 5 items
+            const next = byIndex(cur.i + 1);
+            if (!next) break;
+            run.push(next);
+            cur = next;
+        }
+        return run;
+    }
     // Overlapped launches (cross editor) shave their ms off the runtime sum.
     const breakLength = (b) => Math.max(0,
         b.items.reduce((s, id) => s + cartRuntime(cartById(id)), 0) -
         (b.overlaps || []).reduce((s, ms) => s + (ms || 0), 0) / 1000);
-    const asItem = (c) => ({
+    const asItem = (c, overlapIn) => ({
         cartId: c.i + 1, name: c.name, file: c.file, start: c.start, end: c.end,
-        volume: c.volume, color: c.color, runtime: cartRuntime(c),
+        volume: c.volume, color: c.color, runtime: cartRuntime(c), overlapIn: overlapIn || 0,
     });
 
     // ---- sections tree ------------------------------------------------------
@@ -108,7 +133,7 @@
                     `<span class="ptree-name"></span>` +
                     `<span class="ptree-len">${c.end != null ? fmtDur(cartRuntime(c)) : '—'}</span>` +
                     `<button type="button" class="ptree-btn ptree-play" title="Preview"><i class="ph-fill ph-play"></i></button>` +
-                    `<button type="button" class="ptree-btn ptree-add" title="Add to break"><i class="ph ph-plus"></i></button>` +
+                    `<button type="button" class="ptree-btn ptree-add" title="Add to break"${sel < 0 ? ' disabled' : ''}><i class="ph ph-plus"></i></button>` +
                     `<button type="button" class="ptree-star${faved ? ' faved' : ''}" title="Favourite"><i class="${faved ? 'ph-fill' : 'ph'} ph-star"></i></button>`;
                 row.querySelector('.ptree-name').textContent = c.name;
                 row.querySelector('.ptree-play').addEventListener('click', (e) => togglePreview(c, e.currentTarget));
@@ -131,7 +156,9 @@
     }
     function addToEditor(c) {
         if (sel < 0) { flashSaveMsg('Select or add a break first'); return; }
-        window.Automation.addItems([asItem(c)], false);
+        const run = chainRun(c);
+        const items = run.map((cc, k) => asItem(cc, k > 0 ? fadeAfter(run[k - 1]) : 0));
+        window.Automation.addItems(items, items.length > 1);
         commitEditor();
         renderBreaks(); // live-update the selected row's "N items · length"
     }
@@ -334,6 +361,14 @@
         add.addEventListener('click', addBreak);
         host.appendChild(add);
     }
+    // Reflects `sel` in the tree's Add buttons (grayed out with nothing
+    // selected — there's nowhere to add into) and the editor's empty-state
+    // hint (shown only until a break is picked).
+    function updateSelectionUi() {
+        document.querySelectorAll('.ptree-add').forEach((b) => { b.disabled = sel < 0; });
+        const hint = $('plannerEditorHint');
+        if (hint) hint.hidden = sel >= 0;
+    }
     function select(i) {
         if (i === sel) return;
         commitEditor();
@@ -341,6 +376,7 @@
         const items = (plan[i] ? plan[i].items : []).map(cartById).filter(Boolean).map(asItem);
         window.Automation.loadPlaylist(items, plan[i] ? plan[i].overlaps || [] : [], plan[i] ? plan[i].volumes || [] : []);
         renderBreaks();
+        updateSelectionUi();
     }
     function addBreak() {
         commitEditor();
@@ -354,6 +390,7 @@
         sel = plan.length - 1;
         window.Automation.loadPlaylist([]);
         renderBreaks();
+        updateSelectionUi();
     }
     function removeBreak(i) {
         commitEditor();
@@ -362,6 +399,7 @@
         if (sel === i) { sel = -1; window.Automation.loadPlaylist([]); }
         else if (sel > i) sel--;
         renderBreaks();
+        updateSelectionUi();
     }
     // Pull the editor's current queue back into the selected break (as ids),
     // along with the per-gap overlaps and per-item volume overrides the
@@ -405,6 +443,7 @@
         renderBreaks();
         // Nothing pre-selected: the editor starts empty until a break is picked.
         window.Automation.loadPlaylist([]);
+        updateSelectionUi();
         document.addEventListener('keydown', onKey);
     }
     // Closing with unsaved changes asks first — via a styled in-overlay
