@@ -434,12 +434,21 @@
             const pflBtn = row.querySelector('.ptree-play');
             if (pflBtn) {
                 pflBtn.addEventListener('click', async (e) => {
+                    // Capture BEFORE the await — e.currentTarget goes null
+                    // once the event finishes dispatching, which happens the
+                    // moment this handler yields. Passing the (by then null)
+                    // e.currentTarget into sendToPFL() threw on
+                    // btn.classList.add('active'), which skipped the very
+                    // next line — pflState never got assigned — so the
+                    // preview kept playing with no way to stop it: the Stop
+                    // button and re-clicking both no-op on a null pflState.
+                    const btn = e.currentTarget;
                     const file = await handle.getFile();
                     const url = URL.createObjectURL(file);
                     // _tempPflUrl marks this URL as ours to revoke once the
                     // preview ends (see pflStop()) — unlike a deck's own
                     // long-lived local objectUrl, this one's throwaway.
-                    sendToPFL({ name: nameEl.textContent, isLocal: true, objectUrl: url, start: 0, end: null, volume: 1, _tempPflUrl: true }, e.currentTarget);
+                    sendToPFL({ name: nameEl.textContent, isLocal: true, objectUrl: url, start: 0, end: null, volume: 1, _tempPflUrl: true }, btn);
                 });
             }
             container.appendChild(row);
