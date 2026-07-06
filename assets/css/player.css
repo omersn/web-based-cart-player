@@ -1253,6 +1253,10 @@ body.hide-ticker .source-link { bottom: 10px; left: auto; right: 12px; }
 }
 .planner-editor { background: #2e3742; }
 .planner-editor .automation-panel { background: #2e3742; }
+/* A break is actually loaded — brighter than the base panel above so the
+   loaded workspace visibly reads as "live" rather than looking the same as
+   the empty state. */
+.planner-editor.has-selection .automation-panel { background: #3a4453; }
 /* Rows wear the same bright "paper" gray as the player's strip chips, so a
    break looks identical where it's planned and where it's played. */
 .pbreak {
@@ -1349,8 +1353,32 @@ body.hide-ticker .source-link { bottom: 10px; left: auto; right: 12px; }
    here (schedule header, strip, mode switch, clocks, clear&hide). What's left
    is the list (with its drag-&-drop + per-item preview), the total, and a
    SMALL play/stop pair — not the player's big live transport. */
-.planner-editor { flex: 1 1 auto; display: flex; min-height: 0; position: relative; }
+.planner-editor { display: flex; flex-direction: column; min-height: 0; position: relative; }
 .planner-editor .automation-panel { flex: 1 1 auto; max-width: none; min-width: 0; border-left: none; }
+/* A break is loaded — inner border + padding so the workspace reads as its
+   own distinct area, not just more of the same panel. */
+.planner-editor.has-selection {
+    padding: 10px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 10px;
+}
+.planner-editor.has-selection .automation-panel { border-radius: 6px; }
+/* Large "what am I working on" header — name, From/To + time, and an
+   (unsaved) flag — shown only once a break is actually loaded (planner.js's
+   renderBreaks() keeps this current on every edit, not just on selection). */
+.planner-editor-header {
+    flex: 0 0 auto; padding: 2px 4px 10px;
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+}
+.planner-editor-header[hidden] { display: none; }
+.planner-editor-header-name {
+    font-size: 20px; font-weight: 800; color: #fff;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+}
+.planner-editor-header-time {
+    flex: 0 0 auto; font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700;
+    color: var(--text-secondary); background: rgba(255, 255, 255, 0.08); padding: 3px 9px; border-radius: 5px;
+}
+.planner-editor-header-unsaved { flex: 0 0 auto; font-size: 12.5px; font-weight: 800; color: #ffb454; }
+.planner-editor-header-unsaved[hidden] { display: none; }
 /* Covers the (otherwise empty/confusing) editor until a break is picked —
    see planner.js's updateSelectionUi(). */
 .planner-editor-hint {
@@ -1359,7 +1387,9 @@ body.hide-ticker .source-link { bottom: 10px; left: auto; right: 12px; }
     background: #2e3742; color: var(--text-tertiary); font-size: 14px; font-weight: 700;
 }
 .planner-editor-hint[hidden] { display: none; }
-.planner-editor-hint-link { color: var(--cyan-text); text-decoration: underline; cursor: pointer; }
+/* Padding (not more literal spaces — HTML collapses those) so the link
+   doesn't read as cramped against its neighbouring words. */
+.planner-editor-hint-link { color: var(--cyan-text); text-decoration: underline; cursor: pointer; padding: 0 4px; }
 .planner-editor-hint-link:hover { color: #fff; }
 .automation-panel.planner-mode .breaks-strip,
 .automation-panel.planner-mode .auto-header-wrap,

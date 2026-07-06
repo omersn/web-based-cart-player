@@ -360,14 +360,31 @@
         add.innerHTML = '<i class="ph ph-plus"></i> Add break';
         add.addEventListener('click', addBreak);
         host.appendChild(add);
+        updateEditorHeader();
     }
     // Reflects `sel` in the tree's Add buttons (grayed out with nothing
-    // selected — there's nowhere to add into) and the editor's empty-state
-    // hint (shown only until a break is picked).
+    // selected — there's nowhere to add into), the editor's empty-state
+    // hint, and the workspace's inner-border/brighter-background treatment
+    // (shown/on only once a break is picked).
     function updateSelectionUi() {
         document.querySelectorAll('.ptree-add').forEach((b) => { b.disabled = sel < 0; });
         const hint = $('plannerEditorHint');
         if (hint) hint.hidden = sel >= 0;
+        $('plannerEditor').classList.toggle('has-selection', sel >= 0);
+    }
+    // "What am I working on" header — name, From/To + time, an (unsaved)
+    // flag. Called from renderBreaks() (not just updateSelectionUi()) so it
+    // stays current after every edit — rename, time change, item add — not
+    // only when the selection itself changes.
+    function updateEditorHeader() {
+        const header = $('plannerEditorHeader');
+        const b = plan[sel];
+        if (!b) { header.hidden = true; return; }
+        header.hidden = false;
+        $('plannerEditorName').textContent = b.name || 'Break';
+        const anchorLabel = b.anchor === 'end' ? 'To' : 'From';
+        $('plannerEditorTime').textContent = `${anchorLabel}: ${hasTime(b) ? b.time : '--:--'}`;
+        $('plannerEditorUnsaved').hidden = !isDirty();
     }
     function select(i) {
         if (i === sel) return;

@@ -1144,6 +1144,15 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                              overlays it while nothing's selected so the
                              (otherwise confusingly empty) editor doesn't show. -->
                         <p class="planner-editor-hint" id="plannerEditorHint">Select or <a href="#" class="planner-editor-hint-link" id="plannerCreateBreak">create</a> a new Ad break</p>
+                        <!-- "What am I working on" — name, From/To + time, an
+                             (unsaved) flag. Hidden until a break is loaded;
+                             kept current on every edit by renderBreaks(), not
+                             just when the selection itself changes. -->
+                        <div class="planner-editor-header" id="plannerEditorHeader" hidden>
+                            <span class="planner-editor-header-name" id="plannerEditorName"></span>
+                            <span class="planner-editor-header-time" id="plannerEditorTime"></span>
+                            <span class="planner-editor-header-unsaved" id="plannerEditorUnsaved" hidden>(unsaved)</span>
+                        </div>
                     </div>
                 </div>
             </div>
