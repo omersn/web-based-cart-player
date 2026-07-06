@@ -242,15 +242,18 @@
     // the one real mechanism, and it only grants access to a folder after an
     // explicit user gesture. Once granted, that folder's CONTENTS (including
     // subfolders) are freely readable without further native dialogs — which
-    // is what makes "remember the last folder" and "browse one at a time"
-    // both workable here. Files handed off to a deck go through the exact
-    // same loadLocalFile() the deck's own single-file Load button already
-    // uses (8MB cap, MP3-only, object-URL, waveform-from-File) — a
-    // FileSystemFileHandle's .getFile() returns a real File, identical to
-    // what <input type=file> gives you, so there's no separate validation
-    // path to maintain here.
+    // is what makes "remember the last folder" workable here. The chosen
+    // folder is scanned recursively (itself + up to 3 levels of subfolders)
+    // and rendered as one collapsible tree — same visual language as the
+    // Network tree / Break Planner's cart tree (.ptree-section/.ptree-head).
+    // Files handed off to a deck go through the exact same loadLocalFile()
+    // the deck's own single-file Load button already uses (MP3-only,
+    // object-URL, waveform-from-File) — a FileSystemFileHandle's .getFile()
+    // returns a real File, identical to what <input type=file> gives you, so
+    // there's no separate validation path to maintain here.
     const LOCAL_DB = 'djLocalBrowser', LOCAL_STORE = 'folder', LOCAL_KEY = 'root';
-    const LOCAL_MAX_ITEMS = 500;
+    const LOCAL_MAX_ITEMS = 500;   // total entries across the WHOLE scanned tree
+    const LOCAL_MAX_DEPTH = 3;     // subfolder levels below the chosen root
     function localSupported() { return typeof window.showDirectoryPicker === 'function'; }
     function idbOpen() {
         return new Promise((resolve, reject) => {
@@ -287,140 +290,224 @@
         });
     }
 
-    let localRootHandle = null, localRootName = '', localPath = [], localCurrentHandle = null;
+    let localRootHandle = null, localRootName = '', localTree = null, localNeedsReopen = false;
     let localInitialized = false; // only probe stored permission once per page load
 
-    async function resolvePath(root, path) {
-        let h = root;
-        for (const name of path) h = await h.getDirectoryHandle(name);
-        return h;
-    }
     async function saveLocalState() {
         if (!localRootHandle) { await idbDel(LOCAL_KEY).catch(() => {}); return; }
-        await idbSet(LOCAL_KEY, { rootHandle: localRootHandle, rootName: localRootName, path: localPath }).catch(() => {});
+        await idbSet(LOCAL_KEY, { rootHandle: localRootHandle, rootName: localRootName }).catch(() => {});
     }
     function localFireButtonsHtml() {
         return Array.from({ length: playerCount() }, (_, k) => k + 1)
             .map((n) => `<button type="button" class="ptree-btn dj-fire" data-deck="${n}" title="Fire into Player ${n}">${n}</button>`).join('');
     }
-    async function renderLocalListing() {
-        const listing = $('djLocalListing');
-        listing.innerHTML = '';
-        const dir = localCurrentHandle;
-        if (!dir) return;
-        const folders = [], files = [];
-        let count = 0;
-        try {
-            for await (const [name, handle] of dir.entries()) {
-                count++;
-                if (count > LOCAL_MAX_ITEMS) {
-                    listing.innerHTML = `<p class="dj-local-error">This folder has more than ${LOCAL_MAX_ITEMS} items — too many to show. Pick a more specific subfolder.</p>`;
-                    return;
-                }
-                if (handle.kind === 'directory') folders.push(name);
-                else if (/\.mp3$/i.test(name)) files.push({ name, handle });
-            }
-        } catch (e) {
-            listing.innerHTML = '<p class="dj-local-error">Could not read this folder.</p>';
-            return;
+    // Same PFL button as the Network tree's rows (.ptree-play / .pfl-icon) —
+    // no send-to-autoplayer button here, ever: a local file is a temporary,
+    // never-uploaded thing, not a station-library item the autoplayer can
+    // reference by cart id.
+    function localPflButtonHtml() {
+        return pflTreeAllowed() ? `<button type="button" class="ptree-btn ptree-play" title="Preview (PFL)"><span class="pfl-icon"><i class="ph ph-speaker-simple-high"></i></span></button>` : '';
+    }
+    // Recursively scans a folder, capped at LOCAL_MAX_DEPTH subfolder levels
+    // and LOCAL_MAX_ITEMS total entries across the WHOLE scan (throws to
+    // abort — a folder tree that size isn't safe to render as one flat DOM
+    // dump anyway).
+    async function scanFolder(handle, levelsLeft, counter) {
+        const node = { name: handle.name, folders: [], files: [] };
+        const entries = [];
+        for await (const [name, h] of handle.entries()) {
+            entries.push([name, h]);
+            counter.n++;
+            if (counter.n > LOCAL_MAX_ITEMS) { const e = new Error('TOO_MANY'); e.tooMany = true; throw e; }
         }
-        folders.sort((a, b) => a.localeCompare(b));
-        files.sort((a, b) => a.name.localeCompare(b.name));
-        folders.forEach((name) => {
-            const row = document.createElement('div');
-            row.className = 'dj-local-row is-folder';
-            row.innerHTML = '<span class="dj-local-row-icon">\u{1F4C1}</span><span class="dj-local-row-name"></span>';
-            row.querySelector('.dj-local-row-name').textContent = name;
-            row.addEventListener('click', () => enterFolder(name));
-            listing.appendChild(row);
-        });
+        entries.sort((a, b) => a[0].localeCompare(b[0]));
+        for (const [name, h] of entries) {
+            if (h.kind === 'directory') {
+                if (levelsLeft > 0) node.folders.push(await scanFolder(h, levelsLeft - 1, counter));
+                // levelsLeft === 0: deeper than LOCAL_MAX_DEPTH — not shown at all.
+            } else if (/\.mp3$/i.test(name)) {
+                node.files.push({ name, handle: h });
+            }
+        }
+        return node;
+    }
+    function countFiles(node) {
+        return node.files.length + node.folders.reduce((s, f) => s + countFiles(f), 0);
+    }
+    // ---- ID3 (best-effort) --------------------------------------------------
+    // A minimal ID3v2 reader (title/artist only) — no library in this
+    // vanilla-JS project, and this is a display nicety, never load-blocking:
+    // anything unrecognised or malformed just falls back to the filename.
+    function readId3Text(view, offset, length, encByte) {
+        if (encByte === 1 || encByte === 2) { // UTF-16, with or without a BOM
+            let start = offset, len = length, littleEndian = encByte === 1;
+            if (encByte === 1 && len >= 2) {
+                const bom = view.getUint16(offset, false);
+                littleEndian = bom !== 0xFEFF;
+                start += 2; len -= 2;
+            }
+            let out = '';
+            for (let i = 0; i + 1 < len; i += 2) out += String.fromCharCode(view.getUint16(start + i, littleEndian));
+            return out.replace(/ +$/, '').trim();
+        }
+        const bytes = new Uint8Array(view.buffer, view.byteOffset + offset, length);
+        try { return new TextDecoder(encByte === 3 ? 'utf-8' : 'iso-8859-1').decode(bytes).replace(/ +$/, '').trim(); }
+        catch (e) { return ''; }
+    }
+    async function parseId3(file) {
+        try {
+            const head = await file.slice(0, 256 * 1024).arrayBuffer(); // tags sit at the front; this is generous for one
+            const view = new DataView(head);
+            if (view.byteLength < 10) return null;
+            if (String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2)) !== 'ID3') return null;
+            const verMajor = view.getUint8(3);
+            const synchsafe = (o) => ((view.getUint8(o) & 0x7f) << 21) | ((view.getUint8(o + 1) & 0x7f) << 14) | ((view.getUint8(o + 2) & 0x7f) << 7) | (view.getUint8(o + 3) & 0x7f);
+            const end = Math.min(view.byteLength, 10 + synchsafe(6));
+            let pos = 10, title = null, artist = null;
+            while (pos + 10 <= end) {
+                const id = String.fromCharCode(view.getUint8(pos), view.getUint8(pos + 1), view.getUint8(pos + 2), view.getUint8(pos + 3));
+                if (id === '    ') break;
+                const size = verMajor >= 4 ? synchsafe(pos + 4) : view.getUint32(pos + 4, false);
+                pos += 10;
+                if (size <= 0 || pos + size > view.byteLength) break;
+                if ((id === 'TIT2' || id === 'TPE1') && size >= 1) {
+                    const text = readId3Text(view, pos + 1, size - 1, view.getUint8(pos));
+                    if (id === 'TIT2' && text) title = text;
+                    if (id === 'TPE1' && text) artist = text;
+                }
+                pos += size;
+            }
+            return (title || artist) ? { title, artist } : null;
+        } catch (e) { return null; }
+    }
+    // ---- render --------------------------------------------------------------
+    function renderLocalFiles(container, files) {
         files.forEach(({ name, handle }) => {
             const row = document.createElement('div');
             row.className = 'dj-local-row';
-            row.innerHTML = '<i class="ph-fill ph-music-note dj-local-row-icon"></i><span class="dj-local-row-name"></span>' + localFireButtonsHtml();
-            row.querySelector('.dj-local-row-name').textContent = name.replace(/\.mp3$/i, '');
+            row.innerHTML = '<i class="ph-fill ph-music-note dj-local-row-icon"></i><span class="dj-local-row-name"></span>' +
+                localPflButtonHtml() + localFireButtonsHtml();
+            const nameEl = row.querySelector('.dj-local-row-name');
+            nameEl.textContent = name.replace(/\.mp3$/i, '');
             row.querySelectorAll('.dj-fire').forEach((b) => {
                 b.addEventListener('click', async () => {
                     const file = await handle.getFile();
                     window.DJMode.loadLocalDeck(+b.dataset.deck, file);
                 });
             });
-            listing.appendChild(row);
+            const pflBtn = row.querySelector('.ptree-play');
+            if (pflBtn) {
+                pflBtn.addEventListener('click', async (e) => {
+                    const file = await handle.getFile();
+                    const url = URL.createObjectURL(file);
+                    // _tempPflUrl marks this URL as ours to revoke once the
+                    // preview ends (see pflStop()) — unlike a deck's own
+                    // long-lived local objectUrl, this one's throwaway.
+                    sendToPFL({ name: nameEl.textContent, isLocal: true, objectUrl: url, start: 0, end: null, volume: 1, _tempPflUrl: true }, e.currentTarget);
+                });
+            }
+            container.appendChild(row);
+            // ID3 read happens after the row's already showing (filename) —
+            // progressive enhancement, never blocks the listing from appearing.
+            handle.getFile().then(parseId3).then((tags) => {
+                if (!tags) return;
+                nameEl.textContent = tags.title ? (tags.artist ? `${tags.artist} — ${tags.title}` : tags.title) : nameEl.textContent;
+            }).catch(() => {});
         });
-        if (folders.length === 0 && files.length === 0) {
-            listing.innerHTML = '<p class="dj-local-error">No subfolders or MP3 files here.</p>';
+    }
+    function buildFolderSection(node) {
+        const box = document.createElement('div');
+        box.className = 'ptree-section collapsed';
+        const head = document.createElement('button');
+        head.type = 'button';
+        head.className = 'ptree-head';
+        head.innerHTML = `<span class="ptree-exp">+</span><span></span><em>${countFiles(node)}</em>`;
+        head.querySelectorAll('span')[1].textContent = node.name;
+        head.addEventListener('click', () => {
+            const closed = box.classList.toggle('collapsed');
+            head.querySelector('.ptree-exp').textContent = closed ? '+' : '−';
+        });
+        box.appendChild(head);
+        const list = document.createElement('div');
+        list.className = 'ptree-list';
+        renderLocalFiles(list, node.files);
+        node.folders.forEach((child) => list.appendChild(buildFolderSection(child)));
+        box.appendChild(list);
+        return box;
+    }
+    function renderLocalTree() {
+        const listing = $('djLocalListing');
+        listing.innerHTML = '';
+        if (!localTree) return;
+        renderLocalFiles(listing, localTree.files);
+        localTree.folders.forEach((node) => listing.appendChild(buildFolderSection(node)));
+        if (!localTree.files.length && !localTree.folders.length) {
+            listing.innerHTML = '<p class="dj-local-error">No subfolders or MP3 files in this folder.</p>';
         }
     }
-    function updateCrumbAndRender() {
-        $('djLocalCrumb').hidden = false;
-        $('djLocalPath').textContent = [localRootName, ...localPath].join(' / ');
-        $('djLocalUp').disabled = localPath.length === 0;
-        renderLocalListing();
-    }
-    async function enterFolder(name) {
+    async function scanAndRender() {
+        const listing = $('djLocalListing');
+        listing.innerHTML = '<p class="dj-local-error">Scanning&hellip;</p>';
         try {
-            const next = await localCurrentHandle.getDirectoryHandle(name);
-            localCurrentHandle = next;
-            localPath.push(name);
-            await saveLocalState();
-            updateCrumbAndRender();
-        } catch (e) { toast('Could not open that folder'); }
+            localTree = await scanFolder(localRootHandle, LOCAL_MAX_DEPTH, { n: 0 });
+        } catch (e) {
+            localTree = null;
+            listing.innerHTML = e && e.tooMany
+                ? `<p class="dj-local-error">This folder has more than ${LOCAL_MAX_ITEMS} items across its subfolders — too many to show. Pick a more specific folder.</p>`
+                : '<p class="dj-local-error">Could not read this folder.</p>';
+            return;
+        }
+        renderLocalTree();
     }
-    async function goUp() {
-        if (!localPath.length) return;
-        localPath.pop();
-        try {
-            localCurrentHandle = await resolvePath(localRootHandle, localPath);
-            await saveLocalState();
-            updateCrumbAndRender();
-        } catch (e) { toast('Could not go up'); }
+    // The one unified control: a plain "Choose folder…" prompt before
+    // anything's picked, then the root folder's OWN name shown big in its
+    // place — clicking it re-opens the native picker (or, if permission
+    // lapsed, reconnects to the same folder instead of forcing a re-browse).
+    function updateRootLabel() {
+        const btn = $('djLocalRoot');
+        if (!btn) return;
+        btn.classList.toggle('chosen', !!localRootHandle);
+        btn.classList.toggle('needs-reopen', !!localNeedsReopen);
+        if (!localRootHandle) { btn.textContent = 'Choose folder…'; btn.title = 'Choose a folder to browse'; }
+        else if (localNeedsReopen) { btn.textContent = localRootName; btn.title = 'Permission needed again — click to reconnect'; }
+        else { btn.textContent = localRootName; btn.title = 'Click to choose a different folder'; }
     }
-    function showPickerUi(mode, stored) {
-        $('djLocalPicker').hidden = false;
-        $('djLocalCrumb').hidden = true;
-        $('djLocalListing').innerHTML = '';
-        $('djLocalChoose').hidden = mode !== 'choose';
-        $('djLocalReopen').hidden = mode !== 'reopen';
-        if (mode === 'reopen') $('djLocalReopen').textContent = `Reopen "${stored.rootName}"`;
-    }
-    async function useFolder(handle, name, path) {
+    async function useFolder(handle, name) {
         localRootHandle = handle;
         localRootName = name;
-        try {
-            localCurrentHandle = path.length ? await resolvePath(handle, path) : handle;
-            localPath = path;
-        } catch (e) {
-            localCurrentHandle = handle;
-            localPath = [];
-        }
+        localNeedsReopen = false;
         await saveLocalState();
-        $('djLocalPicker').hidden = true;
-        updateCrumbAndRender();
+        updateRootLabel();
+        await scanAndRender();
     }
     async function chooseFolder() {
         if (!localSupported()) return;
         try {
             const handle = await window.showDirectoryPicker({ startIn: 'documents' });
-            await useFolder(handle, handle.name, []);
+            await useFolder(handle, handle.name);
         } catch (e) { /* user cancelled the native dialog */ }
     }
     async function tryRestoreFolder() {
         let stored = null;
         try { stored = await idbGet(LOCAL_KEY); } catch (e) { /* no stored folder */ }
-        if (!stored || !stored.rootHandle) { showPickerUi('choose'); return; }
+        if (!stored || !stored.rootHandle) { updateRootLabel(); return; }
         let perm;
         try { perm = await stored.rootHandle.queryPermission({ mode: 'read' }); } catch (e) { perm = 'denied'; }
-        if (perm === 'granted') { await useFolder(stored.rootHandle, stored.rootName, stored.path); return; }
-        if (perm === 'prompt') { showPickerUi('reopen', stored); return; }
+        if (perm === 'granted') { await useFolder(stored.rootHandle, stored.rootName); return; }
+        if (perm === 'prompt') {
+            localRootHandle = stored.rootHandle;
+            localRootName = stored.rootName;
+            localNeedsReopen = true;
+            updateRootLabel();
+            return;
+        }
         await idbDel(LOCAL_KEY).catch(() => {});
-        showPickerUi('choose');
+        updateRootLabel();
     }
     async function reopenFolder() {
-        let stored;
-        try { stored = await idbGet(LOCAL_KEY); } catch (e) { stored = null; }
-        if (!stored || !stored.rootHandle) { showPickerUi('choose'); return; }
-        const perm = await stored.rootHandle.requestPermission({ mode: 'read' }).catch(() => 'denied');
-        if (perm === 'granted') await useFolder(stored.rootHandle, stored.rootName, stored.path);
+        if (!localRootHandle) return;
+        const perm = await localRootHandle.requestPermission({ mode: 'read' }).catch(() => 'denied');
+        if (perm === 'granted') await useFolder(localRootHandle, localRootName);
         else toast('Permission was not granted');
     }
     function switchLibTab(pane) {
@@ -429,7 +516,7 @@
         $('djLocalPane').hidden = pane !== 'local';
         if (pane === 'local' && !localInitialized) {
             localInitialized = true;
-            if (!localSupported()) { $('djLocalUnsupported').hidden = false; $('djLocalPicker').hidden = true; }
+            if (!localSupported()) { $('djLocalUnsupported').hidden = false; $('djLocalRoot').hidden = true; }
             else tryRestoreFolder();
         }
     }
@@ -445,9 +532,7 @@
     }
     function initLocalBrowser() {
         document.querySelectorAll('.dj-lib-tab').forEach((b) => b.addEventListener('click', () => switchLibTab(b.dataset.pane)));
-        $('djLocalChoose').addEventListener('click', chooseFolder);
-        $('djLocalReopen').addEventListener('click', reopenFolder);
-        $('djLocalUp').addEventListener('click', goUp);
+        $('djLocalRoot').addEventListener('click', () => { if (localNeedsReopen) reopenFolder(); else chooseFolder(); });
         renderLibTabs();
     }
 
@@ -469,9 +554,14 @@
     function djWaveformScrubAllowed() { return !!(window.SETTINGS && window.SETTINGS.dj_waveform_scrub); }
     function pflStop() {
         if (!pflState) return;
-        const { btn, audio, timer } = pflState;
+        const { btn, audio, timer, cart } = pflState;
         clearInterval(timer);
         try { audio.pause(); } catch (e) {}
+        // Only OUR OWN throwaway preview URLs (flagged _tempPflUrl by whoever
+        // created them) get revoked here — a deck's own locally-loaded cart
+        // reuses this same sendToPFL() path with ITS long-lived objectUrl,
+        // which must survive after a PFL preview of it ends.
+        if (cart && cart._tempPflUrl && cart.objectUrl) { try { URL.revokeObjectURL(cart.objectUrl); } catch (e) {} }
         if (btn) btn.classList.remove('active');
         pflState = null;
         const box = $('djPfl');
@@ -759,12 +849,12 @@
         // item only (no chaining — that's a station-library concept, local
         // files aren't part of any chain), gone the moment it's ejected or
         // the page reloads.
-        const MAX_LOCAL_FILE_BYTES = 8 * 1024 * 1024;
+        const MAX_LOCAL_FILE_BYTES = 20 * 1024 * 1024;
         function loadLocalFile(file) {
             if (deck.playing) { toast(`Player ${no} is on air — stop it first`); return; }
             const isMp3 = /\.mp3$/i.test(file.name) || file.type === 'audio/mpeg';
             if (!isMp3) { toast('Only MP3 files are supported'); return; }
-            if (file.size > MAX_LOCAL_FILE_BYTES) { toast('File is too large — 8 MB max'); return; }
+            if (file.size > MAX_LOCAL_FILE_BYTES) { toast('File is too large — 20 MB max'); return; }
             if (pflState && pflState.btn === el('.dj-deck-pfl')) pflStop();
             deck.audios.forEach((a) => { try { a.pause(); } catch (e) {} });
             if (deck.localObjectUrl) { URL.revokeObjectURL(deck.localObjectUrl); deck.localObjectUrl = null; }

@@ -336,26 +336,21 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                         </div>
                         <!-- Local tab: browses the user's OWN computer's folders via
                              the File System Access API (Chromium/Edge only — no
-                             search box here on purpose, and only one folder's
-                             contents shown at a time, no nested tree). Never
-                             uploaded anywhere; see assets/js/dj.js's LocalBrowser
-                             section for the whole flow. -->
+                             search box here on purpose). The chosen folder is
+                             scanned recursively (itself + up to 3 levels of
+                             subfolders) and rendered as one collapsible tree.
+                             Never uploaded anywhere; see assets/js/dj.js's
+                             LocalBrowser section for the whole flow. -->
                         <div class="dj-lib-pane" id="djLocalPane" hidden>
                             <p class="dj-local-unsupported" id="djLocalUnsupported" hidden>
                                 Browsing local folders needs Chrome or Edge &mdash; not supported in this browser.
                             </p>
-                            <div class="dj-local-picker" id="djLocalPicker">
-                                <button type="button" class="dj-local-choose" id="djLocalChoose">Choose folder&hellip;</button>
-                                <!-- Shown instead of the button above when a remembered
-                                     folder's permission needs a fresh click to reuse
-                                     (browsers don't always keep this silently granted
-                                     across a restart) — see LocalBrowser in dj.js. -->
-                                <button type="button" class="dj-local-choose" id="djLocalReopen" hidden></button>
-                            </div>
-                            <div class="dj-local-crumb" id="djLocalCrumb" hidden>
-                                <button type="button" class="dj-local-up" id="djLocalUp" title="Up one folder"><i class="ph ph-arrow-line-up"></i></button>
-                                <span class="dj-local-path" id="djLocalPath"></span>
-                            </div>
+                            <!-- One control for the whole picker flow: "Choose
+                                 folder…" before anything's picked, then the root
+                                 folder's OWN name shown big in its place —
+                                 clicking it re-opens the picker (or reconnects,
+                                 if permission lapsed — see .needs-reopen). -->
+                            <button type="button" class="dj-local-root" id="djLocalRoot">Choose folder&hellip;</button>
                             <div class="ptree-scroller dj-tree-scroller" id="djLocalListing"></div>
                             <p class="dj-local-hint">Tip: you can also load a file directly from your PC with any deck&rsquo;s own <i class="ph ph-download-simple"></i> Load button.</p>
                         </div>
