@@ -292,6 +292,8 @@
 
     let localRootHandle = null, localRootName = '', localTree = null, localNeedsReopen = false;
     let localInitialized = false; // only probe stored permission once per page load
+    let localQuery = '';
+    let localTruncated = false; // true once ANY folder was hidden by the depth cap below
 
     async function saveLocalState() {
         if (!localRootHandle) { await idbDel(LOCAL_KEY).catch(() => {}); return; }
@@ -311,7 +313,9 @@
     // Recursively scans a folder, capped at LOCAL_MAX_DEPTH subfolder levels
     // and LOCAL_MAX_ITEMS total entries across the WHOLE scan (throws to
     // abort — a folder tree that size isn't safe to render as one flat DOM
-    // dump anyway).
+    // dump anyway). Sets counter.truncated when a folder is hidden purely
+    // because it's deeper than LOCAL_MAX_DEPTH, so the render step can show a
+    // gentle "there's more below" tip instead of silently cutting it off.
     async function scanFolder(handle, levelsLeft, counter) {
         const node = { name: handle.name, folders: [], files: [] };
         const entries = [];
@@ -324,15 +328,25 @@
         for (const [name, h] of entries) {
             if (h.kind === 'directory') {
                 if (levelsLeft > 0) node.folders.push(await scanFolder(h, levelsLeft - 1, counter));
-                // levelsLeft === 0: deeper than LOCAL_MAX_DEPTH — not shown at all.
+                else counter.truncated = true; // deeper than LOCAL_MAX_DEPTH — not shown at all
             } else if (/\.mp3$/i.test(name)) {
                 node.files.push({ name, handle: h });
             }
         }
         return node;
     }
-    function countFiles(node) {
-        return node.files.length + node.folders.reduce((s, f) => s + countFiles(f), 0);
+    // Counts respect an active search filter — same convention as the
+    // Network/Planner trees' own section-header counts (post-filter, not
+    // total).
+    function countFilesMatching(node, q) {
+        const own = node.files.filter((f) => fileMatches(f.name, q)).length;
+        return own + node.folders.reduce((s, f) => s + countFilesMatching(f, q), 0);
+    }
+    function fileMatches(name, q) { return !q || name.replace(/\.mp3$/i, '').toLowerCase().includes(q); }
+    function nodeHasMatch(node, q) {
+        if (!q) return true;
+        if (node.files.some((f) => fileMatches(f.name, q))) return true;
+        return node.folders.some((f) => nodeHasMatch(f, q));
     }
     // ---- ID3 (best-effort) --------------------------------------------------
     // A minimal ID3v2 reader (title/artist only) — no library in this
@@ -381,13 +395,35 @@
         } catch (e) { return null; }
     }
     // ---- render --------------------------------------------------------------
-    function renderLocalFiles(container, files) {
+    // Duration isn't known from the filesystem — read lazily via a throwaway
+    // <audio>'s loadedmetadata (near-instant for a local file; no network
+    // fetch involved) and fill it in once it resolves, same progressive
+    // pattern as the ID3 read below.
+    function probeDuration(file, lenEl) {
+        try {
+            const url = URL.createObjectURL(file);
+            const a = new Audio();
+            const done = () => URL.revokeObjectURL(url);
+            a.addEventListener('loadedmetadata', () => { lenEl.textContent = fmtDur(a.duration || 0); done(); }, { once: true });
+            a.addEventListener('error', done, { once: true });
+            a.preload = 'metadata';
+            a.src = url;
+        } catch (e) { /* duration is a nicety — leave the "—" placeholder */ }
+    }
+    // Same row layout as the Network tree's own cart rows (.ptree-cart) —
+    // gets its padding, hover background, AND the hover-reveal on .ptree-btn
+    // for free by reusing the class, instead of duplicating that CSS (and
+    // silently missing the hover-reveal rule, which is exactly what happened
+    // before this reuse — the buttons existed but sat at opacity:0 forever
+    // under a class that rule never matched).
+    function renderLocalFiles(container, files, q) {
         files.forEach(({ name, handle }) => {
+            if (!fileMatches(name, q)) return;
             const row = document.createElement('div');
-            row.className = 'dj-local-row';
-            row.innerHTML = '<i class="ph-fill ph-music-note dj-local-row-icon"></i><span class="dj-local-row-name"></span>' +
-                localPflButtonHtml() + localFireButtonsHtml();
-            const nameEl = row.querySelector('.dj-local-row-name');
+            row.className = 'ptree-cart';
+            row.innerHTML = '<i class="ph ph-waveform dj-local-row-icon"></i><span class="ptree-name"></span>' +
+                '<span class="ptree-len">—</span>' + localPflButtonHtml() + localFireButtonsHtml();
+            const nameEl = row.querySelector('.ptree-name');
             nameEl.textContent = name.replace(/\.mp3$/i, '');
             row.querySelectorAll('.dj-fire').forEach((b) => {
                 b.addEventListener('click', async () => {
@@ -407,21 +443,31 @@
                 });
             }
             container.appendChild(row);
-            // ID3 read happens after the row's already showing (filename) —
-            // progressive enhancement, never blocks the listing from appearing.
-            handle.getFile().then(parseId3).then((tags) => {
+            // Both reads happen after the row's already showing (filename,
+            // "—" duration) — progressive enhancement, never blocks the
+            // listing from appearing.
+            handle.getFile().then((file) => {
+                probeDuration(file, row.querySelector('.ptree-len'));
+                return parseId3(file);
+            }).then((tags) => {
                 if (!tags) return;
                 nameEl.textContent = tags.title ? (tags.artist ? `${tags.artist} — ${tags.title}` : tags.title) : nameEl.textContent;
             }).catch(() => {});
         });
     }
-    function buildFolderSection(node) {
+    // Top-level folders (direct children of the chosen root) get the same
+    // blue-tinted, pre-opened treatment as the Network/Planner trees' own
+    // "ID" sections (.ptree-section.ids) — everything nested deeper stays
+    // plain and starts collapsed.
+    function buildFolderSection(node, q, isTopLevel) {
+        if (q && !nodeHasMatch(node, q)) return null;
         const box = document.createElement('div');
-        box.className = 'ptree-section collapsed';
+        const open = isTopLevel || !!q; // a search match auto-expands to reveal it
+        box.className = 'ptree-section' + (isTopLevel ? ' ids' : '') + (open ? '' : ' collapsed');
         const head = document.createElement('button');
         head.type = 'button';
         head.className = 'ptree-head';
-        head.innerHTML = `<span class="ptree-exp">+</span><span></span><em>${countFiles(node)}</em>`;
+        head.innerHTML = `<span class="ptree-exp">${open ? '−' : '+'}</span><span></span><em>${countFilesMatching(node, q)}</em>`;
         head.querySelectorAll('span')[1].textContent = node.name;
         head.addEventListener('click', () => {
             const closed = box.classList.toggle('collapsed');
@@ -430,8 +476,11 @@
         box.appendChild(head);
         const list = document.createElement('div');
         list.className = 'ptree-list';
-        renderLocalFiles(list, node.files);
-        node.folders.forEach((child) => list.appendChild(buildFolderSection(child)));
+        renderLocalFiles(list, node.files, q);
+        node.folders.forEach((child) => {
+            const childBox = buildFolderSection(child, q, false);
+            if (childBox) list.appendChild(childBox);
+        });
         box.appendChild(list);
         return box;
     }
@@ -439,17 +488,31 @@
         const listing = $('djLocalListing');
         listing.innerHTML = '';
         if (!localTree) return;
-        renderLocalFiles(listing, localTree.files);
-        localTree.folders.forEach((node) => listing.appendChild(buildFolderSection(node)));
-        if (!localTree.files.length && !localTree.folders.length) {
-            listing.innerHTML = '<p class="dj-local-error">No subfolders or MP3 files in this folder.</p>';
+        const q = localQuery.trim().toLowerCase();
+        renderLocalFiles(listing, localTree.files, q);
+        localTree.folders.forEach((node) => {
+            const box = buildFolderSection(node, q, true);
+            if (box) listing.appendChild(box);
+        });
+        if (!listing.children.length) {
+            listing.innerHTML = q ? '<p class="dj-local-error">No matches.</p>' : '<p class="dj-local-error">No subfolders or MP3 files in this folder.</p>';
+        }
+        // Gentle, non-blocking heads-up — never shown mid-search (it's about
+        // the whole folder's shape, not the current filter).
+        if (localTruncated && !q) {
+            const tip = document.createElement('p');
+            tip.className = 'dj-local-tip';
+            tip.textContent = 'Some folders here are nested deeper than shown — open a more specific subfolder to see the rest.';
+            listing.appendChild(tip);
         }
     }
     async function scanAndRender() {
         const listing = $('djLocalListing');
         listing.innerHTML = '<p class="dj-local-error">Scanning&hellip;</p>';
         try {
-            localTree = await scanFolder(localRootHandle, LOCAL_MAX_DEPTH, { n: 0 });
+            const counter = { n: 0, truncated: false };
+            localTree = await scanFolder(localRootHandle, LOCAL_MAX_DEPTH, counter);
+            localTruncated = counter.truncated;
         } catch (e) {
             localTree = null;
             listing.innerHTML = e && e.tooMany
@@ -471,6 +534,14 @@
         if (!localRootHandle) { btn.textContent = 'Choose folder…'; btn.title = 'Choose a folder to browse'; }
         else if (localNeedsReopen) { btn.textContent = localRootName; btn.title = 'Permission needed again — click to reconnect'; }
         else { btn.textContent = localRootName; btn.title = 'Click to choose a different folder'; }
+        // The rescan button only makes sense once there's a live, readable
+        // folder to rescan.
+        const rescan = $('djLocalRescan');
+        if (rescan) rescan.hidden = !localRootHandle || localNeedsReopen;
+    }
+    function rescanFolder() {
+        if (!localRootHandle || localNeedsReopen) return;
+        scanAndRender();
     }
     async function useFolder(handle, name) {
         localRootHandle = handle;
@@ -516,8 +587,11 @@
         $('djLocalPane').hidden = pane !== 'local';
         if (pane === 'local' && !localInitialized) {
             localInitialized = true;
-            if (!localSupported()) { $('djLocalUnsupported').hidden = false; $('djLocalRoot').hidden = true; }
-            else tryRestoreFolder();
+            if (!localSupported()) {
+                $('djLocalUnsupported').hidden = false;
+                $('djLocalRoot').hidden = true;
+                $('djLocalToolbar').hidden = true;
+            } else tryRestoreFolder();
         }
     }
     // manager Options tab's own live-apply hook (applyDeckFeatureSettings)
@@ -533,6 +607,17 @@
     function initLocalBrowser() {
         document.querySelectorAll('.dj-lib-tab').forEach((b) => b.addEventListener('click', () => switchLibTab(b.dataset.pane)));
         $('djLocalRoot').addEventListener('click', () => { if (localNeedsReopen) reopenFolder(); else chooseFolder(); });
+        $('djLocalRescan').addEventListener('click', rescanFolder);
+        $('djLocalSearch').addEventListener('input', (e) => {
+            localQuery = e.target.value;
+            $('djLocalSearchClear').hidden = localQuery === '';
+            renderLocalTree();
+        });
+        $('djLocalSearchClear').addEventListener('click', () => {
+            $('djLocalSearch').value = ''; localQuery = '';
+            $('djLocalSearchClear').hidden = true;
+            renderLocalTree();
+        });
         renderLibTabs();
     }
 

@@ -2176,11 +2176,14 @@ body.dj-mode.dock-clock-only .dj-tree { margin-bottom: 200px; }
 .dj-lib-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .dj-lib-pane[hidden] { display: none; }
 /* Local tab: browsing the user's own computer's folders (File System Access
-   API — Chromium/Edge only), rendered as a collapsible tree (reuses
-   .ptree-section/.ptree-head/.ptree-list) — see assets/js/dj.js's
-   LocalBrowser section. */
+   API — Chromium/Edge only), rendered as a collapsible tree — same classes
+   as the Network tree (.ptree-section/.ptree-head/.ptree-list/.ptree-cart),
+   so file rows get identical padding, hover background, AND the hover-reveal
+   on their PFL/fire buttons for free — see assets/js/dj.js's LocalBrowser
+   section. */
+.dj-local-root-row { display: flex; align-items: center; gap: 6px; margin: 8px 8px 0; }
 .dj-local-root {
-    flex: 0 0 auto; margin: 8px 8px 4px; width: calc(100% - 16px); height: 34px;
+    flex: 1 1 auto; min-width: 0; height: 34px;
     border: 1px dashed var(--hairline); border-radius: 8px; text-align: left; padding: 0 10px;
     background: rgba(0, 0, 0, 0.04); color: #111; font-weight: 700; font-size: 13px; cursor: pointer;
     font-family: 'Assistant', sans-serif;
@@ -2195,17 +2198,20 @@ body.dj-mode.dock-clock-only .dj-tree { margin-bottom: 200px; }
 }
 .dj-local-root.chosen:hover { background: rgba(0, 0, 0, 0.06); border-radius: 6px; }
 .dj-local-root.needs-reopen { color: #a35b00; }
+.dj-local-rescan {
+    flex: 0 0 auto; width: 26px; height: 26px; border: 1px solid var(--hairline); border-radius: 6px;
+    background: rgba(0, 0, 0, 0.05); cursor: pointer; color: #111;
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+}
+.dj-local-rescan:hover { background: rgba(0, 0, 0, 0.1); }
 .dj-local-unsupported, .dj-local-error { margin: 10px 8px; font-size: 12.5px; line-height: 1.5; }
 .dj-local-unsupported { color: #555; }
 .dj-local-error { color: #a33; }
 .dj-local-hint { margin: 6px 8px; font-size: 11px; color: #555; line-height: 1.4; }
 .dj-local-hint i { font-size: 11px; }
-.dj-local-row { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 4px; }
-.dj-local-row-icon { flex: 0 0 auto; font-size: 13px; }
-.dj-local-row-name {
-    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    font-size: 12.5px;
-}
+/* Gentle, non-blocking note (not an error) — same quiet tone as the hint. */
+.dj-local-tip { margin: 8px 8px; font-size: 11px; color: #555; line-height: 1.4; font-style: italic; }
+.dj-local-row-icon { flex: 0 0 auto; font-size: 12px; }
 /* Tighter spacing in the DJ library so wide names get the room (the fire +
    preview buttons sit in the flow permanently). Scoped to .dj-tree so the
    planner tree keeps its roomier defaults. */
