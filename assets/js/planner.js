@@ -400,7 +400,10 @@
         $('plannerBreakSave').disabled = !dirty;
         $('plannerBreakDiscard').disabled = !dirty;
         // Cancel (revert + unload) always works — there's nothing to gate on
-        // dirtiness when it's the exit itself, not a step past it.
+        // dirtiness when it's the exit itself, not a step past it. But with
+        // nothing to discard, "Cancel" is a confusing label for what's really
+        // just leaving — call it "Close" while Save/Discard are grayed out.
+        $('plannerBreakCancel').textContent = dirty ? 'Cancel' : 'Close';
     }
     // Anything that navigates the editor away from the selected break (picking
     // a different one, adding a new one, closing the overlay) has to go
