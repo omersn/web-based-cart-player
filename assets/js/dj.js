@@ -270,7 +270,7 @@
         if (pflState && pflState.btn === btn) { pflStop(); return; } // same source again -> unload
         pflStop(); // only one thing plays in PFL at a time
         const box = $('djPfl');
-        const audio = new Audio(`uploads/${c.file}`);
+        const audio = new Audio(c.isLocal ? c.objectUrl : `uploads/${c.file}`);
         // Dry by default (a fresh, throwaway element every preview, so this is
         // always safe to call) — AudioEngine itself decides whether this
         // actually wires in, based on the Audio tab's "DSP on PFL" setting.
@@ -332,7 +332,7 @@
     function makeDeck(no) {
         const root = $('djDeck' + no);
         const el = (sel) => root.querySelector(sel);
-        const deck = { items: [], audios: [], idx: -1, playing: false, repeat: false, timer: null };
+        const deck = { items: [], audios: [], idx: -1, playing: false, repeat: false, timer: null, localObjectUrl: null };
 
         // Tags the shared playback log (manager > Maintenance) with which
         // deck fired the cart and which (simulated) output it carries — lets
@@ -376,7 +376,12 @@
             el('.dj-deck-play').disabled = !loaded();
             el('.dj-deck-stop').disabled = !loaded();
             el('.dj-deck-repeat').disabled = !loaded();
-            el('.dj-deck-eject').disabled = !loaded() || deck.playing;
+            // Dual purpose: empty -> load a local file (always available),
+            // loaded -> unload (blocked while on air, same as before).
+            const ejectBtn = el('.dj-deck-eject');
+            ejectBtn.disabled = loaded() && deck.playing;
+            ejectBtn.title = loaded() ? 'Unload' : 'Load local MP3 file (temporary, not uploaded)';
+            ejectBtn.innerHTML = loaded() ? '<i class="ph ph-x"></i>' : '<i class="ph ph-upload-simple"></i>';
             el('.dj-deck-pfl').disabled = !loaded();
             el('.dj-deck-repeat').classList.toggle('active', deck.repeat);
             el('.dj-deck-play').innerHTML = deck.playing ? '<i class="ph-fill ph-pause"></i>' : '<i class="ph-fill ph-play"></i>';
@@ -392,6 +397,25 @@
             const c = curCart();
             if (!c) return;
             const canvas = el('.dj-deck-wave');
+            // A local file's audio never touches the server, so its waveform
+            // can't come from the shared uploads/-fetching waveBuffer() either
+            // — decode straight from the in-memory File, cached on the cart
+            // record itself (a per-load object, not the shared by-filename
+            // cache, since a temp file has no stable server-side identity).
+            if (c.isLocal) {
+                if (c._waveBuf) {
+                    drawWave(canvas, c._waveBuf, c.start || 0, cartEnd(c, curAudio()), 'rgba(255, 255, 255, 0.65)');
+                    return;
+                }
+                c.localFile.arrayBuffer()
+                    .then((buf) => { waveCtx = waveCtx || new (window.AudioContext || window.webkitAudioContext)(); return waveCtx.decodeAudioData(buf); })
+                    .then((decoded) => {
+                        c._waveBuf = decoded;
+                        if (curCart() === c) drawWave(canvas, decoded, c.start || 0, cartEnd(c, curAudio()), 'rgba(255, 255, 255, 0.65)');
+                    })
+                    .catch(() => {});
+                return;
+            }
             waveBuffer(c.file).then((buf) => {
                 if (curCart() !== c) return; // deck moved on while decoding
                 drawWave(canvas, buf, c.start || 0, cartEnd(c, curAudio()), 'rgba(255, 255, 255, 0.65)');
@@ -467,6 +491,7 @@
         }
         function clearDeck() {
             deck.audios.forEach((a) => { try { a.pause(); } catch (e) {} });
+            if (deck.localObjectUrl) { URL.revokeObjectURL(deck.localObjectUrl); deck.localObjectUrl = null; }
             deck.items = []; deck.audios = []; deck.idx = -1;
             vuStop();
             el('.dj-deck-wash').style.width = '0%';
@@ -498,6 +523,42 @@
             deck.idx = 0;
             const a = curAudio();
             a.addEventListener('loadedmetadata', () => { try { a.currentTime = c.start || 0; } catch (e) {} refreshTime(); });
+            drawCurrentWave();
+            paint();
+            refreshTime();
+        }
+        // Load a local MP3 straight off the user's disk for temporary
+        // playback — never uploaded, never touches the server. A single
+        // item only (no chaining — that's a station-library concept, local
+        // files aren't part of any chain), gone the moment it's ejected or
+        // the page reloads.
+        const MAX_LOCAL_FILE_BYTES = 8 * 1024 * 1024;
+        function loadLocalFile(file) {
+            if (deck.playing) { toast(`Player ${no} is on air — stop it first`); return; }
+            const isMp3 = /\.mp3$/i.test(file.name) || file.type === 'audio/mpeg';
+            if (!isMp3) { toast('Only MP3 files are supported'); return; }
+            if (file.size > MAX_LOCAL_FILE_BYTES) { toast('File is too large — 8 MB max'); return; }
+            if (pflState && pflState.btn === el('.dj-deck-pfl')) pflStop();
+            deck.audios.forEach((a) => { try { a.pause(); } catch (e) {} });
+            if (deck.localObjectUrl) { URL.revokeObjectURL(deck.localObjectUrl); deck.localObjectUrl = null; }
+            const objectUrl = URL.createObjectURL(file);
+            deck.localObjectUrl = objectUrl;
+            const localCart = {
+                i: null, name: file.name.replace(/\.mp3$/i, ''), file: null,
+                isLocal: true, objectUrl, localFile: file,
+                start: 0, end: null, volume: 1, color: '1', cross: false,
+            };
+            deck.items = [localCart];
+            const a = new Audio(objectUrl);
+            a.preload = 'auto';
+            a.volume = 1;
+            vuWire(a);
+            deck.audios = [a];
+            deck.idx = 0;
+            // end starts null (natural duration unknown yet) — same convention
+            // an untrimmed server cart uses, just resolved from this file's own
+            // metadata instead of a server-side trim value.
+            a.addEventListener('loadedmetadata', () => { localCart.end = a.duration; refreshTime(); });
             drawCurrentWave();
             paint();
             refreshTime();
@@ -550,7 +611,17 @@
 
         el('.dj-deck-play').addEventListener('click', playPause);
         el('.dj-deck-stop').addEventListener('click', stop);
-        el('.dj-deck-eject').addEventListener('click', eject);
+        // Dual purpose (see paint()): empty -> open the file picker, loaded -> eject.
+        const fileInput = el('.dj-deck-file-input');
+        el('.dj-deck-eject').addEventListener('click', () => {
+            if (loaded()) { eject(); return; }
+            fileInput.click();
+        });
+        fileInput.addEventListener('change', () => {
+            const file = fileInput.files && fileInput.files[0];
+            fileInput.value = ''; // allow re-picking the same file later
+            if (file) loadLocalFile(file);
+        });
         el('.dj-deck-repeat').addEventListener('click', () => { deck.repeat = !deck.repeat; paint(); });
         el('.dj-deck-pfl').addEventListener('click', () => { const c = curCart(); if (c) sendToPFL(c, el('.dj-deck-pfl')); });
         applyRouting();

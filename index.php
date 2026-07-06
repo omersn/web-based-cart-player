@@ -369,7 +369,11 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                                 <div class="dj-deck-btns">
                                     <button type="button" class="dj-deck-stop" disabled title="Stop"><i class="ph-fill ph-stop"></i></button>
                                     <button type="button" class="dj-deck-repeat" disabled title="Repeat"><i class="ph ph-repeat"></i></button>
-                                    <button type="button" class="dj-deck-eject" disabled title="Unload"><i class="ph ph-eject"></i></button>
+                                    <!-- Dual purpose, per deck.js's paint(): empty deck ->
+                                         load a local MP3 (temporary, never sent to the
+                                         server); loaded deck -> unload (eject). -->
+                                    <button type="button" class="dj-deck-eject" title="Load local MP3 file (temporary, not uploaded)"><i class="ph ph-upload-simple"></i></button>
+                                    <input type="file" class="dj-deck-file-input" accept=".mp3,audio/mpeg" hidden>
                                     <button type="button" class="dj-deck-pfl" disabled title="PREVIEW (PFL)"><span class="pfl-icon"><i class="ph ph-speaker-simple-high"></i></span></button>
                                 </div>
                                 <!-- Countdown: big, and red for the last 4 seconds. -->
