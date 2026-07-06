@@ -2077,8 +2077,16 @@ body.dj-mode.dock-clock-only .dj-tree { margin-bottom: 200px; }
 }
 /* Network/Local tab switcher (only shown via JS once Options > "Allow
    loading local MP3 files" is on) + the two panes it flips between — reuses
-   .auto-mode-switch's own button/active styling verbatim, just adds spacing. */
-.dj-lib-tabs { margin: 8px 8px 0; flex: 0 0 auto; }
+   .auto-mode-switch's own layout (flex row, border, pill shape) but NOT its
+   colors: that component was designed for a dark panel (the automation
+   sidebar), while the DJ library (.dj-tree) is light-themed (#b7bec6 bg,
+   #111 text) — text-secondary/cyan-tint read as barely-there washed-out gray
+   on a light background. Overridden here to match this panel's own light
+   palette (same tones as .ptree-search/.ptree-fav-filter right below it). */
+.dj-lib-tabs { margin: 8px 8px 0; flex: 0 0 auto; background: #eef1f4; border-color: #9aa2ab; }
+.dj-lib-tabs button { color: #6b7482; }
+.dj-lib-tabs button:hover { color: #111; }
+.dj-lib-tabs button.active { background: #0e8ea0; color: #fff; }
 .dj-lib-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .dj-lib-pane[hidden] { display: none; }
 /* Local tab: browsing the user's own computer's folders (File System Access
