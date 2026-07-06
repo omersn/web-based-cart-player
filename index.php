@@ -1115,6 +1115,20 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                     <button type="button" class="planner-cancel" id="plannerCancel" title="Close (Esc)">Close</button>
                 </div>
             </header>
+            <!-- Asks before switching breaks, adding a new one, or closing
+                 while the selected break is unsaved (planner.js's guardNav()) —
+                 replaces a plain "can't do that" message with a real choice. -->
+            <div class="planner-confirm" id="plannerNavConfirm" hidden>
+                <div class="planner-confirm-box">
+                    <i class="ph ph-warning-circle"></i>
+                    <p>"<span id="plannerNavConfirmName"></span>" has unsaved changes. Save them before continuing?</p>
+                    <div class="planner-confirm-actions">
+                        <button type="button" id="plannerNavSave" class="planner-save"><i class="ph ph-floppy-disk"></i> Save changes</button>
+                        <button type="button" id="plannerNavDiscard" class="pc-discard">Discard changes</button>
+                        <button type="button" id="plannerNavStay" class="pc-keep">Keep editing</button>
+                    </div>
+                </div>
+            </div>
             <div class="planner-body">
                 <div class="planner-tree" id="plannerTree">
                     <div class="ptree-toolbar">

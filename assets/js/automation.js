@@ -344,6 +344,10 @@
         if (state.items.length === 0) resetSchedule();   // stays open + empty
         saveState();
         render();
+        // The planner needs to know its selected break just changed (Save
+        // button / unsaved flag) — the live queue never sets plannerMode, so
+        // this can't leak into on-air playback.
+        if (plannerMode && crossSavedHook) crossSavedHook();
     }
     // Removed automatically ~1s after a cart finishes playing (see playNext).
     // Keeping the list shrinking as it plays is what keeps auto-scroll smooth
@@ -802,6 +806,7 @@
         state.items.forEach((it) => { it.overlapIn = 0; });
         saveState();
         render();
+        if (plannerMode && crossSavedHook) crossSavedHook(); // see removeAt()'s note
     }
     function attachDrag(node, block) {
         node.dataset.from = block.from;
@@ -1470,6 +1475,12 @@
     let crossSavedHook = null; // planner: re-commit + refresh meta after a save
     const crossActive = () => crossGap >= 0 || crossSolo >= 0;
     function resetCross() {
+        // Restore the header FIRST, while crossActive() still reflects "was
+        // this actually open" — every forced reset (item removed/reordered,
+        // gap invalidated, a different break loaded) runs through here, so
+        // this one check covers all of them without each site needing to
+        // remember to undo setEditorHeaderHidden(true) itself.
+        if (crossActive()) setEditorHeaderHidden(false);
         crossStopPreview();
         crossGap = -1;
         crossSolo = -1;
@@ -1478,6 +1489,20 @@
         crossVol = null;
         const ce = el('crossEditor');
         if (ce) { ce.hidden = true; ce.classList.remove('solo'); }
+    }
+    // Hiding the planner's "what am I working on" header (a flex sibling
+    // ABOVE this panel, outside it — never touched by sizeCrossEditor()'s own
+    // math) lets the panel's own flex:1 1 auto grow to fill that freed space,
+    // so the cross editor — sized to fill the panel, below — ends up
+    // covering the WHOLE pane, header included, with one obvious Save (its
+    // own) instead of two competing ones. Only ever reachable in planner
+    // mode (the gap/volume buttons that open this only render there), and a
+    // break is always selected while it's open, so unconditionally
+    // restoring the header on close is safe.
+    function setEditorHeaderHidden(on) {
+        if (!plannerMode) return;
+        const header = document.getElementById('plannerEditorHeader');
+        if (header) header.hidden = on;
     }
     function makeGapButton(i) {
         const ms = Math.round(state.items[i + 1].overlapIn || 0);
@@ -1512,6 +1537,7 @@
         const ed = el('crossEditor');
         ed.hidden = false;
         ed.classList.remove('solo');
+        setEditorHeaderHidden(true);
         crossLoadWaves();
         render(); // repaint gap highlights + editor geometry
     }
@@ -1528,13 +1554,14 @@
         const ed = el('crossEditor');
         ed.hidden = false;
         ed.classList.add('solo');
+        setEditorHeaderHidden(true);
         crossDrawKey = '';
         crossBuffer(it.file).then(() => { if (crossSolo === i) crossDrawWaves(); });
         render();
     }
     function closeCross() {
         if (!crossActive()) return;
-        resetCross();
+        resetCross(); // restores the header too, see its own comment
         render();
     }
     // Lane windows: never longer than the item itself (a 3 s sting shows 3 s).

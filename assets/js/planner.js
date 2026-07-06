@@ -400,28 +400,42 @@
         $('plannerBreakSave').disabled = !dirty;
         $('plannerBreakCancel').disabled = !dirty;
     }
+    // Anything that navigates the editor away from the selected break (picking
+    // a different one, adding a new one, closing the overlay) has to go
+    // through here first. Clean -> runs immediately, same as always. Dirty ->
+    // parks the action and asks (save / discard / keep editing) instead of
+    // just refusing outright.
+    let pendingNav = null;
+    function guardNav(action) {
+        if (!breakDirty(sel)) { action(); return; }
+        pendingNav = action;
+        $('plannerNavConfirmName').textContent = (plan[sel] && plan[sel].name) || 'This break';
+        $('plannerNavConfirm').hidden = false;
+    }
     function select(i) {
         if (i === sel) return;
-        if (breakDirty(sel)) { flashSaveMsg('Save or cancel the open break first'); return; }
-        sel = i;
-        const items = (plan[i] ? plan[i].items : []).map(cartById).filter(Boolean).map(asItem);
-        window.Automation.loadPlaylist(items, plan[i] ? plan[i].overlaps || [] : [], plan[i] ? plan[i].volumes || [] : []);
-        renderBreaks();
-        updateSelectionUi();
+        guardNav(() => {
+            sel = i;
+            const items = (plan[i] ? plan[i].items : []).map(cartById).filter(Boolean).map(asItem);
+            window.Automation.loadPlaylist(items, plan[i] ? plan[i].overlaps || [] : [], plan[i] ? plan[i].volumes || [] : []);
+            renderBreaks();
+            updateSelectionUi();
+        });
     }
     function addBreak() {
-        if (breakDirty(sel)) { flashSaveMsg('Save or cancel the open break first'); return; }
-        // Start from a FREE slot — a fresh break must never collide with an
-        // existing one (slots are unique among enabled scheduled breaks).
-        const pad = (n) => String(n).padStart(2, '0');
-        const taken = new Set(plan.filter((b) => b.enabled !== false && !b.manual).map((b) => b.time));
-        let h = 12, m = 0;
-        while (taken.has(`${pad(h)}:${pad(m)}`)) { m += 5; if (m >= 60) { m = 0; h = (h + 1) % 24; } }
-        plan.push({ time: `${pad(h)}:${pad(m)}`, anchor: 'start', name: 'New break', items: [], enabled: true, manual: false, overlaps: [], volumes: [] });
-        sel = plan.length - 1;
-        window.Automation.loadPlaylist([]);
-        renderBreaks();
-        updateSelectionUi();
+        guardNav(() => {
+            // Start from a FREE slot — a fresh break must never collide with
+            // an existing one (slots are unique among enabled scheduled ones).
+            const pad = (n) => String(n).padStart(2, '0');
+            const taken = new Set(plan.filter((b) => b.enabled !== false && !b.manual).map((b) => b.time));
+            let h = 12, m = 0;
+            while (taken.has(`${pad(h)}:${pad(m)}`)) { m += 5; if (m >= 60) { m = 0; h = (h + 1) % 24; } }
+            plan.push({ time: `${pad(h)}:${pad(m)}`, anchor: 'start', name: 'New break', items: [], enabled: true, manual: false, overlaps: [], volumes: [] });
+            sel = plan.length - 1;
+            window.Automation.loadPlaylist([]);
+            renderBreaks();
+            updateSelectionUi();
+        });
     }
     // Reverts the selected break to its last-saved state, or — if it was
     // never saved at all (a fresh "+ Add break") — drops it entirely, same
@@ -453,17 +467,14 @@
         plan[sel].overlaps = window.Automation.getOverlaps();
         plan[sel].volumes = window.Automation.getVolumes();
     }
-    function isDirty() {
-        commitEditor();
-        return JSON.stringify(plan) !== JSON.stringify(window.BREAKS || []);
-    }
-
     // ---- open / close / save ------------------------------------------------
     function open() {
         if (!window.Automation.setPlannerMode(true)) return; // refused while playing
         plan = (window.BREAKS || []).map((b) => ({ ...b, items: [...b.items], overlaps: [...(b.overlaps || [])], volumes: [...(b.volumes || [])] }));
         sel = -1;
         draft = null;
+        pendingNav = null;
+        $('plannerNavConfirm').hidden = true;
         treeQuery = ''; favOnly = false; // fresh filters each session
         $('ptreeSearch').value = '';
         $('ptreeFavFilter').classList.remove('active');
@@ -490,12 +501,9 @@
         document.addEventListener('keydown', onKey);
     }
     // Saving lives on the individual break now (its own Save/Cancel) — closing
-    // just refuses outright while anything's unsaved, rather than offering a
-    // discard dialog. The message points at whichever action resolves it.
-    function close() {
-        if (isDirty()) { flashSaveMsg('Save or cancel the open break before closing'); return; }
-        doClose();
-    }
+    // goes through the same guardNav() as switching breaks, so an unsaved
+    // one gets the save/discard/keep-editing dialog instead of just closing.
+    function close() { guardNav(doClose); }
     function doClose() {
         stopPreview();
         document.removeEventListener('keydown', onKey);
@@ -508,6 +516,8 @@
     }
     function onKey(e) {
         if (e.key !== 'Escape') return;
+        // First Esc dismisses the nav dialog (keep editing); otherwise close.
+        if (!$('plannerNavConfirm').hidden) { $('plannerNavConfirm').hidden = true; pendingNav = null; return; }
         close();
     }
 
@@ -576,10 +586,28 @@
         // The empty-state hint's "create" link does exactly what "+ Add
         // break" does — same addBreak() call, just a second entry point.
         $('plannerCreateBreak').addEventListener('click', (e) => { e.preventDefault(); addBreak(); });
-        $('plannerCancel').addEventListener('click', close); // refuses while a break is unsaved
+        $('plannerCancel').addEventListener('click', close); // goes through guardNav() while unsaved
         // The selected break's own Save/Cancel — see breakDirty()/cancelBreakEdits().
         $('plannerBreakSave').addEventListener('click', save);
         $('plannerBreakCancel').addEventListener('click', cancelBreakEdits);
+        // guardNav()'s dialog: Save (then proceed), Discard (revert/delete,
+        // then proceed), or Keep editing (just dismiss, go nowhere).
+        $('plannerNavSave').addEventListener('click', async () => {
+            const ok = await save();
+            $('plannerNavConfirm').hidden = true;
+            const next = pendingNav; pendingNav = null;
+            if (ok && next) next(); // a failed save (conflict/draft/network) stays put
+        });
+        $('plannerNavDiscard').addEventListener('click', () => {
+            cancelBreakEdits();
+            $('plannerNavConfirm').hidden = true;
+            const next = pendingNav; pendingNav = null;
+            if (next) next();
+        });
+        $('plannerNavStay').addEventListener('click', () => {
+            $('plannerNavConfirm').hidden = true;
+            pendingNav = null;
+        });
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 
