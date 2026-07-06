@@ -1379,9 +1379,11 @@ body.hide-ticker .source-link { bottom: 10px; left: auto; right: 12px; }
 }
 .planner-editor-header-unsaved { flex: 0 0 auto; font-size: 12.5px; font-weight: 800; color: #ffb454; }
 .planner-editor-header-unsaved[hidden] { display: none; }
-/* This break's own Save/Cancel — pinned to the header's right edge, disabled
-   together whenever the selected break has nothing pending (see planner.js's
-   updateEditorHeader()). */
+/* This break's own Save / Discard changes / Cancel — pinned to the header's
+   right edge (see planner.js's updateEditorHeader()). Save and Discard
+   changes disable together whenever the selected break has nothing pending;
+   Cancel (revert + unload) is always available — it's how you back out of
+   looking at a break at all, dirty or not. */
 .planner-editor-header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: 0 0 auto; }
 .planner-break-save {
     display: flex; align-items: center; gap: 6px;
@@ -1391,13 +1393,19 @@ body.hide-ticker .source-link { bottom: 10px; left: auto; right: 12px; }
 }
 .planner-break-save:hover:not(:disabled) { filter: brightness(1.1); }
 .planner-break-save:disabled { opacity: 0.35; cursor: not-allowed; }
+.planner-break-discard {
+    padding: 5px 13px; border: none; border-radius: 7px; cursor: pointer;
+    background: var(--red-grad); color: #fff;
+    font-family: 'Assistant', sans-serif; font-weight: 700; font-size: 12.5px;
+}
+.planner-break-discard:hover:not(:disabled) { filter: brightness(1.1); }
+.planner-break-discard:disabled { opacity: 0.35; cursor: not-allowed; }
 .planner-break-cancel {
     padding: 5px 13px; border: 1px solid var(--hairline); border-radius: 7px; cursor: pointer;
     background: var(--raised); color: var(--text-secondary);
     font-family: 'Assistant', sans-serif; font-weight: 700; font-size: 12.5px;
 }
-.planner-break-cancel:hover:not(:disabled) { background: var(--raised-hover); color: var(--text-primary); }
-.planner-break-cancel:disabled { opacity: 0.35; cursor: not-allowed; }
+.planner-break-cancel:hover { background: var(--raised-hover); color: var(--text-primary); }
 /* Covers the (otherwise empty/confusing) editor until a break is picked —
    see planner.js's updateSelectionUi(). */
 .planner-editor-hint {

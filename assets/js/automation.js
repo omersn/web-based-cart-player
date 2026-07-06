@@ -867,7 +867,7 @@
                     `<span class="auto-name"></span>` +
                     // V badge on every planner row: gray = cart volume, yellow
                     // = this break attenuates it. Click -> solo volume editor.
-                    (plannerMode ? `<button class="auto-vol-flag${it.volEdited ? ' on' : ''}" title="${it.volEdited ? 'Volume edited — click to adjust' : 'Adjust volume for this break'}">V</button>` : '') +
+                    (plannerMode ? `<button class="auto-vol-flag${it.volEdited ? ' on' : ''}" title="${it.volEdited ? 'Volume edited — click to adjust' : 'Adjust the volume of this item'}">V</button>` : '') +
                     `<span class="auto-runtime">${fmtDur(it.runtime)}</span>` +
                     (block.groupId == null ? `<button class="auto-remove" title="Remove"><i class="ph ph-trash"></i></button>` : '');
                 row.querySelector('.auto-name').textContent = it.name;

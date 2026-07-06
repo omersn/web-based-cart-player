@@ -398,7 +398,9 @@
         const dirty = breakDirty(sel);
         $('plannerEditorUnsaved').hidden = !dirty;
         $('plannerBreakSave').disabled = !dirty;
-        $('plannerBreakCancel').disabled = !dirty;
+        $('plannerBreakDiscard').disabled = !dirty;
+        // Cancel (revert + unload) always works — there's nothing to gate on
+        // dirtiness when it's the exit itself, not a step past it.
     }
     // Anything that navigates the editor away from the selected break (picking
     // a different one, adding a new one, closing the overlay) has to go
@@ -439,8 +441,8 @@
     }
     // Reverts the selected break to its last-saved state, or — if it was
     // never saved at all (a fresh "+ Add break") — drops it entirely, same
-    // as deleting it.
-    function cancelBreakEdits() {
+    // as deleting it. Stays open/selected either way ("Discard changes").
+    function discardBreakEdits() {
         if (sel < 0 || !plan[sel]) return;
         const saved = (window.BREAKS || [])[sel];
         if (!saved) { removeBreak(sel); return; }
@@ -448,6 +450,20 @@
         const items = plan[sel].items.map(cartById).filter(Boolean).map(asItem);
         window.Automation.loadPlaylist(items, plan[sel].overlaps || [], plan[sel].volumes || []);
         renderBreaks();
+    }
+    // "Cancel": the same revert-or-drop as Discard changes, but ALSO unloads
+    // the break back to the empty-state hint — a proper cancel, not just an
+    // undo. A brand-new break has nowhere to "revert" to, so it's dropped
+    // (removeBreak already deselects, so that path is identical either way).
+    function cancelBreakEditing() {
+        if (sel < 0 || !plan[sel]) return;
+        const saved = (window.BREAKS || [])[sel];
+        if (!saved) { removeBreak(sel); return; }
+        plan[sel] = { ...saved, items: [...saved.items], overlaps: [...(saved.overlaps || [])], volumes: [...(saved.volumes || [])] };
+        sel = -1;
+        window.Automation.loadPlaylist([]);
+        renderBreaks();
+        updateSelectionUi();
     }
     function removeBreak(i) {
         commitEditor();
@@ -587,9 +603,11 @@
         // break" does — same addBreak() call, just a second entry point.
         $('plannerCreateBreak').addEventListener('click', (e) => { e.preventDefault(); addBreak(); });
         $('plannerCancel').addEventListener('click', close); // goes through guardNav() while unsaved
-        // The selected break's own Save/Cancel — see breakDirty()/cancelBreakEdits().
+        // The selected break's own Save / Discard changes / Cancel — see
+        // breakDirty()/discardBreakEdits()/cancelBreakEditing().
         $('plannerBreakSave').addEventListener('click', save);
-        $('plannerBreakCancel').addEventListener('click', cancelBreakEdits);
+        $('plannerBreakDiscard').addEventListener('click', discardBreakEdits);
+        $('plannerBreakCancel').addEventListener('click', cancelBreakEditing);
         // guardNav()'s dialog: Save (then proceed), Discard (revert/delete,
         // then proceed), or Keep editing (just dismiss, go nowhere).
         $('plannerNavSave').addEventListener('click', async () => {
@@ -599,7 +617,7 @@
             if (ok && next) next(); // a failed save (conflict/draft/network) stays put
         });
         $('plannerNavDiscard').addEventListener('click', () => {
-            cancelBreakEdits();
+            discardBreakEdits();
             $('plannerNavConfirm').hidden = true;
             const next = pendingNav; pendingNav = null;
             if (next) next();

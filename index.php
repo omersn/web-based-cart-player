@@ -1147,18 +1147,22 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                              (otherwise confusingly empty) editor doesn't show. -->
                         <p class="planner-editor-hint" id="plannerEditorHint">Select or <a href="#" class="planner-editor-hint-link" id="plannerCreateBreak">create</a> a new Ad break</p>
                         <!-- "What am I working on" — name, From/To + time, an
-                             (unsaved) flag, and this break's OWN Save/Cancel
-                             (the save unit is the selected break, not the
-                             whole plan — planner.js blocks switching breaks
-                             or closing the overlay while this one is dirty).
-                             Hidden until a break is loaded; kept current on
-                             every edit by renderBreaks(). -->
+                             (unsaved) flag, and this break's OWN Save /
+                             Discard changes / Cancel (the save unit is the
+                             selected break, not the whole plan — planner.js
+                             blocks switching breaks or closing the overlay
+                             while this one is dirty). Discard changes reverts
+                             but keeps the break open; Cancel reverts AND
+                             unloads it back to the empty-state hint. Hidden
+                             until a break is loaded; kept current on every
+                             edit by renderBreaks(). -->
                         <div class="planner-editor-header" id="plannerEditorHeader" hidden>
                             <span class="planner-editor-header-name" id="plannerEditorName"></span>
                             <span class="planner-editor-header-time" id="plannerEditorTime"></span>
                             <span class="planner-editor-header-unsaved" id="plannerEditorUnsaved" hidden>(unsaved)</span>
                             <div class="planner-editor-header-actions">
                                 <button type="button" class="planner-break-save" id="plannerBreakSave"><i class="ph ph-floppy-disk"></i> Save</button>
+                                <button type="button" class="planner-break-discard" id="plannerBreakDiscard">Discard changes</button>
                                 <button type="button" class="planner-break-cancel" id="plannerBreakCancel">Cancel</button>
                             </div>
                         </div>
