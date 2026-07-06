@@ -270,6 +270,8 @@ function breaks_referencing(array $ids): array
  *   ids_window  Station-ID / sweepers window button
  *   dj_mode     DJ layout button — on by default, DJ mode is the out-of-box layout
  *   dj_players  How many of the 3 DJ decks are shown/allowed (1-3, not 0/1)
+ *   dj_local_files    Allow loading a local MP3 (from disk, never uploaded) into a deck
+ *   dj_waveform_scrub Allow click/drag on a deck's waveform to seek the playhead
  *   pfl_player  The small PFL (preview) mini-player docked under the DJ library
  *   pfl_buttons_carts   Hover preview icon on cart-board tiles
  *   pfl_buttons_players Preview button on each DJ deck
@@ -285,7 +287,7 @@ function load_settings(): array
 {
     $s = [
         'mobile' => 0, 'download' => 0, 'automation' => 1, 'ids_window' => 1, 'dj_mode' => 1,
-        'dj_players' => 2, 'pfl_player' => 1,
+        'dj_players' => 2, 'dj_local_files' => 1, 'dj_waveform_scrub' => 1, 'pfl_player' => 1,
         'pfl_buttons_carts' => 1, 'pfl_buttons_players' => 1, 'pfl_buttons_tree' => 1, 'pfl_buttons_search' => 1,
         'show_out_labels' => 0, 'show_ticker' => 1, 'dock_resize' => 0, 'panel_resize' => 0,
         'log_retention' => 90,

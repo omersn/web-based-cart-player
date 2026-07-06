@@ -235,6 +235,222 @@
         window.Automation.addItems(items, items.length > 1);
     }
 
+    // ---- Local folder browser (Local tab, next to the Network/jingle tree) --
+    // Browses the user's OWN computer's folders via the File System Access API
+    // (window.showDirectoryPicker — Chromium/Edge only, no Firefox/Safari). A
+    // page can't read the filesystem like a native file manager; this API is
+    // the one real mechanism, and it only grants access to a folder after an
+    // explicit user gesture. Once granted, that folder's CONTENTS (including
+    // subfolders) are freely readable without further native dialogs — which
+    // is what makes "remember the last folder" and "browse one at a time"
+    // both workable here. Files handed off to a deck go through the exact
+    // same loadLocalFile() the deck's own single-file Load button already
+    // uses (8MB cap, MP3-only, object-URL, waveform-from-File) — a
+    // FileSystemFileHandle's .getFile() returns a real File, identical to
+    // what <input type=file> gives you, so there's no separate validation
+    // path to maintain here.
+    const LOCAL_DB = 'djLocalBrowser', LOCAL_STORE = 'folder', LOCAL_KEY = 'root';
+    const LOCAL_MAX_ITEMS = 500;
+    function localSupported() { return typeof window.showDirectoryPicker === 'function'; }
+    function idbOpen() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(LOCAL_DB, 1);
+            req.onupgradeneeded = () => { req.result.createObjectStore(LOCAL_STORE); };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function idbGet(key) {
+        const db = await idbOpen();
+        return new Promise((resolve, reject) => {
+            const req = db.transaction(LOCAL_STORE, 'readonly').objectStore(LOCAL_STORE).get(key);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function idbSet(key, value) {
+        const db = await idbOpen();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(LOCAL_STORE, 'readwrite');
+            tx.objectStore(LOCAL_STORE).put(value, key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+    async function idbDel(key) {
+        const db = await idbOpen();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(LOCAL_STORE, 'readwrite');
+            tx.objectStore(LOCAL_STORE).delete(key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+
+    let localRootHandle = null, localRootName = '', localPath = [], localCurrentHandle = null;
+    let localInitialized = false; // only probe stored permission once per page load
+
+    async function resolvePath(root, path) {
+        let h = root;
+        for (const name of path) h = await h.getDirectoryHandle(name);
+        return h;
+    }
+    async function saveLocalState() {
+        if (!localRootHandle) { await idbDel(LOCAL_KEY).catch(() => {}); return; }
+        await idbSet(LOCAL_KEY, { rootHandle: localRootHandle, rootName: localRootName, path: localPath }).catch(() => {});
+    }
+    function localFireButtonsHtml() {
+        return Array.from({ length: playerCount() }, (_, k) => k + 1)
+            .map((n) => `<button type="button" class="ptree-btn dj-fire" data-deck="${n}" title="Fire into Player ${n}">${n}</button>`).join('');
+    }
+    async function renderLocalListing() {
+        const listing = $('djLocalListing');
+        listing.innerHTML = '';
+        const dir = localCurrentHandle;
+        if (!dir) return;
+        const folders = [], files = [];
+        let count = 0;
+        try {
+            for await (const [name, handle] of dir.entries()) {
+                count++;
+                if (count > LOCAL_MAX_ITEMS) {
+                    listing.innerHTML = `<p class="dj-local-error">This folder has more than ${LOCAL_MAX_ITEMS} items — too many to show. Pick a more specific subfolder.</p>`;
+                    return;
+                }
+                if (handle.kind === 'directory') folders.push(name);
+                else if (/\.mp3$/i.test(name)) files.push({ name, handle });
+            }
+        } catch (e) {
+            listing.innerHTML = '<p class="dj-local-error">Could not read this folder.</p>';
+            return;
+        }
+        folders.sort((a, b) => a.localeCompare(b));
+        files.sort((a, b) => a.name.localeCompare(b.name));
+        folders.forEach((name) => {
+            const row = document.createElement('div');
+            row.className = 'dj-local-row is-folder';
+            row.innerHTML = '<span class="dj-local-row-icon">\u{1F4C1}</span><span class="dj-local-row-name"></span>';
+            row.querySelector('.dj-local-row-name').textContent = name;
+            row.addEventListener('click', () => enterFolder(name));
+            listing.appendChild(row);
+        });
+        files.forEach(({ name, handle }) => {
+            const row = document.createElement('div');
+            row.className = 'dj-local-row';
+            row.innerHTML = '<i class="ph-fill ph-music-note dj-local-row-icon"></i><span class="dj-local-row-name"></span>' + localFireButtonsHtml();
+            row.querySelector('.dj-local-row-name').textContent = name.replace(/\.mp3$/i, '');
+            row.querySelectorAll('.dj-fire').forEach((b) => {
+                b.addEventListener('click', async () => {
+                    const file = await handle.getFile();
+                    window.DJMode.loadLocalDeck(+b.dataset.deck, file);
+                });
+            });
+            listing.appendChild(row);
+        });
+        if (folders.length === 0 && files.length === 0) {
+            listing.innerHTML = '<p class="dj-local-error">No subfolders or MP3 files here.</p>';
+        }
+    }
+    function updateCrumbAndRender() {
+        $('djLocalCrumb').hidden = false;
+        $('djLocalPath').textContent = [localRootName, ...localPath].join(' / ');
+        $('djLocalUp').disabled = localPath.length === 0;
+        renderLocalListing();
+    }
+    async function enterFolder(name) {
+        try {
+            const next = await localCurrentHandle.getDirectoryHandle(name);
+            localCurrentHandle = next;
+            localPath.push(name);
+            await saveLocalState();
+            updateCrumbAndRender();
+        } catch (e) { toast('Could not open that folder'); }
+    }
+    async function goUp() {
+        if (!localPath.length) return;
+        localPath.pop();
+        try {
+            localCurrentHandle = await resolvePath(localRootHandle, localPath);
+            await saveLocalState();
+            updateCrumbAndRender();
+        } catch (e) { toast('Could not go up'); }
+    }
+    function showPickerUi(mode, stored) {
+        $('djLocalPicker').hidden = false;
+        $('djLocalCrumb').hidden = true;
+        $('djLocalListing').innerHTML = '';
+        $('djLocalChoose').hidden = mode !== 'choose';
+        $('djLocalReopen').hidden = mode !== 'reopen';
+        if (mode === 'reopen') $('djLocalReopen').textContent = `Reopen "${stored.rootName}"`;
+    }
+    async function useFolder(handle, name, path) {
+        localRootHandle = handle;
+        localRootName = name;
+        try {
+            localCurrentHandle = path.length ? await resolvePath(handle, path) : handle;
+            localPath = path;
+        } catch (e) {
+            localCurrentHandle = handle;
+            localPath = [];
+        }
+        await saveLocalState();
+        $('djLocalPicker').hidden = true;
+        updateCrumbAndRender();
+    }
+    async function chooseFolder() {
+        if (!localSupported()) return;
+        try {
+            const handle = await window.showDirectoryPicker({ startIn: 'documents' });
+            await useFolder(handle, handle.name, []);
+        } catch (e) { /* user cancelled the native dialog */ }
+    }
+    async function tryRestoreFolder() {
+        let stored = null;
+        try { stored = await idbGet(LOCAL_KEY); } catch (e) { /* no stored folder */ }
+        if (!stored || !stored.rootHandle) { showPickerUi('choose'); return; }
+        let perm;
+        try { perm = await stored.rootHandle.queryPermission({ mode: 'read' }); } catch (e) { perm = 'denied'; }
+        if (perm === 'granted') { await useFolder(stored.rootHandle, stored.rootName, stored.path); return; }
+        if (perm === 'prompt') { showPickerUi('reopen', stored); return; }
+        await idbDel(LOCAL_KEY).catch(() => {});
+        showPickerUi('choose');
+    }
+    async function reopenFolder() {
+        let stored;
+        try { stored = await idbGet(LOCAL_KEY); } catch (e) { stored = null; }
+        if (!stored || !stored.rootHandle) { showPickerUi('choose'); return; }
+        const perm = await stored.rootHandle.requestPermission({ mode: 'read' }).catch(() => 'denied');
+        if (perm === 'granted') await useFolder(stored.rootHandle, stored.rootName, stored.path);
+        else toast('Permission was not granted');
+    }
+    function switchLibTab(pane) {
+        document.querySelectorAll('.dj-lib-tab').forEach((b) => b.classList.toggle('active', b.dataset.pane === pane));
+        $('djNetworkPane').hidden = pane !== 'network';
+        $('djLocalPane').hidden = pane !== 'local';
+        if (pane === 'local' && !localInitialized) {
+            localInitialized = true;
+            if (!localSupported()) { $('djLocalUnsupported').hidden = false; $('djLocalPicker').hidden = true; }
+            else tryRestoreFolder();
+        }
+    }
+    // manager Options tab's own live-apply hook (applyDeckFeatureSettings)
+    // also calls this — shows/hides the tab switcher itself, and forces back
+    // to the Network pane if the setting was switched off while Local was
+    // the active tab (Local's own state/handle is left alone, just hidden —
+    // no need to lose the browsed folder over a toggle).
+    function renderLibTabs() {
+        const allowed = djLocalFilesAllowed();
+        $('djLibTabs').hidden = !allowed;
+        if (!allowed) switchLibTab('network');
+    }
+    function initLocalBrowser() {
+        document.querySelectorAll('.dj-lib-tab').forEach((b) => b.addEventListener('click', () => switchLibTab(b.dataset.pane)));
+        $('djLocalChoose').addEventListener('click', chooseFolder);
+        $('djLocalReopen').addEventListener('click', reopenFolder);
+        $('djLocalUp').addEventListener('click', goUp);
+        renderLibTabs();
+    }
+
     // ---- PFL (preview) mini-player -------------------------------------------
     // One shared slot: the library tree's per-row preview button and each
     // deck's PFL button both send a single cart here (trim-aware, one at a
@@ -247,6 +463,10 @@
     function pflAllowed() { return !!(window.SETTINGS && window.SETTINGS.pfl_player); }
     function pflTreeAllowed() { return pflAllowed() && !!(window.SETTINGS && window.SETTINGS.pfl_buttons_tree); }
     function pflPlayersAllowed() { return pflAllowed() && !!(window.SETTINGS && window.SETTINGS.pfl_buttons_players); }
+    // Checked live (not cached) — same convention as pflAllowed() above — so
+    // an Options-tab save takes effect immediately, no reload needed.
+    function djLocalFilesAllowed() { return !!(window.SETTINGS && window.SETTINGS.dj_local_files); }
+    function djWaveformScrubAllowed() { return !!(window.SETTINGS && window.SETTINGS.dj_waveform_scrub); }
     function pflStop() {
         if (!pflState) return;
         const { btn, audio, timer } = pflState;
@@ -270,7 +490,7 @@
         if (pflState && pflState.btn === btn) { pflStop(); return; } // same source again -> unload
         pflStop(); // only one thing plays in PFL at a time
         const box = $('djPfl');
-        const audio = new Audio(`uploads/${c.file}`);
+        const audio = new Audio(c.isLocal ? c.objectUrl : `uploads/${c.file}`);
         // Dry by default (a fresh, throwaway element every preview, so this is
         // always safe to call) — AudioEngine itself decides whether this
         // actually wires in, based on the Audio tab's "DSP on PFL" setting.
@@ -332,7 +552,7 @@
     function makeDeck(no) {
         const root = $('djDeck' + no);
         const el = (sel) => root.querySelector(sel);
-        const deck = { items: [], audios: [], idx: -1, playing: false, repeat: false, timer: null };
+        const deck = { items: [], audios: [], idx: -1, playing: false, repeat: false, timer: null, localObjectUrl: null };
 
         // Tags the shared playback log (manager > Maintenance) with which
         // deck fired the cart and which (simulated) output it carries — lets
@@ -376,7 +596,18 @@
             el('.dj-deck-play').disabled = !loaded();
             el('.dj-deck-stop').disabled = !loaded();
             el('.dj-deck-repeat').disabled = !loaded();
-            el('.dj-deck-eject').disabled = !loaded() || deck.playing;
+            // Load-only, single purpose (unload lives entirely on
+            // .dj-deck-unload in the head — see below): hidden outright when
+            // the admin setting is off, otherwise just disabled once
+            // something's already on the deck (nowhere for a new file to go
+            // until it's unloaded first).
+            const loadBtn = el('.dj-deck-load-local');
+            loadBtn.hidden = !djLocalFilesAllowed();
+            loadBtn.disabled = loaded();
+            // Unload-only, single purpose — visibility follows .loaded via
+            // CSS (see player.css), only the disabled-while-playing guard
+            // (same rule the old dual-purpose button had) needs JS.
+            el('.dj-deck-unload').disabled = deck.playing;
             el('.dj-deck-pfl').disabled = !loaded();
             el('.dj-deck-repeat').classList.toggle('active', deck.repeat);
             el('.dj-deck-play').innerHTML = deck.playing ? '<i class="ph-fill ph-pause"></i>' : '<i class="ph-fill ph-play"></i>';
@@ -387,11 +618,31 @@
             const pos = el('.dj-deck-chainpos');
             pos.hidden = deck.items.length < 2;
             if (!pos.hidden) pos.textContent = `${deck.idx + 1} / ${deck.items.length}`;
+            el('.dj-deck-wavebox').classList.toggle('scrubbable', loaded() && djWaveformScrubAllowed());
         }
         function drawCurrentWave() {
             const c = curCart();
             if (!c) return;
             const canvas = el('.dj-deck-wave');
+            // A local file's audio never touches the server, so its waveform
+            // can't come from the shared uploads/-fetching waveBuffer() either
+            // — decode straight from the in-memory File, cached on the cart
+            // record itself (a per-load object, not the shared by-filename
+            // cache, since a temp file has no stable server-side identity).
+            if (c.isLocal) {
+                if (c._waveBuf) {
+                    drawWave(canvas, c._waveBuf, c.start || 0, cartEnd(c, curAudio()), 'rgba(255, 255, 255, 0.65)');
+                    return;
+                }
+                c.localFile.arrayBuffer()
+                    .then((buf) => { waveCtx = waveCtx || new (window.AudioContext || window.webkitAudioContext)(); return waveCtx.decodeAudioData(buf); })
+                    .then((decoded) => {
+                        c._waveBuf = decoded;
+                        if (curCart() === c) drawWave(canvas, decoded, c.start || 0, cartEnd(c, curAudio()), 'rgba(255, 255, 255, 0.65)');
+                    })
+                    .catch(() => {});
+                return;
+            }
             waveBuffer(c.file).then((buf) => {
                 if (curCart() !== c) return; // deck moved on while decoding
                 drawWave(canvas, buf, c.start || 0, cartEnd(c, curAudio()), 'rgba(255, 255, 255, 0.65)');
@@ -467,6 +718,7 @@
         }
         function clearDeck() {
             deck.audios.forEach((a) => { try { a.pause(); } catch (e) {} });
+            if (deck.localObjectUrl) { URL.revokeObjectURL(deck.localObjectUrl); deck.localObjectUrl = null; }
             deck.items = []; deck.audios = []; deck.idx = -1;
             vuStop();
             el('.dj-deck-wash').style.width = '0%';
@@ -498,6 +750,42 @@
             deck.idx = 0;
             const a = curAudio();
             a.addEventListener('loadedmetadata', () => { try { a.currentTime = c.start || 0; } catch (e) {} refreshTime(); });
+            drawCurrentWave();
+            paint();
+            refreshTime();
+        }
+        // Load a local MP3 straight off the user's disk for temporary
+        // playback — never uploaded, never touches the server. A single
+        // item only (no chaining — that's a station-library concept, local
+        // files aren't part of any chain), gone the moment it's ejected or
+        // the page reloads.
+        const MAX_LOCAL_FILE_BYTES = 8 * 1024 * 1024;
+        function loadLocalFile(file) {
+            if (deck.playing) { toast(`Player ${no} is on air — stop it first`); return; }
+            const isMp3 = /\.mp3$/i.test(file.name) || file.type === 'audio/mpeg';
+            if (!isMp3) { toast('Only MP3 files are supported'); return; }
+            if (file.size > MAX_LOCAL_FILE_BYTES) { toast('File is too large — 8 MB max'); return; }
+            if (pflState && pflState.btn === el('.dj-deck-pfl')) pflStop();
+            deck.audios.forEach((a) => { try { a.pause(); } catch (e) {} });
+            if (deck.localObjectUrl) { URL.revokeObjectURL(deck.localObjectUrl); deck.localObjectUrl = null; }
+            const objectUrl = URL.createObjectURL(file);
+            deck.localObjectUrl = objectUrl;
+            const localCart = {
+                i: null, name: file.name.replace(/\.mp3$/i, ''), file: null,
+                isLocal: true, objectUrl, localFile: file,
+                start: 0, end: null, volume: 1, color: '1', cross: false,
+            };
+            deck.items = [localCart];
+            const a = new Audio(objectUrl);
+            a.preload = 'auto';
+            a.volume = 1;
+            vuWire(a);
+            deck.audios = [a];
+            deck.idx = 0;
+            // end starts null (natural duration unknown yet) — same convention
+            // an untrimmed server cart uses, just resolved from this file's own
+            // metadata instead of a server-side trim value.
+            a.addEventListener('loadedmetadata', () => { localCart.end = a.duration; refreshTime(); });
             drawCurrentWave();
             paint();
             refreshTime();
@@ -547,15 +835,58 @@
             const out = (window.ROUTING || {})['player' + no] || no;
             el('.dj-deck-out').textContent = 'OUT ' + out;
         }
+        // Click/drag the waveform to seek — same pointerdown/pointermove/
+        // pointerup pattern automation.js's crossfade-editor lanes already
+        // use, scoped to the CURRENT item's own span (a chain's later members
+        // aren't reachable by scrubbing, same as the editor only scrubs
+        // within its own window). Setting .currentTime on a still-playing
+        // <audio> just jumps position — no explicit re-play() needed, unlike
+        // the editor's two-lane crossfade case this pattern was copied from.
+        function waveXToTime(clientX) {
+            const c = curCart();
+            if (!c) return 0;
+            const r = el('.dj-deck-wave').getBoundingClientRect();
+            const frac = Math.max(0, Math.min(1, (clientX - r.left) / (r.width || 1)));
+            const from = c.start || 0;
+            const to = cartEnd(c, curAudio());
+            return from + frac * Math.max(0.001, to - from);
+        }
+        function scrubTo(clientX) {
+            const a = curAudio();
+            if (!a) return;
+            a.currentTime = waveXToTime(clientX);
+            refreshTime();
+        }
+        function wireScrub() {
+            const box = el('.dj-deck-wavebox');
+            let scrubbing = false;
+            box.addEventListener('pointerdown', (e) => {
+                if (!loaded() || !djWaveformScrubAllowed()) return;
+                scrubbing = true;
+                scrubTo(e.clientX);
+            });
+            document.addEventListener('pointermove', (e) => { if (scrubbing) scrubTo(e.clientX); });
+            document.addEventListener('pointerup', () => { scrubbing = false; });
+        }
 
         el('.dj-deck-play').addEventListener('click', playPause);
         el('.dj-deck-stop').addEventListener('click', stop);
-        el('.dj-deck-eject').addEventListener('click', eject);
+        // Load-only (see paint()) — opens the file picker. Unload lives on
+        // its own separate .dj-deck-unload button in the head.
+        const fileInput = el('.dj-deck-file-input');
+        el('.dj-deck-load-local').addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', () => {
+            const file = fileInput.files && fileInput.files[0];
+            fileInput.value = ''; // allow re-picking the same file later
+            if (file) loadLocalFile(file);
+        });
+        el('.dj-deck-unload').addEventListener('click', eject);
         el('.dj-deck-repeat').addEventListener('click', () => { deck.repeat = !deck.repeat; paint(); });
         el('.dj-deck-pfl').addEventListener('click', () => { const c = curCart(); if (c) sendToPFL(c, el('.dj-deck-pfl')); });
+        wireScrub();
         applyRouting();
         paint();
-        return { load, stop, applyRouting, isPlaying: () => deck.playing, redraw: drawCurrentWave };
+        return { load, stop, applyRouting, isPlaying: () => deck.playing, redraw: drawCurrentWave, repaint: paint, loadLocal: loadLocalFile };
     }
     const decks = [];
 
@@ -585,6 +916,14 @@
         document.querySelectorAll('.dj-deck-pfl').forEach((b) => { b.hidden = !pflPlayersAllowed(); });
         if (active) renderTree(); // the tree's own preview button follows the same gate
         pflOutBadge();
+    }
+
+    // manager Options tab's "Allow loading local MP3 files"/"Allow scrubbing"
+    // switches — each deck's load button and waveform cursor follow live,
+    // and so does the Network/Local tab switcher itself.
+    function applyDeckFeatureSettings() {
+        decks.forEach((d) => d.repaint());
+        renderLibTabs();
     }
 
     // ---- mode toggle ---------------------------------------------------------
@@ -644,6 +983,7 @@
         if (!(window.SETTINGS && window.SETTINGS.dj_mode)) active = false;
         applyPlayerCount();
         applyPflSettings();
+        initLocalBrowser();
         apply();
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
@@ -659,12 +999,19 @@
         playerCount,
         // manager Routing tab pushes new PFL allow/deny switches live
         applyPflSettings,
+        // manager Options tab pushes new local-file/scrub allow switches live
+        applyDeckFeatureSettings,
         // audio manager rebuilt window.CARTS on close — rebuild the library
         // (names/colours/chain/fav marks all follow) and repaint loaded decks.
         refresh: () => { if (active) { renderTree(); decks.forEach((d) => d.redraw()); } },
         // Topbar search reuses these so its fire buttons behave identically to
         // the library tree's (chain-aware, no partial-chain loads).
         loadDeck: (n, c) => { const d = decks[n - 1]; if (d) d.load(c); },
+        // The Local-tab folder browser reuses the exact same per-deck local-
+        // file loader (validation/waveform/object-URL, all already built for
+        // the deck's own single-file Load button) — it just hands it a File
+        // it got from a FileSystemFileHandle instead of <input type=file>.
+        loadLocalDeck: (n, file) => { const d = decks[n - 1]; if (d) d.loadLocal(file); },
         sendToAuto,
     };
 })();

@@ -317,14 +317,48 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                      and driven by assets/js/dj.js from window.CARTS. -->
                 <div class="dj-mode" id="djMode" hidden>
                     <div class="dj-tree">
-                        <div class="ptree-toolbar dj-toolbar">
-                            <div class="ma-search-wrap">
-                                <input type="text" class="ptree-search" id="djSearch" placeholder="Search carts&hellip;" autocomplete="off">
-                                <button type="button" class="ma-search-clear" id="djSearchClear" title="Clear" hidden><i class="ph ph-x"></i></button>
-                            </div>
-                            <button type="button" class="ptree-fav-filter" id="djFavFilter" title="Show favourites only"><i class="ph ph-star"></i></button>
+                        <!-- Only shown (via JS) when Options > "Allow loading local
+                             MP3 files" is on — otherwise it's just the Network pane,
+                             exactly as before this feature existed. -->
+                        <div class="auto-mode-switch dj-lib-tabs" id="djLibTabs" hidden>
+                            <button type="button" class="dj-lib-tab active" data-pane="network">Network</button>
+                            <button type="button" class="dj-lib-tab" data-pane="local">Local</button>
                         </div>
-                        <div class="ptree-scroller dj-tree-scroller" id="djTree"></div>
+                        <div class="dj-lib-pane" id="djNetworkPane">
+                            <div class="ptree-toolbar dj-toolbar">
+                                <div class="ma-search-wrap">
+                                    <input type="text" class="ptree-search" id="djSearch" placeholder="Search carts&hellip;" autocomplete="off">
+                                    <button type="button" class="ma-search-clear" id="djSearchClear" title="Clear" hidden><i class="ph ph-x"></i></button>
+                                </div>
+                                <button type="button" class="ptree-fav-filter" id="djFavFilter" title="Show favourites only"><i class="ph ph-star"></i></button>
+                            </div>
+                            <div class="ptree-scroller dj-tree-scroller" id="djTree"></div>
+                        </div>
+                        <!-- Local tab: browses the user's OWN computer's folders via
+                             the File System Access API (Chromium/Edge only — no
+                             search box here on purpose, and only one folder's
+                             contents shown at a time, no nested tree). Never
+                             uploaded anywhere; see assets/js/dj.js's LocalBrowser
+                             section for the whole flow. -->
+                        <div class="dj-lib-pane" id="djLocalPane" hidden>
+                            <p class="dj-local-unsupported" id="djLocalUnsupported" hidden>
+                                Browsing local folders needs Chrome or Edge &mdash; not supported in this browser.
+                            </p>
+                            <div class="dj-local-picker" id="djLocalPicker">
+                                <button type="button" class="dj-local-choose" id="djLocalChoose">Choose folder&hellip;</button>
+                                <!-- Shown instead of the button above when a remembered
+                                     folder's permission needs a fresh click to reuse
+                                     (browsers don't always keep this silently granted
+                                     across a restart) — see LocalBrowser in dj.js. -->
+                                <button type="button" class="dj-local-choose" id="djLocalReopen" hidden></button>
+                            </div>
+                            <div class="dj-local-crumb" id="djLocalCrumb" hidden>
+                                <button type="button" class="dj-local-up" id="djLocalUp" title="Up one folder"><i class="ph ph-arrow-line-up"></i></button>
+                                <span class="dj-local-path" id="djLocalPath"></span>
+                            </div>
+                            <div class="ptree-scroller dj-tree-scroller" id="djLocalListing"></div>
+                            <p class="dj-local-hint">Tip: you can also load a file directly from your PC with any deck&rsquo;s own <i class="ph ph-download-simple"></i> Load button.</p>
+                        </div>
                         <!-- Small full-width PFL (preview) player, docked under the
                              tree: the library's per-row preview button and each
                              deck's PFL button both send a single cart here. Gated
@@ -350,13 +384,18 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                                 <span class="dj-deck-onair">ON AIR</span>
                                 <span class="dj-deck-endtime" title="Wall-clock time the whole load will end"></span>
                                 <span class="dj-deck-out" title="Assigned output (manager &rsaquo; Routing)"></span>
+                                <!-- Dedicated unload — only ever this, no dual purpose
+                                     with loading (see .dj-deck-load-local below). Shown
+                                     via CSS whenever the deck carries the .loaded class. -->
+                                <button type="button" class="dj-deck-unload" title="Unload"><i class="ph ph-x"></i></button>
                             </div>
                             <div class="dj-deck-mid">
                                 <!-- Big square transport: THE button of the deck. -->
                                 <button type="button" class="dj-deck-play" disabled title="Play / pause"><i class="ph-fill ph-play"></i></button>
                                 <span class="dj-deck-empty">Fire a cart from the library</span>
                                 <!-- Waveform of the item on deck; the progress
-                                     wash sweeps OVER it while playing. -->
+                                     wash sweeps OVER it while playing. Click/drag to
+                                     seek when Options > "Allow scrubbing" is on. -->
                                 <div class="dj-deck-wavebox" hidden>
                                     <canvas class="dj-deck-wave"></canvas>
                                     <div class="dj-deck-wash"></div>
@@ -369,7 +408,13 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                                 <div class="dj-deck-btns">
                                     <button type="button" class="dj-deck-stop" disabled title="Stop"><i class="ph-fill ph-stop"></i></button>
                                     <button type="button" class="dj-deck-repeat" disabled title="Repeat"><i class="ph ph-repeat"></i></button>
-                                    <button type="button" class="dj-deck-eject" disabled title="Unload"><i class="ph ph-eject"></i></button>
+                                    <!-- Load-only (see .dj-deck-unload above for the
+                                         separate unload control) — a local MP3 from disk,
+                                         temporary, never sent to the server. Hidden
+                                         entirely when Options > "Allow loading local MP3
+                                         files" is off. -->
+                                    <button type="button" class="dj-deck-load-local" title="Load local MP3 file (temporary, not uploaded)"><i class="ph ph-download-simple"></i></button>
+                                    <input type="file" class="dj-deck-file-input" accept=".mp3,audio/mpeg" hidden>
                                     <button type="button" class="dj-deck-pfl" disabled title="PREVIEW (PFL)"><span class="pfl-icon"><i class="ph ph-speaker-simple-high"></i></span></button>
                                 </div>
                                 <!-- Countdown: big, and red for the last 4 seconds. -->

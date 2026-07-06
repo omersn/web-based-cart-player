@@ -544,6 +544,12 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 /* Playback control area */
 .auto-controls { flex: 0 0 auto; display: flex; flex-direction: column; gap: 5px; padding: 5px 12px 6px; border-top: 1px solid var(--hairline); }
 .auto-mode-switch { display: flex; border: 1px solid var(--hairline); border-radius: 9px; overflow: hidden; }
+/* The native `hidden` attribute normally maps to display:none, but at equal
+   specificity an author rule like the plain `display: flex` above wins over
+   that UA-stylesheet default — without this, toggling .hidden on an element
+   that's ALSO .auto-mode-switch (the DJ library's Network/Local tab
+   switcher) left it visibly on screen despite being marked hidden. */
+.auto-mode-switch[hidden] { display: none; }
 .auto-mode-switch button { flex: 1; height: 30px; border: none; background: none; color: var(--text-secondary); font-weight: 800; font-size: 12px; letter-spacing: 0.1em; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; }
 .auto-mode-switch button.active { background: var(--cyan-tint); color: var(--cyan-text); }
 /* Small blinking dot marking AUTO as armed — replaces the old "AUTO START" label. */
@@ -2098,6 +2104,54 @@ body.dj-mode.dock-clock-only .dj-tree { margin-bottom: 200px; }
     border-right: 3px solid var(--hairline);
     background: #b7bec6; color: #111;
 }
+/* Network/Local tab switcher (only shown via JS once Options > "Allow
+   loading local MP3 files" is on) + the two panes it flips between — reuses
+   .auto-mode-switch's own layout (flex row, border, pill shape) but NOT its
+   colors: that component was designed for a dark panel (the automation
+   sidebar), while the DJ library (.dj-tree) is light-themed (#b7bec6 bg,
+   #111 text) — text-secondary/cyan-tint read as barely-there washed-out gray
+   on a light background. Overridden here to match this panel's own light
+   palette (same tones as .ptree-search/.ptree-fav-filter right below it). */
+.dj-lib-tabs { margin: 8px 8px 0; flex: 0 0 auto; background: #eef1f4; border-color: #9aa2ab; }
+.dj-lib-tabs button { color: #6b7482; }
+.dj-lib-tabs button:hover { color: #111; }
+.dj-lib-tabs button.active { background: #0e8ea0; color: #fff; }
+.dj-lib-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.dj-lib-pane[hidden] { display: none; }
+/* Local tab: browsing the user's own computer's folders (File System Access
+   API — Chromium/Edge only). One folder's contents at a time, no search box,
+   no nested tree — see assets/js/dj.js's LocalBrowser section. */
+.dj-local-picker { padding: 10px 8px; flex: 0 0 auto; }
+.dj-local-choose {
+    width: 100%; height: 34px; border: 1px dashed var(--hairline); border-radius: 8px;
+    background: rgba(0, 0, 0, 0.04); color: #111; font-weight: 700; font-size: 13px; cursor: pointer;
+}
+.dj-local-choose:hover { background: rgba(0, 0, 0, 0.08); }
+.dj-local-crumb { display: flex; align-items: center; gap: 6px; padding: 0 8px 6px; flex: 0 0 auto; }
+.dj-local-crumb[hidden] { display: none; }
+.dj-local-up {
+    flex: 0 0 24px; height: 24px; border: 1px solid var(--hairline); border-radius: 6px;
+    background: rgba(0, 0, 0, 0.05); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; color: #111;
+}
+.dj-local-up:hover { background: rgba(0, 0, 0, 0.1); }
+.dj-local-path {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 12px; font-weight: 700; color: #333;
+}
+.dj-local-unsupported, .dj-local-error { margin: 10px 8px; font-size: 12.5px; line-height: 1.5; }
+.dj-local-unsupported { color: #555; }
+.dj-local-error { color: #a33; }
+.dj-local-hint { margin: 6px 8px; font-size: 11px; color: #555; line-height: 1.4; }
+.dj-local-hint i { font-size: 11px; }
+.dj-local-row { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 4px; }
+.dj-local-row.is-folder { cursor: pointer; }
+.dj-local-row.is-folder:hover { background: rgba(0, 0, 0, 0.06); }
+.dj-local-row-icon { flex: 0 0 auto; font-size: 13px; }
+.dj-local-row-name {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 12.5px;
+}
 /* Tighter spacing in the DJ library so wide names get the room (the fire +
    preview buttons sit in the flow permanently). Scoped to .dj-tree so the
    planner tree keeps its roomier defaults. */
@@ -2211,6 +2265,18 @@ body:has(.automation-panel.active) .dj-send-auto { display: flex; }
     font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
     color: var(--text-tertiary);
 }
+/* Dedicated unload — only ever visible once something's loaded (mirrors
+   .dj-deck-onair/.dj-deck-endtime's own conditional-visibility pattern above,
+   just keyed off .loaded instead of .playing). */
+.dj-deck-unload {
+    display: none; flex: 0 0 auto; margin-left: auto;
+    width: 20px; height: 20px; padding: 0; border: none; border-radius: 5px; cursor: pointer;
+    background: var(--red-grad); color: #fff; font-size: 11px;
+    align-items: center; justify-content: center;
+}
+.dj-deck.loaded .dj-deck-unload { display: flex; }
+.dj-deck-unload:disabled { opacity: 0.3; pointer-events: none; }
+.dj-deck-unload:hover:not(:disabled) { filter: brightness(1.15); }
 /* Middle: the BIG square play button, then the current item's waveform with
    the progress WASHING over it. */
 .dj-deck-mid { flex: 1 1 auto; min-height: 30px; display: flex; align-items: stretch; gap: 10px; }
@@ -2233,6 +2299,10 @@ body:has(.automation-panel.active) .dj-send-auto { display: flex; }
     overflow: hidden;
 }
 .dj-deck-wavebox[hidden] { display: none; }
+/* Toggled by dj.js only when Options > "Allow scrubbing" is on AND something's
+   loaded — a plain cursor change is enough of an affordance, matching the
+   crossfade editors' own lanes (no separate visible "scrub handle"). */
+.dj-deck-wavebox.scrubbable { cursor: ew-resize; }
 /* Audio-reactive VU meter, right end of the player, full height (align-items:
    stretch on .dj-deck-mid does the work), padded a touch from the fill. Only
    shown once a cart is actually on the deck — with nothing loaded,
