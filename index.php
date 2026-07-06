@@ -1112,21 +1112,9 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                 <h2><i class="ph ph-calendar-check"></i> Break planner</h2>
                 <div class="planner-head-actions">
                     <span class="planner-msg" id="plannerMsg"></span>
-                    <button type="button" class="planner-save" id="plannerSave"><i class="ph ph-floppy-disk"></i> Save &amp; Close</button>
-                    <button type="button" class="planner-cancel" id="plannerCancel" title="Discard changes (Esc)">Cancel</button>
+                    <button type="button" class="planner-cancel" id="plannerCancel" title="Close (Esc)">Close</button>
                 </div>
             </header>
-            <!-- Styled discard-confirmation (replaces the native confirm()). -->
-            <div class="planner-confirm" id="plannerConfirm" hidden>
-                <div class="planner-confirm-box">
-                    <i class="ph ph-warning-circle"></i>
-                    <p>Discard unsaved changes to the break plan?</p>
-                    <div class="planner-confirm-actions">
-                        <button type="button" id="plannerConfirmDiscard" class="pc-discard">Discard changes</button>
-                        <button type="button" id="plannerConfirmKeep" class="pc-keep">Keep editing</button>
-                    </div>
-                </div>
-            </div>
             <div class="planner-body">
                 <div class="planner-tree" id="plannerTree">
                     <div class="ptree-toolbar">
@@ -1145,13 +1133,20 @@ $brandMain = strtoupper(implode(' ', $nameWords)) ?: $brandSub;
                              (otherwise confusingly empty) editor doesn't show. -->
                         <p class="planner-editor-hint" id="plannerEditorHint">Select or <a href="#" class="planner-editor-hint-link" id="plannerCreateBreak">create</a> a new Ad break</p>
                         <!-- "What am I working on" — name, From/To + time, an
-                             (unsaved) flag. Hidden until a break is loaded;
-                             kept current on every edit by renderBreaks(), not
-                             just when the selection itself changes. -->
+                             (unsaved) flag, and this break's OWN Save/Cancel
+                             (the save unit is the selected break, not the
+                             whole plan — planner.js blocks switching breaks
+                             or closing the overlay while this one is dirty).
+                             Hidden until a break is loaded; kept current on
+                             every edit by renderBreaks(). -->
                         <div class="planner-editor-header" id="plannerEditorHeader" hidden>
                             <span class="planner-editor-header-name" id="plannerEditorName"></span>
                             <span class="planner-editor-header-time" id="plannerEditorTime"></span>
                             <span class="planner-editor-header-unsaved" id="plannerEditorUnsaved" hidden>(unsaved)</span>
+                            <div class="planner-editor-header-actions">
+                                <button type="button" class="planner-break-save" id="plannerBreakSave"><i class="ph ph-floppy-disk"></i> Save</button>
+                                <button type="button" class="planner-break-cancel" id="plannerBreakCancel">Cancel</button>
+                            </div>
                         </div>
                     </div>
                 </div>

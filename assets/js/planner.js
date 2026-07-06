@@ -376,6 +376,17 @@
     // flag. Called from renderBreaks() (not just updateSelectionUi()) so it
     // stays current after every edit — rename, time change, item add — not
     // only when the selection itself changes.
+    // Is the SELECTED break's own state (items/overlaps/volumes plus its row
+    // fields — time/anchor/name/enabled/manual) different from what's on the
+    // server? Only ever meaningful for `sel` itself: that's the one break
+    // with a Save/Cancel and the one navigation actually blocks on. A brand
+    // new break (no saved counterpart at all) always counts as dirty.
+    function breakDirty(i) {
+        if (i < 0 || !plan[i]) return false;
+        if (i === sel) commitEditor(); // pull in the live playlist before comparing
+        const saved = (window.BREAKS || [])[i] || null;
+        return JSON.stringify(plan[i]) !== JSON.stringify(saved);
+    }
     function updateEditorHeader() {
         const header = $('plannerEditorHeader');
         const b = plan[sel];
@@ -384,20 +395,14 @@
         $('plannerEditorName').textContent = b.name || 'Break';
         const anchorLabel = b.anchor === 'end' ? 'To' : 'From';
         $('plannerEditorTime').textContent = `${anchorLabel}: ${hasTime(b) ? b.time : '--:--'}`;
-        // Deliberately NOT isDirty() — that's a whole-PLAN check (right for
-        // the close-confirm dialog), but here it made editing some OTHER
-        // break's time/anchor mark THIS one's header as unsaved too. Compare
-        // just this one break against its last-saved counterpart at the same
-        // index instead (only ambiguous if breaks were reordered/inserted
-        // since the last save — an acceptable gap for a visual hint, not a
-        // save-blocking check).
-        commitEditor();
-        const savedCounterpart = (window.BREAKS || [])[sel] || null;
-        $('plannerEditorUnsaved').hidden = JSON.stringify(b) === JSON.stringify(savedCounterpart);
+        const dirty = breakDirty(sel);
+        $('plannerEditorUnsaved').hidden = !dirty;
+        $('plannerBreakSave').disabled = !dirty;
+        $('plannerBreakCancel').disabled = !dirty;
     }
     function select(i) {
         if (i === sel) return;
-        commitEditor();
+        if (breakDirty(sel)) { flashSaveMsg('Save or cancel the open break first'); return; }
         sel = i;
         const items = (plan[i] ? plan[i].items : []).map(cartById).filter(Boolean).map(asItem);
         window.Automation.loadPlaylist(items, plan[i] ? plan[i].overlaps || [] : [], plan[i] ? plan[i].volumes || [] : []);
@@ -405,7 +410,7 @@
         updateSelectionUi();
     }
     function addBreak() {
-        commitEditor();
+        if (breakDirty(sel)) { flashSaveMsg('Save or cancel the open break first'); return; }
         // Start from a FREE slot — a fresh break must never collide with an
         // existing one (slots are unique among enabled scheduled breaks).
         const pad = (n) => String(n).padStart(2, '0');
@@ -417,6 +422,18 @@
         window.Automation.loadPlaylist([]);
         renderBreaks();
         updateSelectionUi();
+    }
+    // Reverts the selected break to its last-saved state, or — if it was
+    // never saved at all (a fresh "+ Add break") — drops it entirely, same
+    // as deleting it.
+    function cancelBreakEdits() {
+        if (sel < 0 || !plan[sel]) return;
+        const saved = (window.BREAKS || [])[sel];
+        if (!saved) { removeBreak(sel); return; }
+        plan[sel] = { ...saved, items: [...saved.items], overlaps: [...(saved.overlaps || [])], volumes: [...(saved.volumes || [])] };
+        const items = plan[sel].items.map(cartById).filter(Boolean).map(asItem);
+        window.Automation.loadPlaylist(items, plan[sel].overlaps || [], plan[sel].volumes || []);
+        renderBreaks();
     }
     function removeBreak(i) {
         commitEditor();
@@ -472,16 +489,16 @@
         updateSelectionUi();
         document.addEventListener('keydown', onKey);
     }
-    // Closing with unsaved changes asks first — via a styled in-overlay
-    // dialog (not the browser's native confirm).
+    // Saving lives on the individual break now (its own Save/Cancel) — closing
+    // just refuses outright while anything's unsaved, rather than offering a
+    // discard dialog. The message points at whichever action resolves it.
     function close() {
-        if (isDirty()) { $('plannerConfirm').hidden = false; return; }
+        if (isDirty()) { flashSaveMsg('Save or cancel the open break before closing'); return; }
         doClose();
     }
     function doClose() {
         stopPreview();
         document.removeEventListener('keydown', onKey);
-        $('plannerConfirm').hidden = true;
         $('plannerOverlay').hidden = true;
         const panel = $('automationPanel');
         panelHome.parent.insertBefore(panel, panelHome.next);
@@ -491,8 +508,6 @@
     }
     function onKey(e) {
         if (e.key !== 'Escape') return;
-        // First Esc dismisses the discard dialog (keep editing); otherwise close.
-        if (!$('plannerConfirm').hidden) { $('plannerConfirm').hidden = true; return; }
         close();
     }
 
@@ -537,6 +552,7 @@
             sel = selBreak ? plan.findIndex((b) => b.time === selBreak.time && b.name === selBreak.name) : -1;
             renderBreaks();
             window.Automation.refreshBreaks(); // live strip picks the plan up now
+            flashSaveMsg('Saved', true);
             return true;
         } catch (e) {
             flashSaveMsg('Save failed — server unreachable');
@@ -560,13 +576,10 @@
         // The empty-state hint's "create" link does exactly what "+ Add
         // break" does — same addBreak() call, just a second entry point.
         $('plannerCreateBreak').addEventListener('click', (e) => { e.preventDefault(); addBreak(); });
-        $('plannerCancel').addEventListener('click', close); // discard (confirms if dirty)
-        $('plannerConfirmDiscard').addEventListener('click', doClose);
-        $('plannerConfirmKeep').addEventListener('click', () => { $('plannerConfirm').hidden = true; });
-        // Save & Close: after a successful save the plan matches the server,
-        // so close() proceeds without the discard prompt; a failed save stays
-        // open with the error showing.
-        $('plannerSave').addEventListener('click', async () => { if (await save()) close(); });
+        $('plannerCancel').addEventListener('click', close); // refuses while a break is unsaved
+        // The selected break's own Save/Cancel — see breakDirty()/cancelBreakEdits().
+        $('plannerBreakSave').addEventListener('click', save);
+        $('plannerBreakCancel').addEventListener('click', cancelBreakEdits);
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 
