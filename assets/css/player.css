@@ -544,6 +544,12 @@ body.layout-locked .title-bar-0002 { cursor: default; }
 /* Playback control area */
 .auto-controls { flex: 0 0 auto; display: flex; flex-direction: column; gap: 5px; padding: 5px 12px 6px; border-top: 1px solid var(--hairline); }
 .auto-mode-switch { display: flex; border: 1px solid var(--hairline); border-radius: 9px; overflow: hidden; }
+/* The native `hidden` attribute normally maps to display:none, but at equal
+   specificity an author rule like the plain `display: flex` above wins over
+   that UA-stylesheet default — without this, toggling .hidden on an element
+   that's ALSO .auto-mode-switch (the DJ library's Network/Local tab
+   switcher) left it visibly on screen despite being marked hidden. */
+.auto-mode-switch[hidden] { display: none; }
 .auto-mode-switch button { flex: 1; height: 30px; border: none; background: none; color: var(--text-secondary); font-weight: 800; font-size: 12px; letter-spacing: 0.1em; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; }
 .auto-mode-switch button.active { background: var(--cyan-tint); color: var(--cyan-text); }
 /* Small blinking dot marking AUTO as armed — replaces the old "AUTO START" label. */
